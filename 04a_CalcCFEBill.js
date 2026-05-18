@@ -427,19 +427,26 @@ function calcCfeBillWithPvAnnual(monthlyInputs, tar, pv, options) {
 
 // =============================================================================
 // PHASE 2 (v2.2.0) — BESS impact calculator
+// PHASE 3 (v2.3.0) — adds PEAK_SHAVING strategy
 // =============================================================================
-// Strategy B (SELF_CONSUMPTION_MAX) only. PEAK_SHAVING and HYBRID strategies
-// are deferred to v2.3.0 pending 15-min interval data.
-// See PHASE_2_DESIGN_v2.md for design rationale and scope decisions.
+// SELF_CONSUMPTION_MAX (Strategy B): captures PV export, displaces grid energy.
+// PEAK_SHAVING (v2.3.0): discharges in punta to cut demand charges (Capacidad
+//   + Distribución) plus an estimated energy load-shift tier (Variable).
+// HYBRID remains deferred to v2.4.0 — combining both strategies on one battery
+// requires interval data to avoid double-counting shared throughput/SoC.
+// See PHASE_3_DESIGN.md.
 // =============================================================================
 
 /**
- * BESS strategy constants. Only SELF_CONSUMPTION_MAX is implemented in v2.2.0.
+ * BESS strategy constants.
+ *   SELF_CONSUMPTION_MAX — v2.2.0, PV-export capture (Strategy B)
+ *   PEAK_SHAVING         — v2.3.0, demand-charge reduction
+ *   HYBRID               — deferred to v2.4.0 (needs interval data)
  */
 var BESS_STRATEGY = {
   SELF_CONSUMPTION_MAX: 'SELF_CONSUMPTION_MAX',
-  // PEAK_SHAVING:        'PEAK_SHAVING',         // v2.3.0
-  // HYBRID:              'HYBRID',               // v2.3.0
+  PEAK_SHAVING:         'PEAK_SHAVING',
+  // HYBRID:            'HYBRID',                // v2.4.0 — do not enable
 };
 
 /**
@@ -574,8 +581,14 @@ function calcBessImpact(inp, tar, pv, bess, options) {
     : 0;
 
   // 6. Value per captured kWh and total savings
+  // v2.3.0 BUGFIX: rtePct must NOT be applied here. capturedKwh is already
+  // MIN(exported, throughput), and monthlyThroughputKwh (step 1) already
+  // carries the × rtePct factor. Multiplying again double-counted round-trip
+  // losses, understating BESS savings by ~(1-rtePct) ≈ 10%. Verified via
+  // Python recompute against SYNTH-001: FN Jan 9933.98 → 11037.76 (+11.1%).
+  // See CHANGELOG v2.3.0 and PHASE_3_DESIGN.md.
   var valuePerCapturedKwh = blendedAvoidedTariff - exportPrice;
-  var pvCaptureValueMxn = capturedKwh * valuePerCapturedKwh * bess.rtePct;
+  var pvCaptureValueMxn = capturedKwh * valuePerCapturedKwh;
 
   // 7. Final bill: bill after PV minus BESS savings, floored at 0
   var billAfterPvAndBess = Math.max(0, billAfterPv - pvCaptureValueMxn);
@@ -630,4 +643,210 @@ function calcBessImpactAnnual(monthlyInputs, tar, pv, bess, options) {
 function _daysInMonthByIndex(i) {
   var DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   return DAYS[i];
+}
+
+// =============================================================================
+// PHASE 3 (v2.3.0) — PEAK_SHAVING strategy
+// =============================================================================
+// Models a battery that discharges during punta hours to reduce CFE demand
+// charges, plus an estimated energy load-shift tier.
+//
+// THREE SAVINGS TIERS:
+//   Tier 1a — Capacidad    : VERIFIABLE. demandaFacturable = MAX(kWPunta,
+//                            0.7×kWMaxAnoMovil). Battery lowers kWPunta.
+//   Tier 1b — Distribución : VERIFIABLE. charged on MAX(kWBase,kWInter,kWPunta).
+//                            Moves ONLY if punta was the monthly max — often 0.
+//   Tier 2  — Variable     : ESTIMATED. Energy shifted punta→base. Depends on a
+//                            synthesized load shape, so it ALWAYS carries the
+//                            "estimado — sujeto a levantamiento en sitio"
+//                            disclaimer regardless of demand-data provenance.
+//
+// DEMAND-DATA PROVENANCE (v2.3.0 — option 1, decided 2026-05-18):
+//   1. dmaxPuntaOverride present  → 'measured(override)'
+//   2. else inp.kWPunta present   → 'measured(INPUT_CFE)'      ← normal path
+//   3. else                       → 'synthesized(no demand data)' via
+//                                    Q/(24×d×F.C.). LOUD disclaimer. Last resort
+//                                    only — never runs when a metered kWPunta
+//                                    exists, so it cannot inflate above real data.
+//
+// RATCHET (Year-1 vs steady-state):
+//   demandaFacturable has a 0.7×kWMaxAnoMovil floor. A battery that shaves THIS
+//   month's punta does not immediately erase the 12-month rolling max, so
+//   Year-1 savings are smaller than steady-state. Both are reported; Year-1 is
+//   the headline (conservative, protects against first-bill surprise).
+//
+// Verified via Python recompute against TESTPROJ_PEAK_001. See PHASE_3_DESIGN.md.
+// =============================================================================
+
+/**
+ * Usable battery energy after SoC window, degradation, and backup reserve.
+ * Shared with Strategy B's identical capacity model.
+ */
+function _bessUsableKwh(bess) {
+  return bess.capacityKwh
+       * (bess.maxSocPct - bess.minSocPct)
+       * (1 - bess.degradationPct)
+       * (1 - bess.backupReservePct);
+}
+
+/**
+ * Compute one month's PEAK_SHAVING impact.
+ *
+ * @param {Object} inp   Monthly CFE inputs (kWh*, kW*, kWMaxAnoMovil, tariff).
+ * @param {Object} tar   Frozen tariff prices.
+ * @param {Object} bess  Battery block:
+ *   {
+ *     strategy: 'PEAK_SHAVING',
+ *     capacityKwh, powerKw, minSocPct, maxSocPct, rtePct,
+ *     cyclesPerDay, degradationPct, backupReservePct, daysInMonth,
+ *     puntaWindowHours: number,        // hours of punta window (e.g. 4 winter)
+ *     loadFactorFC: number,            // F.C. for synthesis path, default 0.57
+ *     dmaxPuntaOverride: number|null,  // designer override of punta demand kW
+ *   }
+ * @param {Object} options  Forwarded to calcCfeBill (e.g. fpThreshold).
+ *
+ * @return {Object} {
+ *   strategyUsed, bessEnabled,
+ *   usableKwh, shaveKw, dmaxPuntaUsed, postBessPuntaKw, demandProvenance,
+ *   // Year-1 (headline) — ratchet floor still partly loaded
+ *   capacidadSavingYear1, distribucionSavingYear1, verifiableSavingYear1,
+ *   // Steady-state — rolling max decayed to reduced peak
+ *   capacidadSavingSteady, distribucionSavingSteady, verifiableSavingSteady,
+ *   // Tier 2 — always estimated, always disclaimed
+ *   energyShiftedKwh, variableSavingEstimated,
+ *   totalSavingYear1,
+ *   baselineBill, billAfterPeakShavingYear1,
+ *   estimatedTierDisclaimer: true,
+ *   synthesizedDemandDisclaimer: boolean   // true → loud "perfil genérico"
+ * }
+ */
+function calcPeakShavingImpact(inp, tar, bess, options) {
+  // Disabled / zero-capacity → no-op, returns baseline
+  if (!bess || !bess.capacityKwh || bess.capacityKwh <= 0) {
+    var baselineOnly = calcCfeBill(inp, tar, options);
+    return {
+      strategyUsed: null,
+      bessEnabled: false,
+      usableKwh: 0, shaveKw: 0, dmaxPuntaUsed: 0, postBessPuntaKw: 0,
+      demandProvenance: 'n/a',
+      capacidadSavingYear1: 0, distribucionSavingYear1: 0,
+      verifiableSavingYear1: 0,
+      capacidadSavingSteady: 0, distribucionSavingSteady: 0,
+      verifiableSavingSteady: 0,
+      energyShiftedKwh: 0, variableSavingEstimated: 0,
+      totalSavingYear1: 0,
+      baselineBill: baselineOnly.total,
+      billAfterPeakShavingYear1: baselineOnly.total,
+      estimatedTierDisclaimer: true,
+      synthesizedDemandDisclaimer: false,
+    };
+  }
+
+  // Input bounds validation (mirrors calcBessImpact discipline)
+  if (bess.minSocPct < 0 || bess.minSocPct > 1) {
+    throw new Error('calcPeakShavingImpact: minSocPct must be 0-1, got ' + bess.minSocPct);
+  }
+  if (bess.maxSocPct <= bess.minSocPct) {
+    throw new Error('calcPeakShavingImpact: maxSocPct must exceed minSocPct, got '
+                    + bess.maxSocPct + ' vs ' + bess.minSocPct);
+  }
+  if (bess.rtePct < 0 || bess.rtePct > 1) {
+    throw new Error('calcPeakShavingImpact: rtePct must be 0-1, got ' + bess.rtePct);
+  }
+  if (!bess.puntaWindowHours || bess.puntaWindowHours <= 0) {
+    throw new Error('calcPeakShavingImpact: puntaWindowHours must be > 0, got '
+                    + bess.puntaWindowHours);
+  }
+
+  var usableKwh = _bessUsableKwh(bess);
+  var daysInMonth = (bess.daysInMonth != null) ? bess.daysInMonth : 30.42;
+  var fc = (bess.loadFactorFC != null) ? bess.loadFactorFC : 0.57;
+
+  // ---- Shave power: limited by inverter power AND energy-over-window --------
+  // The battery can sustain MIN(powerKw, usable/window) kW across the punta
+  // window. Energy limit reflects that a small battery can't hold a big kW
+  // reduction for the whole window.
+  var shaveKw = Math.min(bess.powerKw, usableKwh / bess.puntaWindowHours);
+
+  // ---- Demand provenance (option 1: synthesis is true last resort) ---------
+  var dmaxPuntaUsed, demandProvenance, synthesizedDemandDisclaimer;
+  if (bess.dmaxPuntaOverride != null && bess.dmaxPuntaOverride > 0) {
+    dmaxPuntaUsed = bess.dmaxPuntaOverride;
+    demandProvenance = 'measured(override)';
+    synthesizedDemandDisclaimer = false;
+  } else if (inp.kWPunta != null && inp.kWPunta > 0) {
+    dmaxPuntaUsed = inp.kWPunta;
+    demandProvenance = 'measured(INPUT_CFE)';
+    synthesizedDemandDisclaimer = false;
+  } else {
+    // No demand data anywhere — synthesize from monthly kWh. LOUD disclaimer.
+    var qMensual = inp.kWhBase + inp.kWhIntermedia + inp.kWhPunta;
+    dmaxPuntaUsed = qMensual / (24 * daysInMonth * fc);
+    demandProvenance = 'synthesized(no demand data)';
+    synthesizedDemandDisclaimer = true;
+  }
+
+  var postBessPuntaKw = Math.max(dmaxPuntaUsed - shaveKw, 0);
+
+  // ---- Tier 1: re-run the VERIFIED calcCfeBill with reduced punta demand ---
+  // Year-1: rolling max (kWMaxAnoMovil) unchanged — ratchet floor still loaded.
+  // Steady: rolling max has decayed to the reduced peak.
+  function _withPunta(puntaKw, decayRollingMax) {
+    var o = {
+      kWhBase: inp.kWhBase, kWhIntermedia: inp.kWhIntermedia, kWhPunta: inp.kWhPunta,
+      kWBase: inp.kWBase, kWIntermedia: inp.kWIntermedia, kWPunta: puntaKw,
+      kWMaxAnoMovil: inp.kWMaxAnoMovil, kVArh: inp.kVArh,
+      tarifa: inp.tarifa, dap: inp.dap, bajaTension2pct: inp.bajaTension2pct,
+    };
+    if (decayRollingMax) {
+      o.kWMaxAnoMovil = Math.min(inp.kWMaxAnoMovil, puntaKw);
+    }
+    return o;
+  }
+
+  var billBefore       = calcCfeBill(_withPunta(dmaxPuntaUsed, false), tar, options);
+  var billAfterYear1   = calcCfeBill(_withPunta(postBessPuntaKw, false), tar, options);
+  var billAfterSteady  = calcCfeBill(_withPunta(postBessPuntaKw, true),  tar, options);
+
+  var capacidadSavingYear1   = billBefore.capacidad   - billAfterYear1.capacidad;
+  var distribucionSavingYear1 = billBefore.distribucion - billAfterYear1.distribucion;
+  var capacidadSavingSteady  = billBefore.capacidad   - billAfterSteady.capacidad;
+  var distribucionSavingSteady = billBefore.distribucion - billAfterSteady.distribucion;
+
+  var verifiableSavingYear1  = capacidadSavingYear1  + distribucionSavingYear1;
+  var verifiableSavingSteady = capacidadSavingSteady + distribucionSavingSteady;
+
+  // ---- Tier 2: Variable load-shift — ESTIMATED, always disclaimed ----------
+  // Energy shifted out of punta into base, capped by monthly battery throughput.
+  // This depends on a synthesized load shape (which punta kWh the battery
+  // actually displaced), so it is NEVER measured-grade.
+  var monthlyThroughputKwh = usableKwh * bess.cyclesPerDay * daysInMonth * bess.rtePct;
+  var energyShiftedKwh = Math.min(inp.kWhPunta, monthlyThroughputKwh);
+  var variableSavingEstimated = energyShiftedKwh * (tar.energiaPunta - tar.energiaBase);
+
+  var totalSavingYear1 = verifiableSavingYear1 + variableSavingEstimated;
+  var billAfterPeakShavingYear1 = Math.max(0, billBefore.total - totalSavingYear1);
+
+  return {
+    strategyUsed: BESS_STRATEGY.PEAK_SHAVING,
+    bessEnabled: true,
+    usableKwh: usableKwh,
+    shaveKw: shaveKw,
+    dmaxPuntaUsed: dmaxPuntaUsed,
+    postBessPuntaKw: postBessPuntaKw,
+    demandProvenance: demandProvenance,
+    capacidadSavingYear1: capacidadSavingYear1,
+    distribucionSavingYear1: distribucionSavingYear1,
+    verifiableSavingYear1: verifiableSavingYear1,
+    capacidadSavingSteady: capacidadSavingSteady,
+    distribucionSavingSteady: distribucionSavingSteady,
+    verifiableSavingSteady: verifiableSavingSteady,
+    energyShiftedKwh: energyShiftedKwh,
+    variableSavingEstimated: variableSavingEstimated,
+    totalSavingYear1: totalSavingYear1,
+    baselineBill: billBefore.total,
+    billAfterPeakShavingYear1: billAfterPeakShavingYear1,
+    estimatedTierDisclaimer: true,
+    synthesizedDemandDisclaimer: synthesizedDemandDisclaimer,
+  };
 }

@@ -142,6 +142,15 @@ function runTests() {
   try { addPhase2Tests(t, ss); }
   catch (e) { t.error('Phase2 aborted', e); }
 
+  // -------------------------------------------------------------------------
+  // Tier 9 -- Phase 3 PEAK_SHAVING strategy (v2.3.0)
+  // Added 2026-05-18. See 99f_TestRunner_Phase3.gs and PHASE_3_DESIGN.md.
+  // SCOPE: PEAK_SHAVING strategy (Capacidad + Distribución verifiable tiers,
+  // Variable estimated tier). HYBRID remains deferred to v2.4.0.
+  // -------------------------------------------------------------------------
+  try { addPhase3Tests(t, ss); }
+  catch (e) { t.error('Phase3 aborted', e); }
+
   var elapsedMs = Date.now() - startMs;
   writeResultsSheet(ss, results, elapsedMs);
 

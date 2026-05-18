@@ -517,11 +517,14 @@ var TESTPROJ_SYNTH_001 = {
         blendedAvoidedTariffMxnPerKwh:     3.336016,
         exportPriceMxnPerKwh:              0.80,
         valuePerCapturedKwh:               2.536016,
-        pvCaptureValueMxn:              9933.98,
+        // v2.3.0: double-rtePct bug fixed. capturedKwh already carries RTE via
+        // throughput; the value calc must not re-apply it. Verified vs deployed
+        // JS + Python recompute. Prior (buggy) value was 9933.98 (−11.1%).
+        pvCaptureValueMxn:             11037.76,
         baselineBill:                 116760.56,
         billAfterPv:                   82377.81,
-        billAfterPvAndBess:            72443.83,
-        annualBillAfterPvAndBess:     871569.06,    // varying days
+        billAfterPvAndBess:            71340.05,    // was 72443.83 pre-fix
+        annualBillAfterPvAndBess:     858572.99,    // was 871569.06 pre-fix
       },
     },
 
@@ -548,11 +551,12 @@ var TESTPROJ_SYNTH_001 = {
         // With self_pct=1.0 in SE, PV exported = 25000-20000 = 5000 (capped at intermedia)
         // NOT 7500 like the FN case. So captured = min(5000, 4352.4) = 4352.4
         // value_per = blended_avoided_tariff - 0 (no export price) = 3.336016
-        // savings = 4352.4 × 3.336016 × 0.9 = 13067.71
+        // v2.3.0: double-rtePct fixed → savings = 4352.4 × 3.336016 = 14519.68
+        // (prior buggy value 13067.71 applied × 0.9 a second time, −11.1%).
         pvCapturedByBessKwh:            4352.40,
-        pvCaptureValueMxn:             13067.71,
-        billAfterPv:                   86080.88,    // SE_default lock
-        billAfterPvAndBess:            73013.17,
+        pvCaptureValueMxn:             14519.68,
+        billAfterPv:                   86080.88,    // SE_default lock (unchanged)
+        billAfterPvAndBess:            71561.20,    // was 73013.17 pre-fix
       },
     },
 
@@ -622,6 +626,116 @@ var TESTPROJ_SYNTH_001 = {
         bessEnabled:                   false,
         billAfterPvAndBess:            82377.81,    // unchanged
       },
+    },
+  },
+};
+
+// =============================================================================
+// TESTPROJ_PEAK_001 — PEAK_SHAVING regression fixture (v2.3.0, Phase 3)
+// =============================================================================
+// SYNTH-001 cannot exercise PEAK_SHAVING: its kWMaxAnoMovil (100) and kWPunta
+// (90) are too low for the 0.7×rolling-max ratchet floor to constrain, so
+// Year-1 and steady-state would be identical and the ratchet would be untested.
+//
+// PEAK_001 is a deliberately industrial profile, with values anchored to the
+// Autoplastek competitor proposals (Energía Real / ARBIA, 2026-03):
+//   - punta demand ~320 kW (PUE deck shows ~319 kW avg punta)
+//   - rolling max 340 kW, set CLOSE to punta so the ratchet bites
+//   - intermedia 340 kW — equals the monthly max, so Distribución does NOT
+//     move on a punta-only shave (verifiable distSaving = 0 — correct, not a bug)
+//
+// All lock targets verified by Python recompute (partB_recompute) AND by
+// running the deployed calcPeakShavingImpact() in Node. See PHASE_3_DESIGN.md.
+// =============================================================================
+var TESTPROJ_PEAK_001 = {
+  meta: {
+    fixtureName: 'TESTPROJ-PEAK-001',
+    purpose: 'PEAK_SHAVING strategy regression (Capacidad + Distribución + Variable)',
+    tariff: 'GDMTH',
+  },
+
+  // Frozen tariffs — identical to SYNTH-001 (GDMTH GOLFO CENTRO, Jan 2026).
+  frozenTariffs: {
+    capacidad:    392.20,
+    distribucion: 124.41,
+    transmision:  0.1801,
+    cenace:       0.0076,
+    energiaBase:  0.8066,
+    energiaInter: 1.4986,
+    energiaPunta: 1.7675,
+    scnmem:       0.0069,
+    suministro:   461.75,
+  },
+
+  // January monthly input (industrial profile). bajaTension2pct:false matches
+  // the _p2_buildSynth001JanInputObject() convention (boolean, not 'NO' string).
+  janInput: {
+    kWhBase:       60000,
+    kWhIntermedia: 120000,
+    kWhPunta:      40000,
+    kWBase:        280,
+    kWIntermedia:  340,    // = monthly max → Distribución unaffected by punta shave
+    kWPunta:       320,
+    kWMaxAnoMovil: 340,    // close to punta → ratchet floor (0.7×340=238) bites
+    kVArh:         90000,
+    tarifa:          'GDMTH',
+    dap:             0,
+    bajaTension2pct: false,
+  },
+
+  // BESS config: 645 kWh nominal / 323 kW (Autoplastek PUE deck figures).
+  // puntaWindowHours=4 → winter (Jan). loadFactorFC only used on synth path.
+  bess: {
+    strategy:         'PEAK_SHAVING',
+    capacityKwh:      645,
+    powerKw:          323,
+    minSocPct:        0.08,
+    maxSocPct:        0.92,
+    rtePct:           0.90,
+    cyclesPerDay:     1.0,
+    degradationPct:   0.025,
+    backupReservePct: 0.0,
+    daysInMonth:      31,
+    puntaWindowHours: 4,
+    loadFactorFC:     0.57,
+    dmaxPuntaOverride: null,
+  },
+
+  // Lock targets — normal run (kWPunta=320 present → measured provenance).
+  expected: {
+    baselineBill:              587527.29,
+    demandProvenance:          'measured(INPUT_CFE)',
+    usableKwh:                 528.255,  // 645×(0.92-0.08)×(1-0.025)×(1-0)
+    shaveKw:                   132.06,   // min(323 power, 528.36/4 energy)
+    dmaxPuntaUsed:             320.00,
+    postBessPuntaKw:           187.94,
+    // Year-1 — ratchet floor (0.7×340=238) still loaded; post-BESS punta 187.94
+    // is below the floor, so demandaFacturable only drops 320→238.
+    capacidadSavingYear1:      32160.40,
+    distribucionSavingYear1:   0.00,     // intermedia is monthly max — correct
+    verifiableSavingYear1:     32160.40,
+    // Steady-state — rolling max decays to 187.94; demandaFacturable 320→187.94.
+    capacidadSavingSteady:     51795.40,
+    distribucionSavingSteady:  0.00,
+    verifiableSavingSteady:    51795.40,
+    ratchetDelta:              19635.00, // steady − year1
+    // Tier 2 — Variable load-shift, ESTIMATED (always disclaimed).
+    energyShiftedKwh:          14738.30, // min(40000 punta kWh, throughput)
+    variableSavingEstimated:   14162.05,
+    totalSavingYear1:          46322.45, // verifiable + variable
+    estimatedTierDisclaimer:   true,
+    synthesizedDemandDisclaimer: false,
+  },
+
+  // Synthesis last-resort scenario: kWPunta removed → engine must synthesize
+  // and raise the loud disclaimer. Only the disclaimer flag is asserted here;
+  // the synthesized peso value is intentionally NOT locked (it depends on F.C.,
+  // an assumption, not measured data).
+  synthScenario: {
+    janInputNoDemand: null,  // built in 99f by cloning janInput with kWPunta:0
+    expected: {
+      demandProvenance:            'synthesized(no demand data)',
+      synthesizedDemandDisclaimer: true,
     },
   },
 };
