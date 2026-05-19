@@ -602,7 +602,7 @@ function runArgiaEngine() {
     // Step 10: write MDC ----------------------------------------------------
     _setArgiaProgress(10, TOTAL, 'Writing MDC\u2026');
     engineLog(ss, 'Engine', 'INFO', 'Step 10: writing MDC');
-    writeMDC(ss, inp, panel, invBank, dc, ac, lay, nom);
+    writeMDC(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
 
     // Step 11: write BOM ----------------------------------------------------
     _setArgiaProgress(11, TOTAL, 'Writing BOM\u2026');

@@ -45,7 +45,7 @@ var ISSUE = {
 // =============================================================================
 // MAIN WRITE FUNCTION
 // =============================================================================
-function writeMDC(ss, inp, panel, invBank, dc, ac, lay, nom) {
+function writeMDC(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
   var sh = ss.getSheetByName(SH.MDC);
   if (!sh) throw new Error('MDC sheet not found: ' + SH.MDC);
   // -- Clear engine-written columns only (C, E, F, G, H) in rows 2-120
@@ -608,6 +608,99 @@ function writeMDC(ss, inp, panel, invBank, dc, ac, lay, nom) {
     '  |  Panel DB verificado: ' + panelVerified +
     '  |  Revision proyecto: ' + (inp.projectRevision || '00')
   );
+  // ===========================================================================
+  // SECTION 7.0: BESS / ALMACENAMIENTO  (Increment 4b-3b)
+  // ===========================================================================
+  // Renders only when the project includes a battery. PV-only runs leave the
+  // §7 band (rows 100-110) blank — the writer's clearContent at the top of
+  // this function already wiped it, so nothing stale survives.
+  //
+  // Circuit sizing: calcBessCircuit needs a battery DC-bus voltage. INPUT_BESS
+  // has no voltage cell yet, so bessResult.circuit.sizeable is false today and
+  // the circuit-status row prints an honest "pendiente" line. The two per-run
+  // rows (RUN1/RUN2) are left blank — reserved for when a voltage input lands
+  // (Increment 4b-2.5) and the circuit actually sizes. No fabricated numbers.
+  if (bessResult && bessResult.bessEnabled && bessResult.bess) {
+    var b   = bessResult.bess;
+    var cir = bessResult.circuit;   // may be null or { sizeable, reason, runs }
+
+    sh.getRange(MDC_ROW.SEC7_HEADER, MC.LABEL)
+      .setValue('7.0 ALMACENAMIENTO / BATERÍA (BESS)');
+
+    row(MDC_ROW.BESS_MODEL, b.batteryId + '  /  ' + b.strategy,
+        PROV.INPUT, 'INPUT_BESS',
+        'Producto y estrategia de operación seleccionados', null);
+
+    row(MDC_ROW.BESS_CAPACITY, n(b.capacityKwh, 0) + ' kWh',
+        PROV.INPUT, 'INPUT_BESS',
+        'Capacidad nominal de placa', null);
+
+    row(MDC_ROW.BESS_POWER, n(b.powerKw, 0) + ' kW',
+        PROV.INPUT, 'INPUT_BESS',
+        'Potencia nominal de placa', null);
+
+    row(MDC_ROW.BESS_USABLE, n(bessResult.usableCapacityKwh, 1) + ' kWh',
+        PROV.AUTO_CALC, 'ENGINE V7 / runBessStep',
+        'Usable = capacidad x (SoC_max - SoC_min) x (1 - degradación) '
+        + 'x (1 - reserva) = ' + n(b.capacityKwh, 0) + ' x ('
+        + pct(b.maxSocPct, 0) + ' - ' + pct(b.minSocPct, 0) + ') x (1 - '
+        + pct(b.degradationPct, 1) + ') x (1 - '
+        + pct(b.backupReservePct, 0) + ')', null);
+
+    row(MDC_ROW.BESS_COUPLING, bessResult.coupling,
+        PROV.INPUT, 'INPUT_DESIGN!C17',
+        'Topología de acoplamiento de la batería', null);
+
+    // Circuit sizing status — honest "pendiente" while voltage is absent.
+    if (cir && cir.sizeable) {
+      row(MDC_ROW.BESS_CIRC_STAT, 'Dimensionado',
+          PROV.AUTO_CALC, 'NOM-001-SEDE / Art. 706',
+          'Circuito de batería dimensionado — ver runs abajo',
+          '✅ PASS — circuito BESS dimensionado');
+    } else {
+      var pend = (cir && cir.reason)
+        ? cir.reason
+        : 'voltaje de batería no especificado';
+      row(MDC_ROW.BESS_CIRC_STAT,
+          'Pendiente — ' + pend,
+          PROV.AUTO_CALC, 'NOM-001-SEDE / Art. 706',
+          'El dimensionamiento de conductores/OCPD/EGC de la batería '
+          + 'requiere el voltaje del bus DC. Completar dato y re-ejecutar.',
+          '⚠ REVIEW — dimensionamiento de circuito pendiente');
+    }
+
+    // Per-run rows: filled only when the circuit sizes. Reserved otherwise.
+    if (cir && cir.sizeable && cir.runs && cir.runs.length > 0) {
+      var rrows = [MDC_ROW.BESS_CIRC_RUN1, MDC_ROW.BESS_CIRC_RUN2];
+      for (var ri = 0; ri < cir.runs.length && ri < rrows.length; ri++) {
+        var rn = cir.runs[ri];
+        row(rrows[ri],
+            'Cond ' + rn.conductorSize + ' / OCPD ' + rn.ocpdA + ' A / EGC '
+            + rn.egcSize,
+            PROV.AUTO_CALC, 'NOM-001-SEDE / Art. 706',
+            rn.name + ': I_diseño ' + n(rn.designCurrentA, 1) + ' A', null);
+      }
+    }
+
+    row(MDC_ROW.BESS_BUSBAR, bessResult.busbarNote || '--',
+        PROV.AUTO_CALC, 'NOM-001-SEDE / Art. 705.12',
+        'Regla 120% de barra colectora — verificación manual contra el '
+        + 'tablero del sitio', null);
+
+    row(MDC_ROW.BESS_NOM_CITE,
+        'NOM-001-SEDE Art. 706 (sistemas de almacenamiento de energía)',
+        PROV.STANDARD, 'NOM-001-SEDE-2012',
+        'Referencia normativa para sistemas de batería (BESS)', null);
+  } else {
+    // PV-only run: no battery. The writer's clearContent at the top wipes
+    // cols C/E/F/G for rows 6-120, but NOT col B (LABEL). The §7 block above
+    // writes ONE col-B cell directly: the SEC7_HEADER. (The data-row labels
+    // come from the 02e template, like every other section, so we must not
+    // touch them.) Clear only the header cell so a stale "7.0 ..." title
+    // from a prior battery run does not persist on a PV-only MDC.
+    sh.getRange(MDC_ROW.SEC7_HEADER, MC.LABEL).clearContent();
+  }
+
   SpreadsheetApp.flush();
   engineLog(ss, 'WriteMDC', 'OK',
     'MDC escrito. Estado emision: ' + issuanceStatus +
