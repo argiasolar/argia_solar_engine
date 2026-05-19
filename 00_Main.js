@@ -182,6 +182,23 @@ var MDC_ROW = {
   // Footer (rows 96-97, was 95-96)
   LEGEND: 96,               // was 95
   TIMESTAMP: 97,            // was 96
+
+  // §7 BESS / ALMACENAMIENTO (rows 100-110) -- Increment 4b-3
+  // Placed below the footer (gap at 98-99) so the existing layout and any
+  // references to rows 96-97 are untouched. The MDC writer clears rows 6-120,
+  // so this band is already inside the cleared range. The section only
+  // renders when the project includes a battery; PV-only runs leave it blank.
+  SEC7_HEADER:     100,
+  BESS_MODEL:      101,     // battery product / ID + strategy
+  BESS_CAPACITY:   102,     // nominal capacity kWh
+  BESS_POWER:      103,     // nominal power kW
+  BESS_USABLE:     104,     // usable capacity kWh (after SoC/deg/backup)
+  BESS_COUPLING:   105,     // DC_COUPLED / AC_COUPLED
+  BESS_CIRC_STAT:  106,     // circuit sizing status / "pendiente" line
+  BESS_CIRC_RUN1:  107,     // reserved: run 1 conductor/OCPD/EGC (4b-2.5)
+  BESS_CIRC_RUN2:  108,     // reserved: run 2 (AC-coupled only)
+  BESS_BUSBAR:     109,     // coupling-aware busbar 120% note
+  BESS_NOM_CITE:   110,     // NOM citation row
 };
 
 // ---------------------------------------------------------------------------

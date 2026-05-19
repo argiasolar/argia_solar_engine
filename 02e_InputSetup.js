@@ -1581,7 +1581,11 @@ function setupMDCTemplate(confirmOverwrite) {
   //
   // Col E (STATUS) is intentionally NOT muted — it gets conditional formatting
   // (green/yellow/red) added below to make PASS/FAIL scannable.
-  var muteRange = sh.getRange(6, 6, MDC_ROW.STATUS_SCALING - 6 + 1, 2); // F-G only
+  // Mute F-G from row 6 down through the §7 BESS band (row 110). Rows 94-99
+  // are blank (gap above §7); muting empty cells is harmless. Extending here
+  // means the BESS section's F/G columns get the same muted styling as the
+  // rest of the MDC without a second range to maintain.
+  var muteRange = sh.getRange(6, 6, MDC_ROW.BESS_NOM_CITE - 6 + 1, 2); // F-G only
   muteRange
     .setFontFamily(token('FONT_FAMILY'))
     .setFontSize(tokenNum('FONT_SIZE_SMALL'))
@@ -1601,6 +1605,7 @@ function setupMDCTemplate(confirmOverwrite) {
     [MDC_ROW.SEC5_HEADER,     '5.0 SUPUESTOS CLAVE DE DISEÑO'],
     [MDC_ROW.SEC55_HEADER,    '5.5 REFERENCIAS A PLANOS / DOCUMENTOS DE DISEÑO'],
     [MDC_ROW.SEC6_HEADER,     '6.0 LAYOUT / ESCALADO DE PLANTA'],
+    [MDC_ROW.SEC7_HEADER,     '7.0 ALMACENAMIENTO / BATERÍA (BESS)'],
   ];
   sectionHeaders.forEach(function(sh_pair) {
     var r = sh_pair[0];
@@ -1638,8 +1643,10 @@ function setupMDCTemplate(confirmOverwrite) {
   // (caution). Red for FAIL / BLOCKED (problem). Auditors can scan col E
   // top-to-bottom and immediately spot anything that needs attention.
   //
-  // Apps Script CF rules apply over the visible data range (rows 6-93).
-  var statusRange = sh.getRange(6, 5, MDC_ROW.STATUS_SCALING - 6 + 1, 1);
+  // Apps Script CF rules apply over the visible data range (rows 6-110,
+  // extended from 93 to include the §7 BESS band so its circuit-status cell
+  // gets the same green/yellow/red treatment as the rest of the MDC).
+  var statusRange = sh.getRange(6, 5, MDC_ROW.BESS_NOM_CITE - 6 + 1, 1);
   var rules = sh.getConditionalFormatRules();
 
   // Drop any existing rules on this range (from prior previewMDC runs)
