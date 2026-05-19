@@ -1238,11 +1238,137 @@ var _MAP_INSTALL = {
 
 
 // ---------------------------------------------------------------------------
+// _MAP_BESS — battery toggle (INPUT_PROJECT) + INPUT_BESS sheet cells.
+// Added 2026-05-19. Consumed by readInputBess() in 01a_ReadInputsBess.gs.
+// Cell coordinates verified against the live INPUT_BESS / INPUT_PROJECT tabs.
+// ---------------------------------------------------------------------------
+var _MAP_BESS = {
+
+  // -- Battery toggle: INPUT_PROJECT section 7.0 ALMACENAMIENTO -------------
+  installBattery: {
+    sheet: SH.INPUT_PROJECT, row: 64, col: 4,   // D64
+    label: 'Instalar batería', type: 'dropdown',
+    default: 'NO', required: false,
+    dropdown: ['YES', 'NO'],
+    section: '07 ALMACENAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'YES => engine reads INPUT_BESS and runs the BESS step.'
+  },
+
+  // -- INPUT_BESS §1 SELECCIÓN DE BATERÍA ----------------------------------
+  bessBatteryId: {
+    sheet: 'INPUT_BESS', row: 6, col: 3,        // C6
+    label: 'BATTERY_ID', type: 'text',
+    default: 'CUSTOM_MANUAL', required: false,
+    section: 'BESS 1 SELECCION',
+    consumedBy: ['engine']
+  },
+  bessStrategy: {
+    sheet: 'INPUT_BESS', row: 7, col: 3,        // C7
+    label: 'BESS_STRATEGY', type: 'dropdown',
+    default: 'SELF_CONSUMPTION_MAX', required: false,
+    dropdown: ['SELF_CONSUMPTION_MAX', 'PEAK_SHAVING'],
+    section: 'BESS 1 SELECCION',
+    consumedBy: ['engine']
+  },
+
+  // -- INPUT_BESS §2 ESPECIFICACIONES TÉCNICAS -----------------------------
+  bessCapacityKwh: {
+    sheet: 'INPUT_BESS', row: 10, col: 3,       // C10
+    label: 'Capacidad nominal kWh', type: 'number',
+    default: 0, required: false, unit: 'kWh',
+    section: 'BESS 2 ESPECIFICACIONES',
+    consumedBy: ['engine']
+  },
+  bessPowerKw: {
+    sheet: 'INPUT_BESS', row: 11, col: 3,       // C11
+    label: 'Potencia kW', type: 'number',
+    default: 0, required: false, unit: 'kW',
+    section: 'BESS 2 ESPECIFICACIONES',
+    consumedBy: ['engine']
+  },
+  bessMinSocPct: {
+    sheet: 'INPUT_BESS', row: 12, col: 3,       // C12
+    label: 'Min SOC %', type: 'percent',
+    default: 0.10, required: false,
+    section: 'BESS 2 ESPECIFICACIONES',
+    consumedBy: ['engine']
+  },
+  bessMaxSocPct: {
+    sheet: 'INPUT_BESS', row: 13, col: 3,       // C13
+    label: 'Max SOC %', type: 'percent',
+    default: 0.90, required: false,
+    section: 'BESS 2 ESPECIFICACIONES',
+    consumedBy: ['engine']
+  },
+  bessRtePct: {
+    sheet: 'INPUT_BESS', row: 14, col: 3,       // C14
+    label: 'RTE %', type: 'percent',
+    default: 0.90, required: false,
+    section: 'BESS 2 ESPECIFICACIONES',
+    consumedBy: ['engine']
+  },
+  bessCyclesPerDay: {
+    sheet: 'INPUT_BESS', row: 15, col: 3,       // C15
+    label: 'Ciclos por día', type: 'number',
+    default: 1.0, required: false,
+    section: 'BESS 2 ESPECIFICACIONES',
+    consumedBy: ['engine']
+  },
+  bessDegradationPct: {
+    sheet: 'INPUT_BESS', row: 16, col: 3,       // C16
+    label: 'Degradación %/año', type: 'percent',
+    default: 0.025, required: false,
+    section: 'BESS 2 ESPECIFICACIONES',
+    consumedBy: ['engine']
+  },
+  bessBackupReservePct: {
+    sheet: 'INPUT_BESS', row: 17, col: 3,       // C17
+    label: 'Reserva backup %', type: 'percent',
+    default: 0.0, required: false,
+    section: 'BESS 2 ESPECIFICACIONES',
+    consumedBy: ['engine']
+  },
+
+  // -- INPUT_BESS §3 INFORMACIÓN COMERCIAL ---------------------------------
+  bessCapexMxn: {
+    sheet: 'INPUT_BESS', row: 20, col: 3,       // C20
+    label: 'CAPEX MXN', type: 'number',
+    default: 0, required: false, unit: 'MXN',
+    section: 'BESS 3 COMERCIAL',
+    consumedBy: ['engine', 'finance']
+  },
+
+  // -- INPUT_BESS §4 PEAK SHAVING ------------------------------------------
+  bessLoadFactorFC: {
+    sheet: 'INPUT_BESS', row: 23, col: 3,       // C23
+    label: 'Factor de carga (F.C.)', type: 'number',
+    default: 0.57, required: false,
+    section: 'BESS 4 PEAK SHAVING',
+    consumedBy: ['engine']
+  },
+  bessPuntaWindowSummerH: {
+    sheet: 'INPUT_BESS', row: 24, col: 3,       // C24
+    label: 'Horas punta — verano', type: 'number',
+    default: 2.0, required: false, unit: 'h',
+    section: 'BESS 4 PEAK SHAVING',
+    consumedBy: ['engine']
+  },
+  bessPuntaWindowWinterH: {
+    sheet: 'INPUT_BESS', row: 25, col: 3,       // C25
+    label: 'Horas punta — invierno', type: 'number',
+    default: 4.0, required: false, unit: 'h',
+    section: 'BESS 4 PEAK SHAVING',
+    consumedBy: ['engine']
+  },
+};
+
+// ---------------------------------------------------------------------------
 // COMBINE — the single map. Writers and readers only touch INPUT_MAP.
 // ---------------------------------------------------------------------------
 var INPUT_MAP = {};
 (function _mergeMaps() {
-  var parts = [_MAP_PROJECT, _MAP_DESIGN, _MAP_INSTALL];
+  var parts = [_MAP_PROJECT, _MAP_DESIGN, _MAP_INSTALL, _MAP_BESS];
   for (var p = 0; p < parts.length; p++) {
     var src = parts[p];
     for (var k in src) {
