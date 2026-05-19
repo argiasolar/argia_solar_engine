@@ -26,7 +26,7 @@
 //   DB_VERSION uses YYYY.MM
 //     Bump when any *_DB or master table changes.
 //
-var ENGINE_VERSION = '2.3.1';
+var ENGINE_VERSION = '2.3.5';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default
