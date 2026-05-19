@@ -5,6 +5,18 @@
 // used by all calc functions.
 // =============================================================================
 
+// ---------------------------------------------------------------------------
+// resolveBessCoupling -- normalize the INPUT_DESIGN!C17 coupling value.
+// 'AC_COUPLED' (case/whitespace tolerant) -> 'AC_COUPLED'.
+// Anything else -- blank, unknown, null -> 'DC_COUPLED' (the safe default:
+// battery on the shared PV DC bus, no extra AC busbar contribution).
+// Pure function, no spreadsheet I/O, so it is directly unit-testable.
+// ---------------------------------------------------------------------------
+function resolveBessCoupling(raw) {
+  var v = String(raw || '').trim().toUpperCase();
+  return (v === 'AC_COUPLED') ? 'AC_COUPLED' : 'DC_COUPLED';
+}
+
 function readInputs(ss) {
   // -- INPUT_PROJECT -- via INPUT_MAP / readInput() --------------------------
   // Migrated from legacy INPUT_GENERAL col C on 2026-04-24 (Track A, Path C2).
@@ -57,6 +69,10 @@ function readInputs(ss) {
   const acVdropLimit     = readInput(ss, 'acVdropLimit');
   const powerFactor      = readInput(ss, 'powerFactor');
   const tempCoeffOverride= readInput(ss, 'tempCoeffVocOverride');
+
+  // BESS coupling (INPUT_DESIGN C17). Blank/unknown -> DC_COUPLED (the safe
+  // default: a battery on the shared PV DC bus, no extra AC busbar load).
+  const bessCoupling     = resolveBessCoupling(readInput(ss, 'bessCoupling'));
 
   const distCabinet      = readInput(ss, 'distCabinet');
   const distInverter     = readInput(ss, 'distInverter');
@@ -171,6 +187,7 @@ function readInputs(ss) {
 
     // Electrical design limits
     dcVdropLimit, acVdropLimit, powerFactor,
+    bessCoupling,
 
     // Distances (metres)
     distCabinet, distInverter, distAcProt, distGrid, groundingLen,

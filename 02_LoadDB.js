@@ -206,39 +206,16 @@ function loadNomConstants(ss) {
   return nom;
 }
 
+// ---------------------------------------------------------------------------
+// NOM LIMITS -- JS-only source of truth.
+// NOM limits are edited by the management team at release time, in code,
+// under test. There is deliberately no spreadsheet mirror: the engine reads
+// these values directly from buildNomLimitsDefaults() below. To change a
+// NOM limit, edit buildNomLimitsDefaults(), update the affected Phase/Tier
+// tests, and release.
+// ---------------------------------------------------------------------------
 function load61NomLimits(ss) {
-  var shName = '61M_NOM_LIMITS';
-  var sh = ss.getSheetByName(shName);
-  var map = {};
-
-  if (!sh) {
-    engineLog(ss, 'LoadDB', 'WARNING',
-      shName + ' mirror not found. Using built-in NOM defaults.');
-    return buildNomLimitsDefaults();
-  }
-
-  var data = sh.getDataRange().getValues();
-  var hdrs = data[0].map(function(h) { return String(h).trim(); });
-  var keyIdx     = hdrs.indexOf('LIMIT_KEY');
-  var defaultIdx = hdrs.indexOf('DEFAULT_VALUE');
-  var warnMaxIdx = hdrs.indexOf('VALUE_WARN_MAX');
-  var hardMaxIdx = hdrs.indexOf('VALUE_HARD_MAX');
-  var warnMinIdx = hdrs.indexOf('VALUE_WARN_MIN');
-  var hardMinIdx = hdrs.indexOf('VALUE_HARD_MIN');
-  var targetIdx  = hdrs.indexOf('VALUE_TARGET');
-
-  data.slice(1).forEach(function(row) {
-    var key = String(row[keyIdx] || '').trim();
-    if (!key) return;
-    map[key] = toNum(row[defaultIdx]) !== null ? toNum(row[defaultIdx]) : toNum(row[targetIdx]);
-    if (warnMaxIdx >= 0 && toNum(row[warnMaxIdx]) !== null) map[key + '_warn']    = toNum(row[warnMaxIdx]);
-    if (hardMaxIdx >= 0 && toNum(row[hardMaxIdx]) !== null) map[key + '_hard']    = toNum(row[hardMaxIdx]);
-    if (warnMinIdx >= 0 && toNum(row[warnMinIdx]) !== null) map[key + '_warnMin'] = toNum(row[warnMinIdx]);
-    if (hardMinIdx >= 0 && toNum(row[hardMinIdx]) !== null) map[key + '_hardMin'] = toNum(row[hardMinIdx]);
-  });
-
-  engineLog(ss, 'LoadDB', 'OK', '61_NOM_LIMITS loaded: ' + Object.keys(map).length + ' entries');
-  return map;
+  return buildNomLimitsDefaults();
 }
 
 function buildNomLimitsDefaults() {
@@ -256,6 +233,14 @@ function buildNomLimitsDefaults() {
     'conduit_fill_over2_conductors': 0.40, 'conduit_fill_2_conductors': 0.31, 'conduit_fill_1_conductor': 0.53,
     'transformer_margin_pct': 0.20, 'max_parallel_run_amps': 400,
     'project_thermography_delta_t_review_c': 15, 'project_thermography_delta_t_review_c_hard': 25,
+    // -- BESS limits (Increment 4a). Mirror of NOM_DB 61_NOM_LIMITS rows 20-25,
+    //    kept here as the JS source of truth. PROPOSED clearances pending PEC.
+    'bess_dc_conductor_current_factor': 1.25,
+    'bess_min_working_clearance_mm': 900,
+    'bess_fire_clearance_mm': 1000,
+    'bess_min_soc_default': 0.10,
+    'bess_max_soc_default': 0.90,
+    'bess_round_trip_efficiency_floor': 0.90,
   };
 }
 

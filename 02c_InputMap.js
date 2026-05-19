@@ -548,6 +548,17 @@ var _MAP_DESIGN = {
   },
 
   // 02 PARÁMETROS ELÉCTRICOS -------------------------------------------------
+  bessCoupling: {
+    sheet: SH.INPUT_DESIGN, row: 17, col: 3,    // C17
+    label: 'Acoplamiento batería', type: 'dropdown',
+    default: 'DC_COUPLED', required: false,
+    dropdown: ['DC_COUPLED', 'AC_COUPLED'],
+    section: '02 PARÁMETROS ELÉCTRICOS',
+    consumedBy: ['engine', 'mdc'],
+    notes: 'DC_COUPLED: battery shares the PV DC bus. AC_COUPLED: battery '
+         + 'has its own PCS with a separate AC circuit. Decides which '
+         + 'conductor runs the battery circuit sizing produces.'
+  },
   dcVdropLimit: {
     sheet: SH.INPUT_DESIGN, row: 18, col: 3,
     label: 'Límite caída DC', type: 'percent',

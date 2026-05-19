@@ -60,21 +60,17 @@ function addPhase8Tests(t, ss) {
                nom.bess.dcCurrentFactor >= 1.0);
 
   // === TEST 4: the underlying limit keys are in the limits map ===========
-  // Confirms the 61_NOM_LIMITS rows actually loaded (not just defaults).
-  // INFO-level: if the mirror is stale these will be undefined, and the
-  // loader fallback covered it -- still worth surfacing.
+  // NOM limits are JS-sourced (buildNomLimitsDefaults) -- there is no
+  // spreadsheet mirror. All 6 bess_ keys must therefore be present in
+  // nom.limits; if any is missing, nom.bess fell back to its || literal
+  // and the JS defaults table is incomplete.
   var keys = ['bess_dc_conductor_current_factor', 'bess_min_working_clearance_mm',
               'bess_fire_clearance_mm', 'bess_min_soc_default',
               'bess_max_soc_default', 'bess_round_trip_efficiency_floor'];
-  var foundInMirror = 0;
+  var foundInTable = 0;
   for (var i = 0; i < keys.length; i++) {
-    if (nom.limits[keys[i]] !== undefined) foundInMirror++;
+    if (nom.limits[keys[i]] !== undefined) foundInTable++;
   }
-  t.info('Phase8: bess limit keys present in 61M mirror',
-         foundInMirror + ' of ' + keys.length);
-  if (foundInMirror < keys.length) {
-    t.info('Phase8: NOTE',
-           'Some bess_ keys not in 61M_NOM_LIMITS mirror -- loader used '
-           + 'built-in defaults. Re-mirror 61_NOM_LIMITS into MASTER_DB.');
-  }
+  t.assert('all 6 bess_ keys present in JS NOM limits table',
+           keys.length, foundInTable);
 }
