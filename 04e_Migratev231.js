@@ -321,7 +321,7 @@ function _v231_buildWaterfallSheet(ss) {
   // So the true Capacidad tariff rate is C23/C18 — NOT C23/C21. Dividing by
   // C21 (Demanda Facturable) inflates the rate and overstates the saving.
   // Verified against TESTPROJ_PEAK_001: C23/C18 -> 32160.40 (lock). C23/C21
-  // gave 34170.43 (wrong). See PHASE_3_DESIGN.md.
+  // gave 34170.43 (wrong).
   monthRow(30, 'Ahorro Capacidad (MXN)',
     function(c){
       var capRate = '(CFE_SIMULATION!' + c + '23/CFE_SIMULATION!' + c + '18)';

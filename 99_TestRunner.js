@@ -108,7 +108,7 @@ function runTests() {
 
   // -------------------------------------------------------------------------
   // Tier 5 -- Phase 1 CFE export rule (v2.1.0)
-  // Added 2026-05-15. See 99b_TestRunner_Phase1.gs and PHASE_1_DESIGN.md.
+  // Added 2026-05-15. See 99b_TestRunner_Phase1.gs.
   // Pure JS unit tests for calcCfeBillWithPv — no spreadsheet I/O.
   // -------------------------------------------------------------------------
   try { addPhase1Tests(t, ss); }
@@ -116,7 +116,7 @@ function runTests() {
 
   // -------------------------------------------------------------------------
   // Tier 6 -- Phase 1.2 PF threshold fix (v2.1.2)
-  // Added 2026-05-15. See 99c_TestRunner_Phase1_2.gs and PHASE_1_2_DESIGN.md.
+  // Added 2026-05-15. See 99c_TestRunner_Phase1_2.gs.
   // Bug fix: PF threshold was hardcoded at 0.90; per Acuerdo A/073/2023 it
   // is 0.95 for ≥1MW customers, 0.97 after April 8, 2026 (Código de Red).
   // Verified against Culligan CFE bills.
@@ -126,7 +126,7 @@ function runTests() {
 
   // -------------------------------------------------------------------------
   // Tier 7 -- Phase 1.4 mode-aware cascade + FP threshold integration (v2.1.4)
-  // Added 2026-05-15. See 99d_TestRunner_Phase1_4.gs and PHASE_1_4_DESIGN_v2.md.
+  // Added 2026-05-15. See 99d_TestRunner_Phase1_4.gs.
   // CHANGES: SE/FN cascade now intermedia-only (was proportional in v2.1.0).
   // FN/SE v2.1.0 lock targets SUPERSEDED. NM unchanged.
   // -------------------------------------------------------------------------
@@ -135,7 +135,7 @@ function runTests() {
 
   // -------------------------------------------------------------------------
   // Tier 8 -- Phase 2 BESS impact (v2.2.0)
-  // Added 2026-05-15. See 99e_TestRunner_Phase2.gs and PHASE_2_DESIGN_v2.md.
+  // Added 2026-05-15. See 99e_TestRunner_Phase2.gs.
   // SCOPE: SELF_CONSUMPTION_MAX strategy only. PEAK_SHAVING and HYBRID
   // deferred to v2.3.0 pending 15-min interval data.
   // -------------------------------------------------------------------------
@@ -144,7 +144,7 @@ function runTests() {
 
   // -------------------------------------------------------------------------
   // Tier 9 -- Phase 3 PEAK_SHAVING strategy (v2.3.0)
-  // Added 2026-05-18. See 99f_TestRunner_Phase3.gs and PHASE_3_DESIGN.md.
+  // Added 2026-05-18. See 99f_TestRunner_Phase3.gs.
   // SCOPE: PEAK_SHAVING strategy (Capacidad + Distribución verifiable tiers,
   // Variable estimated tier). HYBRID remains deferred to v2.4.0.
   // -------------------------------------------------------------------------

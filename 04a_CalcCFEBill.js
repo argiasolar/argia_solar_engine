@@ -21,14 +21,13 @@
 //   - MEDICION_NETA            Legacy net metering. JS impl uses simple
 //                              proportional subtraction (no period-shifting).
 //                              Will DISAGREE with the live engine in this
-//                              mode — see PHASE_1_DESIGN.md.
+//                              mode (known, documented disagreement).
 //   - FACTURACION_NETA         New CFE rule. Export credited at fixed price.
 //   - SIN_EXPORTACION          Zero export. Surplus PV is lost.
 //
 // VERIFICATION:
 //   v2.0.4: no-PV path matches live engine to within ~0.001 MXN.
-//   v2.1.0: PV scenarios verified by Python recompute, see Phase 1 lock
-//   targets in PHASE_1_DESIGN.md.
+//   v2.1.0: PV scenarios verified by Python recompute (Phase 1 lock targets).
 // =============================================================================
 
 // Interconnection mode constants. Exported so callers can use named refs
@@ -294,7 +293,6 @@ function calcCfeBillWithPv(inp, tar, pv, options) {
   //     up to load gets consumed). Designer can override down to model curtailment.
   //   - FACTURACION_NETA: default 70% if blank (industry standard for
   //     daytime-load misalignment when system exports).
-  // See PHASE_1_4_DESIGN_v2.md Q2/Q3 for rationale.
   var selfPct;
   if (mode === CFE_MODE.MEDICION_NETA) {
     selfPct = 1.0;
@@ -313,7 +311,6 @@ function calcCfeBillWithPv(inp, tar, pv, options) {
   //     any leftover is wasted (SE) or exported as cash credit (FN). Base and
   //     punta unchanged. Rationale: PV produces during intermedia hours
   //     (~6am-6pm), so intermedia-only displacement reflects physical reality.
-  //     See PHASE_1_4_DESIGN_v2.md Q1.
   var selfConsumed, exported, inpAdj;
   if (mode === CFE_MODE.MEDICION_NETA) {
     selfConsumed = Math.min(pv.monthlyKwh * selfPct, totalLoad);
@@ -378,7 +375,7 @@ function calcCfeBillWithPv(inp, tar, pv, options) {
   // Final = pre-export bill minus export credit. Credit reduces what
   // the customer pays. Negative result is theoretically possible if
   // export credit > bill; we don't clip (the legacy engine may; this
-  // is documented in PHASE_1_DESIGN.md as a known disagreement).
+  // is a known, documented disagreement).
   var billPreExport = billDetail.total;
   var total = billPreExport - exportCredit;
 
@@ -434,7 +431,6 @@ function calcCfeBillWithPvAnnual(monthlyInputs, tar, pv, options) {
 //   + Distribución) plus an estimated energy load-shift tier (Variable).
 // HYBRID remains deferred to v2.4.0 — combining both strategies on one battery
 // requires interval data to avoid double-counting shared throughput/SoC.
-// See PHASE_3_DESIGN.md.
 // =============================================================================
 
 /**
@@ -586,7 +582,7 @@ function calcBessImpact(inp, tar, pv, bess, options) {
   // carries the × rtePct factor. Multiplying again double-counted round-trip
   // losses, understating BESS savings by ~(1-rtePct) ≈ 10%. Verified via
   // Python recompute against SYNTH-001: FN Jan 9933.98 → 11037.76 (+11.1%).
-  // See CHANGELOG v2.3.0 and PHASE_3_DESIGN.md.
+  // See CHANGELOG v2.3.0.
   var valuePerCapturedKwh = blendedAvoidedTariff - exportPrice;
   var pvCaptureValueMxn = capturedKwh * valuePerCapturedKwh;
 
@@ -675,7 +671,7 @@ function _daysInMonthByIndex(i) {
 //   Year-1 savings are smaller than steady-state. Both are reported; Year-1 is
 //   the headline (conservative, protects against first-bill surprise).
 //
-// Verified via Python recompute against TESTPROJ_PEAK_001. See PHASE_3_DESIGN.md.
+// Verified via Python recompute against TESTPROJ_PEAK_001.
 // =============================================================================
 
 /**

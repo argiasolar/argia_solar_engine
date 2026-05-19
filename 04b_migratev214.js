@@ -16,7 +16,7 @@
 // CALLER: Run once after deploying v2.1.4 code to an Apps Script project.
 //   migrateToV214();   // operates on active spreadsheet
 //
-// See PHASE_1_4_DESIGN_v2.md for full design rationale.
+// Design rationale documented inline below.
 // =============================================================================
 
 function migrateToV214(ss) {

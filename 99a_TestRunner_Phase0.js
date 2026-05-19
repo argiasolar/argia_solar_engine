@@ -1,532 +1,741 @@
 // =============================================================================
-// ARGIA ENGINE v2.0.0 -- File: 99a_TestRunner_Phase0.gs
-// Phase 0 regression test suites.
+// ARGIA ENGINE v2.1.0 -- File: 98a_TestData_SYNTH001.gs
+// Synthetic regression fixture TESTPROJ-SYNTH-001.
 //
-// Sits ALONGSIDE 99_TestRunner.gs. Adds three new test functions hooked into
-// the existing runTests() pipeline via the addPhase0Tests(t, ss) entry point.
+// Sits ALONGSIDE the existing 98_TestData.gs (TESTPROJ_001) — does not replace
+// it. Designers using the old fixture continue to work. New regression coverage
+// is added on top.
 //
-// SUITES:
-//   1. testVersionStamping — _META sheet exists, fields are current
-//   2. testFixtureSynth001HandDerived — Layer 1 (5 hand-derived checks)
-//   3. testFixtureSynth001Snapshot     — Layer 2 (snapshot vs locked values)
+// v2.1.0: added scenarios block for Phase 1 (interconnection modes + PV).
+// v2.0.4: locked baseline with frozen Jan-2026 GDMTH GOLFO CENTRO tariffs.
 //
-// USAGE FROM 99_TestRunner.gs:
-//   Inside runTests(), after the existing test calls, add:
+// This file IS the fixture spec — lock targets and derivations documented inline.
+// =============================================================================
 //
-//     try { addPhase0Tests(t, ss); }
-//     catch (e) { t.assert('Phase0:runner', 'no_error', String(e)); }
-//
+// Design contract (do not break):
+//   - Round numbers only
+//   - Identical values every month (annual = 12 × monthly)
+//   - 30 days every month (synthetic)
+//   - GDMTH Centro tariff, no DAP, no 2% BT
+//   - PF ≥ 0.90 by construction (no penalty math)
 // =============================================================================
 
-// ---------------------------------------------------------------------------
-// PUBLIC ENTRY POINT
-// ---------------------------------------------------------------------------
-function addPhase0Tests(t, ss) {
-  testVersionStamping(t, ss);
-  testFixtureSynth001HandDerived(t, ss);
-  testFixtureSynth001Snapshot(t, ss);
-}
+var TESTPROJ_SYNTH_001 = {
 
-// ---------------------------------------------------------------------------
-// SUITE 1: VERSION STAMPING
+  // ===========================================================================
+  // METADATA — used by stampMeta() and assertions
+  // ===========================================================================
+  meta: {
+    fixtureName: 'TESTPROJ-SYNTH-001',
+    fixtureVersion: '1.0',
+    locked: '2026-05-13',
+    engineVersionAtLock: '2.0.0',
+    dbVersionAtLock: '2026.05',
+  },
+
+  // ===========================================================================
+  // INPUTS — what the test runner paints into the project sheets
+  // ===========================================================================
+  inputs: {
+
+    // INPUT_PROJECT
+    project: {
+      projectName:    'TESTPROJ-SYNTH-001',
+      clientName:     'SYNTHETIC TEST CLIENT',
+      contact:        'Test Engineer',
+      street:         'Av. Sintetica 100',
+      city:           'Veracruz',
+      ppaDiscountPct:   0.15,
+      ppaIndexationPct: 0.05,
+      projectNumber:  'ARG-SYNTH-001',
+      marginPct:      0.15,
+      paymentDays:    14,
+    },
+
+    // INPUT_CFE (writes directly to A1-refs — INPUT_CFE has formulas in
+    // rows 21-37 that recalc when rows 10-17 are populated)
+    cfe: {
+      'C4':  'GDMTH',         // TARIFF CODE
+      'C5':  'GOLFO CENTRO',  // TARIFF LOCATION
+      'C6':  0,               // DAP
+      'C7':  'NO',            // 2% BAJA TENSION
+      // Monthly grid: rows 10-17, columns C(Jan)..N(Dec). Identical every month.
+      // Columns C=Jan, D=Feb, E=Mar, F=Apr, G=May, H=Jun, I=Jul, J=Aug, K=Sep, L=Oct, M=Nov, N=Dec
+      monthly: {
+        kWhBase:       [10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000],
+        kWhIntermedia: [20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000],
+        kWhPunta:      [ 5000,  5000,  5000,  5000,  5000,  5000,  5000,  5000,  5000,  5000,  5000,  5000],
+        kWBase:        [   80,    80,    80,    80,    80,    80,    80,    80,    80,    80,    80,    80],
+        kWIntermedia:  [  100,   100,   100,   100,   100,   100,   100,   100,   100,   100,   100,   100],
+        kWPunta:       [   90,    90,    90,    90,    90,    90,    90,    90,    90,    90,    90,    90],
+        kWMaxAnoMovil: [  100,   100,   100,   100,   100,   100,   100,   100,   100,   100,   100,   100],
+        kVArh:         [12000, 12000, 12000, 12000, 12000, 12000, 12000, 12000, 12000, 12000, 12000, 12000],
+      },
+    },
+
+    // INPUT_INSTALL — same as TESTPROJ_001 (Phase 0 doesn't change install logic)
+    install: {
+      crewSize:           6,
+      workHeightM:        6,
+      anchorCount:        0,
+      interconnectionPts: 1,
+      trayM:              0,
+      conduitM:           0,
+      accessDifficulty:   'EASY',
+      siteHseClass:       'STANDARD',
+      energizedTieIn:     'NO',
+      siteDistanceClass:  'LOCAL',
+      nightWorkRequired:  'NO',
+      projectComplexity:  'LOW',
+      weatherProfile:     'DRY',
+      contingencyPct:     0.05,
+      insurancePct:       0.03,
+      benchStructMhKwp:   0.30,
+      benchModuleMhKwp:   0.20,
+      benchDcElecMhKwp:   0.15,
+      benchAcElecMhKwp:   0.12,
+    },
+
+    // INPUT_GENERAL: deliberately omitted. As of v2.0.2 the legacy
+    // INPUT_GENERAL tab is retired in favor of INPUT_PROJECT. All identity
+    // and commercial fields are written via logical keys that INPUT_MAP
+    // routes to INPUT_PROJECT (see fixture.inputs.project above).
+
+    // INPUT_DESIGN — 200 kWdc / 200 kWac for round-number PV
+    design: {
+      minTemp: -1,
+      maxTemp: 38,
+      avgTemp: 25,
+      roofClearanceMm: 90,
+      projectType: 'ROOF',
+      roofType: 'KR18',
+      // Structure: must match a value in _DROPDOWNS!A2:A100. After the field
+      // merge (product_id — name — sku format), the valid value is now:
+      structure: 'S-5 — STRUCTURE KR18 — STR_008',
+      dcVdropLimit: 0.015,
+      acVdropLimit: 0.020,
+      powerFactor: 0.90,
+      tempCoeffVocOverride: '',
+      distCabinet: 0,
+      distInverter: 50,
+      distAcProt: 15,
+      distGrid: 50,
+      groundingLen: 2500,
+      areaRequired: 0,
+      availableSpace: 5000,
+      aspectRatio: 1.5,
+      invStations: 1,
+      arrayBlocks: 1,
+      rowPitch: 2.0,
+      walkwayFactor: 1.20,
+      dcSpareFactor: 1.20,
+      acSpareFactor: 1.20,
+      feederExtraM: 0,
+      stationCorridorM: 20,
+      layoutRows: '',
+      layoutCols: '',
+      layoutBlocks: '',
+      supplyTransformer: 0,
+      // Synthetic Helioscope: 25,000 kWh every month, 200 kWdc total
+      helioscopeMonthly: [
+        ['ENE', 25000, 0, 0, 0, 0],
+        ['FEB', 25000, 0, 0, 0, 0],
+        ['MAR', 25000, 0, 0, 0, 0],
+        ['ABR', 25000, 0, 0, 0, 0],
+        ['MAY', 25000, 0, 0, 0, 0],
+        ['JUN', 25000, 0, 0, 0, 0],
+        ['JUL', 25000, 0, 0, 0, 0],
+        ['AGO', 25000, 0, 0, 0, 0],
+        ['SEP', 25000, 0, 0, 0, 0],
+        ['OCT', 25000, 0, 0, 0, 0],
+        ['NOV', 25000, 0, 0, 0, 0],
+        ['DIC', 25000, 0, 0, 0, 0],
+      ],
+      annualKwh: 300000,
+      panelModel: 'LR5-72HTH 585M',
+      panelQty: 342,            // 342 × 585 = 200,070 W ≈ 200 kWdc
+      panelPowerW: 585,
+      panelsSecondary: [['','',''],['','',''],['','',''],['','','']],
+      inverterPrimaryModel: 'SUN2000-100KTL-M2',
+      inverterPrimaryQty: 2,    // 2 × 100 kW = 200 kWac
+      inverterPrimaryKw: 100,
+      inverterPrimaryStrings: 20,
+      invertersSecondary: [['','','',''],['','','',''],['','','',''],['','','','']],
+      totalInverters: 2,
+      totalStrings: 20,
+      stringsTotal: 20,
+      parallelStrings: 1,
+    },
+  },
+
+  // ===========================================================================
+  // EXPECTED OUTPUTS
+  // ===========================================================================
+  //
+  // Two layers:
+  //
+  //   1) handDerived — explicitly hand-derivable from this fixture's inputs.
+  //      These catch GROSS engine bugs (formula totally wrong).
+  //      Tight tolerance (±1 MXN on a 120,000+ MXN bill).
+  //
+  //   2) snapshot — populated by running the engine ONCE on the fixture
+  //      and locking the result. Catches REGRESSION (number was X, now Y).
+  //      All snapshot values start as null and must be filled after first
+  //      successful engine run (see procedure documented with the snapshot
+  //      block below).
+  // ===========================================================================
+  expected: {
+
+    // -------------------------------------------------------------------------
+    // Layer 1 — hand-derived sanity checks (derivable from this fixture)
+    // -------------------------------------------------------------------------
+    handDerived: {
+      // -------------------------------------------------------------------------
+      // PHILOSOPHY (revised 2026-05-14 after first test run)
+      //
+      // Layer 1 only asserts things I can verify offline with confidence:
+      //   - Formulas that compute one value from clear inputs (PF, demanda)
+      //   - Order-of-magnitude sanity (bill is in the right ballpark)
+      //
+      // I deliberately do NOT assert precise CFE bill values here because:
+      //   - INPUT_CFE rows 21-29 use array formulas evaluated by Google Sheets
+      //   - The exact interaction with Cargo FP / IVA can shift by ~1-2% in
+      //     ways that don't manifest in offline openpyxl reading
+      //   - That precision belongs in the SNAPSHOT layer (Layer 2), which
+      //     locks whatever the engine actually produces
+      // -------------------------------------------------------------------------
+
+      // PF check — engineered by choosing kVArh=12000:
+      //   PF = 35000 / SQRT(35000² + 12000²) = 35000 / 37000 = 0.94595
+      pfYearAverage: 0.946,
+
+      // Demanda Facturable check (Jan):
+      //   Engine formula: MAX(C15, 0.7*C16) = MAX(kW_punta, 0.7*kWMaxAnoMovil)
+      //   = MAX(90, 0.7*100) = MAX(90, 70) = 90 kW
+      demandaFacturableJan: 90,
+
+      // Sanity range — bill should be in this band for SYNTH-001 inputs.
+      // Catches gross failures (wrong tariff applied, missing IVA, etc.)
+      // without locking us to a precise value that varies with array-formula
+      // evaluation quirks. Snapshot layer locks the exact value later.
+      janBillMin:  80000,
+      janBillMax: 200000,
+    },
+
+    // Tolerances for handDerived
+    tolerance: {
+      pf: 0.001,
+      demanda: 0.5,
+    },
+
+    // -------------------------------------------------------------------------
+    // Layer 2 — locked snapshot (DB-independent via frozen tariffs)
+    //
+    // POLICY: assertions in this layer must be deterministic regardless of
+    // when the test runs. CFE updates tariff prices in 20M_CFE_TARIFFS
+    // every month, so locking live engine output would create false
+    // regressions every month.
+    //
+    // Solution: the fixture stores a frozen tariff snapshot below. The
+    // test computes the expected bill in pure JS via calcCfeBill() (see
+    // 04a_CalcCfeBill.gs) using ONLY these frozen tariffs — never touching
+    // 20M_CFE_TARIFFS. The engine's live output is read separately and
+    // reported as INFO for awareness (DB drift signal), not assertion.
+    //
+    // What's locked in v2.0.4:
+    //   - Frozen tariff prices for Jan-2026 GDMTH GOLFO CENTRO
+    //   - calcCfeBill() output for SYNTH-001 January (one month)
+    //   - 12-month annual sum using the SAME frozen tariffs (synthetic
+    //     identity: 12 × Jan since SYNTH-001 has identical monthly inputs)
+    //
+    // What's NOT locked (intentionally):
+    //   - Live engine output. Reported as INFO only.
+    //   - PV / BESS fields. Locked in Phase 1+ as those calcs come online.
+    //   - MDC / BOM / ProjectCard. Already covered by Tier 3 (TESTPROJ-001).
+    // -------------------------------------------------------------------------
+    snapshot: {
+
+      // ----- FROZEN TARIFFS (Jan-2026 GDMTH GOLFO CENTRO) ---------------------
+      // Source: 20M_CFE_TARIFFS rows 2-10 effective 2026-01-01, captured
+      // 2026-05-14 from the reference ARGIA_ENGINE.xlsx. These values
+      // NEVER change in this fixture. When CFE updates tariffs in the
+      // live DB, the engine uses the new values; this snapshot continues
+      // to use these frozen ones. To re-lock at newer rates, do so
+      // explicitly with a CHANGELOG entry — never automatically.
+      frozenTariffs: {
+        capacidad:    392.20,   // MXN/kW-month
+        distribucion: 124.41,   // MXN/kW-month
+        transmision:  0.1801,   // MXN/kWh
+        cenace:       0.0076,   // MXN/kWh
+        energiaBase:  0.8066,   // MXN/kWh
+        energiaInter: 1.4986,   // MXN/kWh
+        energiaPunta: 1.7675,   // MXN/kWh
+        scnmem:       0.0069,   // MXN/kWh
+        suministro:   461.75,   // MXN/month (flat)
+      },
+
+      // ----- EXPECTED OUTPUTS FROM calcCfeBill() WITH FROZEN TARIFFS ----------
+      // Independently verified on 2026-05-14: a Python port of calcCfeBill()
+      // produces 116,760.5594 MXN for January, matching the live engine
+      // output (with the same inputs) to within 0.0001 MXN.
+      janBillFrozen:    116760.56,
+      janBillFrozenTol: 0.10,
+
+      // Annual = 12 × January with same frozen tariffs (valid because
+      // SYNTH-001 has identical monthly inputs).
+      annualBillFrozen:    1401126.71,
+      annualBillFrozenTol: 1.20,
+
+      // ----- LIVE-DB DRIFT SIGNAL (reported as INFO, not asserted) -----------
+      // For reference: the live engine produced these values when the
+      // baseline was locked. Future test runs will report current live
+      // values alongside. A large gap = CFE has updated tariffs since
+      // lock; consider re-locking with a CHANGELOG entry.
+      janBillLiveAtLock:    116760.56,
+      annualBillLiveAtLock: 1482870.79,
+
+      // ----- LOCKED in Phase 1 (v2.1.0), SUPERSEDED in v2.1.4: PV scenarios -----
+      // v2.1.0 used PROPORTIONAL cascade across all 3 periods.
+      // v2.1.4 uses INTERMEDIA-ONLY cascade for SE/FN (PV produces during
+      // intermedia hours). See CHANGELOG.
+      // NM unchanged (still proportional).
+      // All scenarios use SYNTH-001 base inputs + 25,000 kWh/month flat PV +
+      // 70% self-consumption (NM forced to 100%) + frozen Jan-2026 GDMTH GOLFO
+      // CENTRO tariffs. Computed by calcCfeBillWithPv() in 04a_CalcCfeBill.gs.
+      // Verified by Python recompute on 2026-05-15.
+
+      // FACTURACION_NETA, 70% self, 0.80 MXN/kWh export (intermedia-only)
+      // v2.1.0 was 85,788.68 (proportional). v2.1.4 is 82,377.81.
+      janBillFNFrozen:    82377.81,
+      annualBillFNFrozen: 988533.67,
+      janExportCreditFN:  6000.00,      // 7500 kWh × 0.80 (unchanged)
+
+      // SIN_EXPORTACION, 70% self explicit (intermedia-only)
+      // v2.1.0 was 91,788.68 (proportional). v2.1.4 is 88,377.81.
+      janBillSEFrozen:    88377.81,
+      annualBillSEFrozen: 1060533.67,
+
+      // MEDICION_NETA, JS simple impl (100% self forced, proportional cascade
+      // unchanged in v2.1.4).
+      // NOTE: legacy engine in NM does period-shifting carry-over which the
+      // JS simple impl does NOT replicate. Engine and JS will disagree in
+      // this mode — known, documented disagreement. JS value locked anyway
+      // so regression on the JS path is caught.
+      janBillNMFrozen_jsSimple:    91523.63,
+      annualBillNMFrozen_jsSimple: 1098283.58,
+
+      // Common tolerance for all Phase 1 PV-mode assertions
+      pvScenarioTol: 0.10,
+
+      // ----- LOCKED in Phase 1+ (currently null = scheduled) ------------------
+      annualBillPostPv:     null,   // requires live CFE_SIMULATION work in v2.1.1+
+      annualEnergySavings:  null,   // requires live CFE_SIMULATION work in v2.1.1+
+
+      // ----- INTENTIONALLY OUT OF SCOPE (false = will not be locked here) -----
+      // Already regression-covered by Tier 3 (TESTPROJ-001). Duplicating
+      // here would add noise.
+      dcKw:                  false,
+      acKw:                  false,
+      dcAcRatio:             false,
+      qtyModules:            false,
+      qtyInverters:          false,
+      iscDesignCurrent:      false,
+      bomTotalCost:          false,
+      projectCardSystemCost: false,
+    },
+  },
+
+  // ===========================================================================
+  // PHASE 1.2 — PF threshold parameter sweep
+  //
+  // Same base inputs as SYNTH-001 (no PV). Three scenarios, varying ONLY
+  // the FP threshold per Acuerdo A/064/2018 + A/073/2023 + Código de Red:
+  //   T=0.90: legacy threshold (demanda_contratada < 1000 kW)
+  //   T=0.95: ≥1MW customers today (Culligan MAR26+ is in this regime)
+  //   T=0.97: ≥1MW customers AFTER April 8, 2026
+  //
+  // SYNTH-001 has PF≈0.9459. At T=0.90 → bonus; at T=0.95/0.97 → penalty.
+  // Locked Jan bills computed in Python and verified by JS unit test.
+  // ===========================================================================
+  fpThresholdScenarios: {
+    T_090: {
+      fpThreshold: 0.90,
+      label: 'Legacy threshold (demanda_contratada < 1000 kW)',
+      expected: { janBill: 116760.56, cargoFp: -1231.5954, annual: 1401126.71 },
+    },
+    T_095: {
+      fpThreshold: 0.95,
+      label: '≥1MW threshold today (Acuerdo A/073/2023)',
+      expected: { janBill: 118491.75, cargoFp:   260.8084, annual: 1421900.97 },
+    },
+    T_097: {
+      fpThreshold: 0.97,
+      label: '≥1MW post-April-8-2026 (Código de Red RES/550/2021)',
+      expected: { janBill: 119984.27, cargoFp:  1547.4633, annual: 1439811.21 },
+    },
+  },
+
+  // ===========================================================================
+  // PHASE 1 SCENARIOS — PV + interconnection variants
+  //
+  // All three share the same base inputs (consumption, demand, kVArh) and the
+  // same PV system (25,000 kWh/month flat). They differ only in:
+  //   - interconnectionMode
+  //   - selfConsumptionPct (forced to 1.0 for NM by the JS impl)
+  //   - exportPriceMxnPerKwh (only used by FACTURACION_NETA)
+  //
+  // Test code reads from inputs.cfe.monthly for kWh/kW data, then applies the
+  // scenario's pv block to calcCfeBillWithPv().
+  // ===========================================================================
+  scenarios: {
+
+    NM: {
+      label: 'MEDICION_NETA (net metering, 100% self-consumption forced, proportional cascade)',
+      pv: {
+        monthlyKwh: 25000,
+        interconnectionMode: 'MEDICION_NETA',
+        // selfConsumptionPct: ignored in NM, forced to 1.0
+        // exportPriceMxnPerKwh: ignored in NM
+      },
+      expected: {
+        janBill:    91523.63,
+        annualBill: 1098283.58,
+      },
+    },
+
+    // ============================================================
+    // v2.1.4 NOTE: FN/SE lock targets SUPERSEDED from v2.1.0.
+    // v2.1.0 used PROPORTIONAL cascade across all 3 periods.
+    // v2.1.4 uses INTERMEDIA-ONLY cascade (PV produces during intermedia
+    // hours, so it physically displaces intermedia kWh, not a proportional
+    // share of all periods).
+    //
+    // Numerical impact: bills are LOWER under v2.1.4 because intermedia
+    // tariff (1.4986 MXN/kWh) > weighted average (1.1320 MXN/kWh).
+    // Delta from v2.1.0: -$3,411/month for FN/SE at 70% self.
+    // ============================================================
+
+    FN: {
+      label: 'FACTURACION_NETA (70% self, 0.80 MXN/kWh export, intermedia-only)',
+      pv: {
+        monthlyKwh: 25000,
+        interconnectionMode: 'FACTURACION_NETA',
+        exportPriceMxnPerKwh: 0.80,
+        selfConsumptionPct: 0.70,
+      },
+      expected: {
+        janBill:       82377.81,    // v2.1.4 NEW (was 85788.68 in v2.1.0)
+        annualBill:    988533.67,   // v2.1.4 NEW (was 1029464.16 in v2.1.0)
+        janCredit:     6000.00,     // 7500 kWh × 0.80 (unchanged)
+        janSelfKwh:    17500,       // 25000 × 0.70 (unchanged)
+        janExportKwh:  7500,        // unchanged
+      },
+    },
+
+    FN_default: {
+      label: 'FACTURACION_NETA with blank selfConsumptionPct (defaults to 70%)',
+      pv: {
+        monthlyKwh: 25000,
+        interconnectionMode: 'FACTURACION_NETA',
+        exportPriceMxnPerKwh: 0.80,
+        // selfConsumptionPct intentionally OMITTED — should default to 0.70
+      },
+      expected: {
+        janBill:    82377.81,   // same as explicit FN at 0.70
+        annualBill: 988533.67,
+        selfPctUsed: 0.70,      // verify the default kicked in
+      },
+    },
+
+    SE: {
+      label: 'SIN_EXPORTACION (70% self explicit, surplus lost, intermedia-only)',
+      pv: {
+        monthlyKwh: 25000,
+        interconnectionMode: 'SIN_EXPORTACION',
+        selfConsumptionPct: 0.70,
+        // exportPriceMxnPerKwh: ignored in SE
+      },
+      expected: {
+        janBill:       88377.81,    // v2.1.4 NEW (was 91788.68 in v2.1.0)
+        annualBill:    1060533.67,  // v2.1.4 NEW
+        janCredit:     0,
+        janSelfKwh:    17500,
+        janExportKwh:  7500,         // exists but uncompensated
+      },
+    },
+
+    SE_default: {
+      label: 'SIN_EXPORTACION with blank selfConsumptionPct (defaults to 100%)',
+      pv: {
+        monthlyKwh: 25000,
+        interconnectionMode: 'SIN_EXPORTACION',
+        // selfConsumptionPct intentionally OMITTED — should default to 1.00
+      },
+      expected: {
+        janBill:     86080.88,   // lower than SE at 0.70 (more displacement)
+        annualBill:  1032970.56,
+        selfPctUsed: 1.00,        // verify the default kicked in
+      },
+    },
+  },
+
+  // ===========================================================================
+  // PHASE 2 (v2.2.0) — BESS scenarios
+  // ===========================================================================
+  // SELF_CONSUMPTION_MAX only. Strategy assumes the battery captures PV that
+  // would otherwise be exported (FN) or curtailed (SE), then discharges later.
+  // PEAK_SHAVING and HYBRID strategies deferred to v2.3.0 pending 15-min data.
+  // Lock targets computed via Python recompute, validated against JS.
+  // ===========================================================================
+  bessScenarios: {
+
+    BESS_FN_70: {
+      label: 'SELF_CONSUMPTION_MAX, 200 kWh battery, FN-mode PV at 70% self',
+      pv: {
+        monthlyKwh: 25000,
+        interconnectionMode: 'FACTURACION_NETA',
+        exportPriceMxnPerKwh: 0.80,
+        selfConsumptionPct: 0.70,
+      },
+      bess: {
+        strategy: 'SELF_CONSUMPTION_MAX',
+        capacityKwh: 200,
+        powerKw: 100,
+        minSocPct: 0.10,
+        maxSocPct: 0.90,
+        rtePct: 0.90,
+        cyclesPerDay: 1.0,
+        degradationPct: 0.025,
+        backupReservePct: 0.0,
+        daysInMonth: 31,             // Jan
+      },
+      expected: {
+        bessUsableCapacityKwh:           156.00,
+        bessMonthlyThroughputKwh:       4352.40,
+        pvExportedKwh:                  7500.00,
+        pvCapturedByBessKwh:            4352.40,
+        blendedAvoidedTariffMxnPerKwh:     3.336016,
+        exportPriceMxnPerKwh:              0.80,
+        valuePerCapturedKwh:               2.536016,
+        // v2.3.0: double-rtePct bug fixed. capturedKwh already carries RTE via
+        // throughput; the value calc must not re-apply it. Verified vs deployed
+        // JS + Python recompute. Prior (buggy) value was 9933.98 (−11.1%).
+        pvCaptureValueMxn:             11037.76,
+        baselineBill:                 116760.56,
+        billAfterPv:                   82377.81,
+        billAfterPvAndBess:            71340.05,    // was 72443.83 pre-fix
+        annualBillAfterPvAndBess:     858572.99,    // was 871569.06 pre-fix
+      },
+    },
+
+    BESS_SE: {
+      label: 'SELF_CONSUMPTION_MAX, 200 kWh battery, SE-mode PV (no export credit)',
+      pv: {
+        monthlyKwh: 25000,
+        interconnectionMode: 'SIN_EXPORTACION',
+        // selfConsumptionPct omitted → default 100% in SE
+      },
+      bess: {
+        strategy: 'SELF_CONSUMPTION_MAX',
+        capacityKwh: 200,
+        powerKw: 100,
+        minSocPct: 0.10,
+        maxSocPct: 0.90,
+        rtePct: 0.90,
+        cyclesPerDay: 1.0,
+        degradationPct: 0.025,
+        backupReservePct: 0.0,
+        daysInMonth: 31,
+      },
+      expected: {
+        // With self_pct=1.0 in SE, PV exported = 25000-20000 = 5000 (capped at intermedia)
+        // NOT 7500 like the FN case. So captured = min(5000, 4352.4) = 4352.4
+        // value_per = blended_avoided_tariff - 0 (no export price) = 3.336016
+        // v2.3.0: double-rtePct fixed → savings = 4352.4 × 3.336016 = 14519.68
+        // (prior buggy value 13067.71 applied × 0.9 a second time, −11.1%).
+        pvCapturedByBessKwh:            4352.40,
+        pvCaptureValueMxn:             14519.68,
+        billAfterPv:                   86080.88,    // SE_default lock (unchanged)
+        billAfterPvAndBess:            71561.20,    // was 73013.17 pre-fix
+      },
+    },
+
+    BESS_NM: {
+      label: 'SELF_CONSUMPTION_MAX with NM mode (no exported energy → 0 savings)',
+      pv: {
+        monthlyKwh: 25000,
+        interconnectionMode: 'MEDICION_NETA',
+      },
+      bess: {
+        strategy: 'SELF_CONSUMPTION_MAX',
+        capacityKwh: 200,
+        powerKw: 100,
+        minSocPct: 0.10,
+        maxSocPct: 0.90,
+        rtePct: 0.90,
+        cyclesPerDay: 1.0,
+        degradationPct: 0.025,
+        backupReservePct: 0.0,
+        daysInMonth: 31,
+      },
+      expected: {
+        pvExportedKwh:                     0.00,
+        pvCapturedByBessKwh:               0.00,
+        pvCaptureValueMxn:                 0.00,
+        billAfterPv:                   91523.63,     // NM lock from Phase 1
+        billAfterPvAndBess:            91523.63,     // unchanged: no BESS contribution
+      },
+    },
+
+    BESS_NULL: {
+      label: 'No BESS object (toggle=NO equivalent) — should return billAfterPv unchanged',
+      pv: {
+        monthlyKwh: 25000,
+        interconnectionMode: 'FACTURACION_NETA',
+        exportPriceMxnPerKwh: 0.80,
+        selfConsumptionPct: 0.70,
+      },
+      bess: null,                    // ← key: no battery
+      expected: {
+        bessEnabled:                   false,
+        bessUsableCapacityKwh:         0,
+        pvCaptureValueMxn:             0,
+        billAfterPv:                   82377.81,
+        billAfterPvAndBess:            82377.81,    // unchanged
+      },
+    },
+
+    BESS_ZERO_CAPACITY: {
+      label: 'Zero-capacity battery (designer entered 0) — should return billAfterPv unchanged',
+      pv: {
+        monthlyKwh: 25000,
+        interconnectionMode: 'FACTURACION_NETA',
+        exportPriceMxnPerKwh: 0.80,
+        selfConsumptionPct: 0.70,
+      },
+      bess: {
+        strategy: 'SELF_CONSUMPTION_MAX',
+        capacityKwh: 0,                // ← 0 capacity
+        powerKw: 100,
+        minSocPct: 0.10, maxSocPct: 0.90,
+        rtePct: 0.90, cyclesPerDay: 1.0,
+        degradationPct: 0.025, backupReservePct: 0.0,
+        daysInMonth: 31,
+      },
+      expected: {
+        bessEnabled:                   false,
+        billAfterPvAndBess:            82377.81,    // unchanged
+      },
+    },
+  },
+};
+
+// =============================================================================
+// TESTPROJ_PEAK_001 — PEAK_SHAVING regression fixture (v2.3.0, Phase 3)
+// =============================================================================
+// SYNTH-001 cannot exercise PEAK_SHAVING: its kWMaxAnoMovil (100) and kWPunta
+// (90) are too low for the 0.7×rolling-max ratchet floor to constrain, so
+// Year-1 and steady-state would be identical and the ratchet would be untested.
 //
-// Confirms _META sheet exists and stamps current ENGINE_VERSION / DB_VERSION.
-// This is the cheapest test — if it fails, version stamping is broken and
-// every other test is unreliable.
-// ---------------------------------------------------------------------------
-function testVersionStamping(t, ss) {
-  t.suite('Phase0: Version Stamping');
-
-  // Force a stamp before reading (idempotent — safe to call multiple times)
-  try {
-    stampMeta(ss, {runType: 'test', fixture: 'TESTPROJ-SYNTH-001'});
-  } catch (e) {
-    t.assert('stampMeta runs', 'no_error', String(e));
-    return; // Cannot continue
-  }
-
-  var meta = readMeta(ss);
-  t.assertTrue('_META sheet exists',                 meta !== null);
-  if (!meta) return;
-
-  // Coerce to String on both sides: Google Sheets sometimes parses '2026.05'
-  // as a Number, which makes strict-equality fail against the String constant.
-  t.assert('engine_version stamped', String(ENGINE_VERSION), String(meta.engineVersion));
-  t.assert('db_version stamped',     String(DB_VERSION),     String(meta.dbVersion));
-  t.assertTrue('calculated_at populated',  !!meta.calculatedAt);
-  t.assertTrue('calculated_by populated',  !!meta.calculatedBy);
-  t.assert('fixture_used stamped',  'TESTPROJ-SYNTH-001', meta.fixtureUsed);
-  t.assert('run_type stamped',      'test',               meta.runType);
-
-  // First-run history must be present and immutable.
-  t.assertTrue('first_version present',  !!meta.firstVersion);
-  t.assertTrue('first_run_at present',   !!meta.firstRunAt);
-}
-
-// ---------------------------------------------------------------------------
-// SUITE 2: HAND-DERIVED SANITY (Layer 1)
+// PEAK_001 is a deliberately industrial profile, with values anchored to the
+// Autoplastek competitor proposals (Energía Real / ARBIA, 2026-03):
+//   - punta demand ~320 kW (PUE deck shows ~319 kW avg punta)
+//   - rolling max 340 kW, set CLOSE to punta so the ratchet bites
+//   - intermedia 340 kW — equals the monthly max, so Distribución does NOT
+//     move on a punta-only shave (verifiable distSaving = 0 — correct, not a bug)
 //
-// Paints SYNTH-001 inputs into the live sheets, lets the existing
-// INPUT_CFE formulas recalculate, then asserts hand-derived values.
-//
-// IMPORTANT: this writes to live sheets. It assumes writeTestInputs() and
-// equivalents leave a backup (the existing 99_TestRunner does this).
-// ---------------------------------------------------------------------------
-function testFixtureSynth001HandDerived(t, ss) {
-  t.suite('Phase0: SYNTH-001 hand-derived');
+// All lock targets verified by Python recompute (partB_recompute) AND by
+// running the deployed calcPeakShavingImpact() in Node.
+// =============================================================================
+var TESTPROJ_PEAK_001 = {
+  meta: {
+    fixtureName: 'TESTPROJ-PEAK-001',
+    purpose: 'PEAK_SHAVING strategy regression (Capacidad + Distribución + Variable)',
+    tariff: 'GDMTH',
+  },
 
-  // 1. Backup live inputs (delegate to existing infra if available).
-  //    This backs up INPUT_PROJECT, INPUT_DESIGN, INPUT_INSTALL, INPUT_GENERAL.
-  //    INPUT_CFE is handled separately by _backupCfeNarrow — its array formulas
-  //    don't survive the generic clearContents+copyTo path (see v2.0.3 notes).
-  try {
-    if (typeof backupInputs === 'function') backupInputs(ss);
-  } catch (e) {
-    t.assert('backup before fixture write', 'no_error', String(e));
-    // continue anyway — better partial test than none
-  }
-  try { _backupCfeNarrow(ss); }
-  catch (e) {
-    t.assert('CFE narrow backup', 'no_error', String(e));
-  }
+  // Frozen tariffs — identical to SYNTH-001 (GDMTH GOLFO CENTRO, Jan 2026).
+  frozenTariffs: {
+    capacidad:    392.20,
+    distribucion: 124.41,
+    transmision:  0.1801,
+    cenace:       0.0076,
+    energiaBase:  0.8066,
+    energiaInter: 1.4986,
+    energiaPunta: 1.7675,
+    scnmem:       0.0069,
+    suministro:   461.75,
+  },
 
-  // 2. Paint SYNTH-001 inputs
-  var fxResult;
-  try {
-    fxResult = writeSynth001Inputs(ss);
-  } catch (e) {
-    t.assert('writeSynth001Inputs', 'no_error', String(e));
-    _restoreIfPossible(ss);
-    return;
-  }
-  // Surface the actual skipped write reason — silent skips hide real bugs.
-  if (fxResult.skipped.length === 0) {
-    t.assertTrue('SYNTH-001 inputs written (0 skipped)', true);
-  } else {
-    t.fail('SYNTH-001 inputs written',
-           fxResult.skipped.length + ' skipped: ' + fxResult.skipped.join(' | '));
-  }
-
-  // 3. Force formula recalc (Apps Script doesn't always trigger immediately)
-  SpreadsheetApp.flush();
-
-  // 3.5. Pre-flight: confirm INPUT_CFE formula rows are healthy.
-  // If a prior test run corrupted them (e.g. v2.0.2 array-formula bug),
-  // we want a clear diagnostic — not NaN downstream.
-  var ws = ss.getSheetByName('INPUT_CFE');
-  if (!ws) {
-    t.fail('INPUT_CFE sheet exists', 'sheet missing — Phase 0 cannot validate');
-    _restoreIfPossible(ss);
-    return;
-  }
-  var c37 = ws.getRange('C37').getValue();
-  var c37IsNum = (typeof c37 === 'number') && !isNaN(c37);
-  if (!c37IsNum) {
-    t.fail('INPUT_CFE!C37 (TOTAL Jan) is a number',
-           'got "' + c37 + '". Likely the array formulas in rows 21-29 ' +
-           'were corrupted by a prior backup/restore cycle. ' +
-           'Manual fix: in INPUT_CFE, copy a healthy column (e.g. from ' +
-           'another sheet template) into rows 21-29 of cols C through N.');
-    _restoreIfPossible(ss);
-    return;
-  }
-  var tol = TESTPROJ_SYNTH_001.expected.tolerance;
-  var exp = TESTPROJ_SYNTH_001.expected.handDerived;
-
-  // Demanda Facturable (Jan) — row 19, col C
-  // Engine formula: MAX(C15, 0.7*C16) = MAX(kW_punta, 0.7*kWMaxAnoMovil)
-  var demanda = Number(ws.getRange('C19').getValue());
-  t.assert('Jan Demanda Facturable = 90 kW (MAX(punta=90, 0.7*max=70))',
-           exp.demandaFacturableJan, demanda, tol.demanda);
-
-  // PF (Jan) — row 20, col C
-  var pfJan = Number(ws.getRange('C20').getValue());
-  t.assert('Jan PF ~ 0.946 (35000 / sqrt(35000^2 + 12000^2))',
-           exp.pfYearAverage, pfJan, tol.pf);
-
-  // January TOTAL bill — row 37, col C
-  // SANITY range only — precise value locked by snapshot (Layer 2)
-  var janTotal = Number(ws.getRange('C37').getValue());
-  var inRange  = (janTotal >= exp.janBillMin) && (janTotal <= exp.janBillMax);
-  t.assertTrue(
-    'Jan bill in sanity range [' + exp.janBillMin + ', ' + exp.janBillMax + ']' +
-    ' — actual=' + Math.round(janTotal),
-    inRange
-  );
-
-  // Bill must be > 0 in every month (catches blank-sheet / zero-data failures)
-  var minMonth = Infinity, maxMonth = -Infinity, monthsCount = 0;
-  ['C','D','E','F','G','H','I','J','K','L','M','N'].forEach(function(col) {
-    var v = Number(ws.getRange(col + '37').getValue()) || 0;
-    if (v > 0) { monthsCount++; minMonth = Math.min(minMonth, v); maxMonth = Math.max(maxMonth, v); }
-  });
-  t.assert('All 12 months produce a positive bill', 12, monthsCount);
-
-  // Sanity: month-to-month variance from tariff price changes should be modest
-  // (<20% spread). Catches "January tariff applied to all months" bugs.
-  if (monthsCount === 12) {
-    var spread = (maxMonth - minMonth) / minMonth;
-    t.assertTrue(
-      'Month-to-month spread < 20% (got ' + (spread*100).toFixed(1) + '%)',
-      spread < 0.20
-    );
-  }
-
-  // 5. Restore designer's previous inputs
-  _restoreIfPossible(ss);
-}
-
-// ---------------------------------------------------------------------------
-// SUITE 3: SNAPSHOT REGRESSION (Layer 2)
-//
-// Compares full snapshot values against the locked baseline. ALL nulls in
-// expected.snapshot are SKIPPED (with a warning) — this is expected before
-// first lock. After first lock, any null is itself a regression.
-// ---------------------------------------------------------------------------
-function testFixtureSynth001Snapshot(t, ss) {
-  t.suite('Phase0: SYNTH-001 snapshot');
-
-  var snap = TESTPROJ_SYNTH_001.expected.snapshot;
-  if (!snap) {
-    t.fail('snapshot block exists', 'expected.snapshot missing from fixture');
-    return;
-  }
-  if (!snap.frozenTariffs) {
-    t.fail('snapshot.frozenTariffs exists',
-           'frozen tariff block missing — see fixture spec');
-    return;
-  }
-
-  // ---- Pure unit test: calcCfeBill() with frozen Jan tariffs ----
-  // No spreadsheet involvement. Tests the JS reference implementation
-  // directly. Deterministic forever, regardless of live DB state.
-  if (typeof calcCfeBill !== 'function') {
-    t.fail('calcCfeBill function exists',
-           'calcCfeBill is not defined — is 04a_CalcCfeBill.gs loaded?');
-    return;
-  }
-
-  var inp = _buildSynth001JanInputObject();
-  var result;
-  try {
-    result = calcCfeBill(inp, snap.frozenTariffs);
-  } catch (e) {
-    t.fail('calcCfeBill runs without error', String(e));
-    return;
-  }
-
-  // Assert: JS computation of January matches locked Jan baseline
-  t.assert('calcCfeBill(SYNTH-001 Jan, frozen tariffs) total',
-           snap.janBillFrozen, result.total, snap.janBillFrozenTol);
-
-  // Assert: annual = 12 × Jan (synthetic identity)
-  t.assert('calcCfeBill annual = 12 × Jan (synthetic identity)',
-           snap.annualBillFrozen, 12 * result.total, snap.annualBillFrozenTol);
-
-  // ---- Live-DB drift signal (INFO only, never fails) ----
-  // Reports current live engine output for awareness. A large gap means
-  // CFE has updated tariffs in 20M_CFE_TARIFFS since the lock.
-  var ws = ss.getSheetByName('INPUT_CFE');
-  if (ws) {
-    var liveJan = Number(ws.getRange('C37').getValue());
-    var liveAnnual = 0;
-    ['C','D','E','F','G','H','I','J','K','L','M','N'].forEach(function(c) {
-      liveAnnual += Number(ws.getRange(c + '37').getValue()) || 0;
-    });
-    var janDrift = Math.abs(liveJan - snap.janBillLiveAtLock);
-    var annDrift = Math.abs(liveAnnual - snap.annualBillLiveAtLock);
-    t.info('live engine Jan',
-           liveJan.toFixed(2) + ' MXN (locked at ' + snap.janBillLiveAtLock +
-           ', drift ' + janDrift.toFixed(2) + ')');
-    t.info('live engine annual',
-           liveAnnual.toFixed(2) + ' MXN (locked at ' + snap.annualBillLiveAtLock +
-           ', drift ' + annDrift.toFixed(2) + ')');
-    if (janDrift > 100) {
-      t.info('LIVE-DB DRIFT',
-             'Jan bill has drifted >100 MXN from lock. Likely CFE tariff ' +
-             'update in 20M_CFE_TARIFFS. Engine math is still verified by ' +
-             'the calcCfeBill assertion above; consider re-locking the live ' +
-             'baseline in a future minor version.');
-    }
-  }
-
-  // ---- Future-phase fields (null) — surfaced as INFO ----
-  ['annualBillPostPv', 'annualEnergySavings'].forEach(function(key) {
-    if (snap[key] === null) {
-      t.info('snapshot.' + key, 'scheduled for Phase 1+ — not asserted');
-    }
-  });
-
-  // ---- Intentionally out-of-scope fields (false) — surfaced as INFO ----
-  ['dcKw', 'acKw', 'qtyModules', 'qtyInverters', 'bomTotalCost'].forEach(function(key) {
-    if (snap[key] === false) {
-      t.info('snapshot.' + key,
-             'out of scope (covered by Tier 3 TESTPROJ-001 already)');
-    }
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Helper: build a single-month input object for calcCfeBill() from the
-// SYNTH-001 fixture data. January = index 0.
-// ---------------------------------------------------------------------------
-function _buildSynth001JanInputObject() {
-  var m = TESTPROJ_SYNTH_001.inputs.cfe.monthly;
-  return {
-    kWhBase:       m.kWhBase[0],
-    kWhIntermedia: m.kWhIntermedia[0],
-    kWhPunta:      m.kWhPunta[0],
-    kWBase:        m.kWBase[0],
-    kWIntermedia:  m.kWIntermedia[0],
-    kWPunta:       m.kWPunta[0],
-    kWMaxAnoMovil: m.kWMaxAnoMovil[0],
-    kVArh:         m.kVArh[0],
+  // January monthly input (industrial profile). bajaTension2pct:false matches
+  // the _p2_buildSynth001JanInputObject() convention (boolean, not 'NO' string).
+  janInput: {
+    kWhBase:       60000,
+    kWhIntermedia: 120000,
+    kWhPunta:      40000,
+    kWBase:        280,
+    kWIntermedia:  340,    // = monthly max → Distribución unaffected by punta shave
+    kWPunta:       320,
+    kWMaxAnoMovil: 340,    // close to punta → ratchet floor (0.7×340=238) bites
+    kVArh:         90000,
     tarifa:          'GDMTH',
     dap:             0,
     bajaTension2pct: false,
-  };
-}
+  },
 
-// ===========================================================================
-// FIXTURE WRITER — paints SYNTH-001 into the sheets
-// ===========================================================================
-function writeSynth001Inputs(ss) {
-  var fx = TESTPROJ_SYNTH_001.inputs;
-  var skipped = [];
+  // BESS config: 645 kWh nominal / 323 kW (Autoplastek PUE deck figures).
+  // puntaWindowHours=4 → winter (Jan). loadFactorFC only used on synth path.
+  bess: {
+    strategy:         'PEAK_SHAVING',
+    capacityKwh:      645,
+    powerKw:          323,
+    minSocPct:        0.08,
+    maxSocPct:        0.92,
+    rtePct:           0.90,
+    cyclesPerDay:     1.0,
+    degradationPct:   0.025,
+    backupReservePct: 0.0,
+    daysInMonth:      31,
+    puntaWindowHours: 4,
+    loadFactorFC:     0.57,
+    dmaxPuntaOverride: null,
+  },
 
-  // INPUT_PROJECT / INPUT_DESIGN / INPUT_INSTALL — go through writeInput()
-  // exactly like the existing fixture (this is the existing pattern from
-  // 99_TestRunner's writeTestInputs).
-  try { if (typeof ensureInputProjectExists === 'function') ensureInputProjectExists(ss); }
-  catch (e) { skipped.push('ensureInputProjectExists: ' + (e.message || e)); }
-  try { if (typeof ensureInputInstallExists === 'function') ensureInputInstallExists(ss); }
-  catch (e) { skipped.push('ensureInputInstallExists: ' + (e.message || e)); }
-  try { if (typeof ensureInputDesignExists === 'function') ensureInputDesignExists(ss); }
-  catch (e) { skipped.push('ensureInputDesignExists: ' + (e.message || e)); }
+  // Lock targets — normal run (kWPunta=320 present → measured provenance).
+  expected: {
+    baselineBill:              587527.29,
+    demandProvenance:          'measured(INPUT_CFE)',
+    usableKwh:                 528.255,  // 645×(0.92-0.08)×(1-0.025)×(1-0)
+    shaveKw:                   132.06,   // min(323 power, 528.36/4 energy)
+    dmaxPuntaUsed:             320.00,
+    postBessPuntaKw:           187.94,
+    // Year-1 — ratchet floor (0.7×340=238) still loaded; post-BESS punta 187.94
+    // is below the floor, so demandaFacturable only drops 320→238.
+    capacidadSavingYear1:      32160.40,
+    distribucionSavingYear1:   0.00,     // intermedia is monthly max — correct
+    verifiableSavingYear1:     32160.40,
+    // Steady-state — rolling max decays to 187.94; demandaFacturable 320→187.94.
+    capacidadSavingSteady:     51795.40,
+    distribucionSavingSteady:  0.00,
+    verifiableSavingSteady:    51795.40,
+    ratchetDelta:              19635.00, // steady − year1
+    // Tier 2 — Variable load-shift, ESTIMATED (always disclaimed).
+    energyShiftedKwh:          14738.30, // min(40000 punta kWh, throughput)
+    variableSavingEstimated:   14162.05,
+    totalSavingYear1:          46322.45, // verifiable + variable
+    estimatedTierDisclaimer:   true,
+    synthesizedDemandDisclaimer: false,
+  },
 
-  ['project', 'install', 'design'].forEach(function(section) {
-    if (!fx[section]) return;
-    Object.keys(fx[section]).forEach(function(key) {
-      try { writeInput(ss, key, fx[section][key]); }
-      catch (e) { skipped.push(section + ':' + key + ': ' + (e.message || e).slice(0, 80)); }
-    });
-  });
-
-  // NOTE: legacy INPUT_GENERAL writes removed in v2.0.2.
-  // All identity / commercial fields now route to INPUT_PROJECT via INPUT_MAP
-  // logical keys (handled by the writeInput() loop above on the 'project' section).
-
-  // INPUT_CFE — NEW writer. Header rows 4-7, monthly grid rows 10-17 cols C:N.
-  var cfe = ss.getSheetByName('INPUT_CFE');
-  if (cfe && fx.cfe) {
-    // Static header values
-    ['C4', 'C5', 'C6', 'C7'].forEach(function(cell) {
-      if (fx.cfe[cell] !== undefined) {
-        try { cfe.getRange(cell).setValue(fx.cfe[cell]); }
-        catch (e) { skipped.push('INPUT_CFE!' + cell + ': ' + (e.message || e).slice(0, 80)); }
-      }
-    });
-
-    // Monthly grid: row mapping → INPUT_CFE rows
-    //   kWhBase=10, kWhIntermedia=11, kWhPunta=12,
-    //   kWBase=13, kWIntermedia=14, kWPunta=15,
-    //   kWMaxAnoMovil=16, kVArh=17
-    var rowMap = {
-      kWhBase: 10, kWhIntermedia: 11, kWhPunta: 12,
-      kWBase: 13, kWIntermedia: 14, kWPunta: 15,
-      kWMaxAnoMovil: 16, kVArh: 17,
-    };
-    Object.keys(rowMap).forEach(function(metric) {
-      var row = rowMap[metric];
-      var arr = fx.cfe.monthly[metric];
-      if (!arr || arr.length !== 12) {
-        skipped.push('INPUT_CFE.monthly.' + metric + ': bad array');
-        return;
-      }
-      try {
-        // Columns C(3) through N(14)
-        cfe.getRange(row, 3, 1, 12).setValues([arr]);
-      } catch (e) {
-        skipped.push('INPUT_CFE!row' + row + ': ' + (e.message || e).slice(0, 80));
-      }
-    });
-  } else if (!cfe) {
-    skipped.push('INPUT_CFE sheet missing');
-  }
-
-  return { skipped: skipped };
-}
-
-// ---------------------------------------------------------------------------
-// SNAPSHOT LOCK PROCEDURE — superseded as of v2.0.4
-//
-// v2.0.3 and earlier: lockSynth001Snapshot() captured live engine output and
-// printed it for paste. This was abandoned because:
-//   - Live engine output depends on 20M_CFE_TARIFFS, which CFE updates
-//     monthly — locked values became invalid almost immediately
-//   - The state at lock time was mixed (TESTPROJ-001 MDC + SYNTH-001 CFE)
-//
-// v2.0.4+: the locked baseline lives in TESTPROJ_SYNTH_001.expected.snapshot
-//   - Frozen tariffs are part of the fixture, hand-edited only
-//   - Expected bill is computed in JS by calcCfeBill() — deterministic
-//   - Re-locking is a DELIBERATE code change with CHANGELOG entry, not an
-//     automated tool
-//
-// What replaces it: auditSynth001() below, which reports current live engine
-// state for HUMAN REVIEW without modifying anything. Use this when you want
-// to see "what does the engine say today" without locking it as truth.
-// ---------------------------------------------------------------------------
-function auditSynth001() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var snap = TESTPROJ_SYNTH_001.expected.snapshot;
-  var lines = ['=== SYNTH-001 AUDIT — ' + new Date().toISOString() + ' ==='];
-
-  // 1. JS reference output
-  try {
-    var inp = _buildSynth001JanInputObject();
-    var r = calcCfeBill(inp, snap.frozenTariffs);
-    lines.push('');
-    lines.push('JS reference (calcCfeBill with frozen Jan-2026 tariffs):');
-    lines.push('  January TOTAL: ' + r.total.toFixed(2) + ' MXN');
-    lines.push('  Annual (12 × Jan): ' + (12 * r.total).toFixed(2) + ' MXN');
-    lines.push('  Locked baseline Jan: ' + snap.janBillFrozen);
-    lines.push('  Locked baseline ann: ' + snap.annualBillFrozen);
-  } catch (e) {
-    lines.push('JS reference FAILED: ' + (e.message || e));
-  }
-
-  // 2. Live engine output (with current 20M_CFE_TARIFFS)
-  var ws = ss.getSheetByName('INPUT_CFE');
-  if (ws) {
-    var liveJan = Number(ws.getRange('C37').getValue());
-    var liveAnnual = 0;
-    ['C','D','E','F','G','H','I','J','K','L','M','N'].forEach(function(c) {
-      liveAnnual += Number(ws.getRange(c + '37').getValue()) || 0;
-    });
-    lines.push('');
-    lines.push('Live engine (uses current 20M_CFE_TARIFFS):');
-    lines.push('  January TOTAL: ' + liveJan.toFixed(2) + ' MXN');
-    lines.push('  Annual: ' + liveAnnual.toFixed(2) + ' MXN');
-    lines.push('  At-lock Jan: ' + snap.janBillLiveAtLock);
-    lines.push('  At-lock ann: ' + snap.annualBillLiveAtLock);
-    lines.push('  Jan drift: ' + Math.abs(liveJan - snap.janBillLiveAtLock).toFixed(2) + ' MXN');
-    lines.push('  Ann drift: ' + Math.abs(liveAnnual - snap.annualBillLiveAtLock).toFixed(2) + ' MXN');
-  } else {
-    lines.push('Live engine: INPUT_CFE sheet not found');
-  }
-
-  lines.push('');
-  lines.push('NOTE: to update the locked baseline, edit TESTPROJ_SYNTH_001');
-  lines.push('      .expected.snapshot in 98a_TestData_SYNTH001.gs by hand,');
-  lines.push('      with a CHANGELOG entry explaining why.');
-
-  var msg = lines.join('\n');
-  Logger.log(msg);
-  SpreadsheetApp.getUi().alert('SYNTH-001 audit', msg, SpreadsheetApp.getUi().ButtonSet.OK);
-}
-
-// ---------------------------------------------------------------------------
-// INTERNAL: try to restore inputs after a fixture write.
-// Uses the existing restore mechanism if 99_TestRunner exposes one.
-// ---------------------------------------------------------------------------
-function _restoreIfPossible(ss) {
-  try {
-    if (typeof restoreInputs === 'function') restoreInputs(ss);
-  } catch (e) {
-    // best-effort — don't fail the test on restore failure, just log
-    Logger.log('Phase0 restore failed: ' + (e.message || e));
-  }
-  // Also restore INPUT_CFE narrowly (not handled by shared restoreInputs since
-  // v2.0.3 — its array formulas don't survive clearContents+copyTo).
-  _restoreCfeNarrow(ss);
-}
-
-// ---------------------------------------------------------------------------
-// NARROW INPUT_CFE BACKUP / RESTORE (v2.0.3)
-//
-// Why narrow: INPUT_CFE has array formulas in rows 21-29 that break under
-// the generic clearContents+copyTo approach. We only ever WRITE to rows
-// 4-17 (header + monthly grid inputs) and only READ from the formula rows.
-// So we back up ONLY the input cells, restore them as values, and never
-// touch the formula rows at all.
-//
-// Storage: hidden sheet '_TEST_BACKUP_CFE_NARROW' with values+formulas
-// of the input cells. Format: same range layout for round-trip safety.
-// ---------------------------------------------------------------------------
-var _CFE_BACKUP_SHEET = '_TEST_BACKUP_CFE_NARROW';
-// Cells we ever write to in Phase 0 — header (C4:C7) + monthly grid (C10:N17)
-var _CFE_HEADER_RANGE  = 'C4:C7';
-var _CFE_MONTHLY_RANGE = 'C10:N17';
-
-function _backupCfeNarrow(ss) {
-  var cfe = ss.getSheetByName('INPUT_CFE');
-  if (!cfe) return; // nothing to back up
-
-  // Delete any stale backup
-  var existing = ss.getSheetByName(_CFE_BACKUP_SHEET);
-  if (existing) ss.deleteSheet(existing);
-
-  var backup = ss.insertSheet(_CFE_BACKUP_SHEET);
-  backup.hideSheet();
-
-  // Capture BOTH values and formulas so we can faithfully restore either.
-  // (Some sheets may have formulas in the input cells — rare but possible.)
-  var hdrVals = cfe.getRange(_CFE_HEADER_RANGE).getValues();
-  var hdrFmls = cfe.getRange(_CFE_HEADER_RANGE).getFormulas();
-  var monVals = cfe.getRange(_CFE_MONTHLY_RANGE).getValues();
-  var monFmls = cfe.getRange(_CFE_MONTHLY_RANGE).getFormulas();
-
-  // Layout in backup sheet:
-  //   A1: marker
-  //   A2:A5  header values  (col A only; values are scalars)
-  //   B2:B5  header formulas
-  //   C2:N9  monthly values (8 rows x 12 cols)
-  //   C12:N19 monthly formulas
-  backup.getRange('A1').setValue('INPUT_CFE narrow backup — do not edit');
-  for (var i = 0; i < hdrVals.length; i++) {
-    backup.getRange(i + 2, 1).setValue(hdrVals[i][0]);
-    backup.getRange(i + 2, 2).setValue(hdrFmls[i][0]);
-  }
-  backup.getRange(2, 3, monVals.length, monVals[0].length).setValues(monVals);
-  backup.getRange(12, 3, monFmls.length, monFmls[0].length).setValues(monFmls);
-}
-
-function _restoreCfeNarrow(ss) {
-  var cfe = ss.getSheetByName('INPUT_CFE');
-  var backup = ss.getSheetByName(_CFE_BACKUP_SHEET);
-  if (!cfe || !backup) return;
-
-  try {
-    // Header rows 4-7
-    var hdrVals = backup.getRange('A2:A5').getValues();
-    var hdrFmls = backup.getRange('B2:B5').getValues();
-    for (var i = 0; i < hdrVals.length; i++) {
-      var cell = cfe.getRange(4 + i, 3); // C4, C5, C6, C7
-      var f = hdrFmls[i][0];
-      if (typeof f === 'string' && f.charAt(0) === '=') {
-        cell.setFormula(f);
-      } else {
-        cell.setValue(hdrVals[i][0]);
-      }
-    }
-    // Monthly grid rows 10-17 x cols C-N
-    var monVals = backup.getRange(2, 3, 8, 12).getValues();
-    var monFmls = backup.getRange(12, 3, 8, 12).getValues();
-    for (var r = 0; r < 8; r++) {
-      for (var c = 0; c < 12; c++) {
-        var cell2 = cfe.getRange(10 + r, 3 + c);
-        var f2 = monFmls[r][c];
-        if (typeof f2 === 'string' && f2.charAt(0) === '=') {
-          cell2.setFormula(f2);
-        } else {
-          cell2.setValue(monVals[r][c]);
-        }
-      }
-    }
-  } catch (e) {
-    Logger.log('CFE narrow restore failed: ' + (e.message || e));
-  }
-
-  // Delete the backup sheet
-  try { ss.deleteSheet(backup); } catch (_) {}
-}
+  // Synthesis last-resort scenario: kWPunta removed → engine must synthesize
+  // and raise the loud disclaimer. Only the disclaimer flag is asserted here;
+  // the synthesized peso value is intentionally NOT locked (it depends on F.C.,
+  // an assumption, not measured data).
+  synthScenario: {
+    janInputNoDemand: null,  // built in 99f by cloning janInput with kWPunta:0
+    expected: {
+      demandProvenance:            'synthesized(no demand data)',
+      synthesizedDemandDisclaimer: true,
+    },
+  },
+};

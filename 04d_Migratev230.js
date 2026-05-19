@@ -28,7 +28,7 @@
 // EXPECTED RESULT: INPUT_BESS gains section 4; BESS_SIMULATION rebuilt;
 //   _META engine_version stamped 2.3.0. Then run runTests() — still 288 PASS.
 //
-// See PHASE_3_DESIGN.md and CHANGELOG v2.3.0.
+// See CHANGELOG v2.3.0.
 // =============================================================================
 
 function migrateToV230(ss) {

@@ -11,7 +11,7 @@
 //
 // All numeric locks verified by Python recompute (partB_recompute) AND by
 // running the deployed calcPeakShavingImpact() in Node before commit.
-// See PHASE_3_DESIGN.md and CHANGELOG v2.3.0.
+// See CHANGELOG v2.3.0.
 //
 // Entry point: addPhase3Tests(t, ss) — wired into runTests() in 99_TestRunner.
 // =============================================================================

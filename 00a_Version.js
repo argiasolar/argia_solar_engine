@@ -12,7 +12,6 @@
 //
 // SEE ALSO:
 //   CHANGELOG.md — versioning policy and release history
-//   FIXTURE_SPEC.md — current baseline fixture
 // =============================================================================
 
 // ---------------------------------------------------------------------------
