@@ -103,6 +103,59 @@ function runBessStep(ss) {
       + 'until INPUT_BESS C20 is set.');
   }
 
+  // -- Battery circuit sizing (Increment 4b-2) -----------------------------
+  // Coupling comes from INPUT_DESIGN!C17 via readInputs(). calcBessCircuit
+  // sizes 1 run (DC_COUPLED) or 2 (AC_COUPLED). It needs a DC bus voltage;
+  // the bess{} object carries none today (no INPUT_BESS voltage cell), so
+  // when voltage is absent calcBessCircuit returns sizeable:false with a
+  // reason — surfaced here as a warning, never fabricated.
+  var coupling = 'DC_COUPLED';
+  try {
+    var inpAll = readInputs(ss);
+    coupling = inpAll.bessCoupling || 'DC_COUPLED';
+  } catch (e) {
+    warnings.push('Could not read coupling from INPUT_DESIGN — '
+      + 'defaulting to DC_COUPLED.');
+  }
+
+  var circuit = null;
+  try {
+    var nom  = loadNomConstants(ss);
+    var tbls = readElecTables(ss);
+    circuit = calcBessCircuit({
+      coupling: coupling,
+      bess: bess,
+      tbls: tbls,
+      nom: nom,
+      // dcBusVoltageV / acVoltageV: no INPUT_BESS voltage cell yet.
+      // Left undefined on purpose -> calcBessCircuit reports not-sizeable.
+      dcBusVoltageV: (bess.dcBusVoltageV > 0) ? bess.dcBusVoltageV : undefined,
+      acVoltageV:    (bess.acVoltageV    > 0) ? bess.acVoltageV    : undefined,
+    });
+  } catch (e) {
+    warnings.push('Battery circuit sizing could not run: ' + e.message);
+  }
+
+  if (circuit && !circuit.sizeable) {
+    warnings.push('Battery circuit not sized — ' + circuit.reason);
+  }
+  if (circuit && circuit.warnings) {
+    for (var ci = 0; ci < circuit.warnings.length; ci++) {
+      warnings.push(circuit.warnings[ci]);
+    }
+  }
+
+  // -- Busbar 120% note, coupling-aware ------------------------------------
+  // PV-only: the AC-side note (05_CalcAC busBusbarNote) covers main + pv.
+  // AC_COUPLED: the battery PCS is an ADDITIONAL backfeed source, so the
+  // busbar sum becomes main + pv + bess. This is a manual-review note (the
+  // site panelboard rating is project-specific) — not a computed gate.
+  var busbarNote = (coupling === 'AC_COUPLED')
+    ? 'Busbar 120%: AC-coupled battery — verify main + PV + BESS breakers '
+      + 'against site panelboard rating (regla 120%).'
+    : 'Busbar 120%: DC-coupled battery — no extra AC backfeed source; '
+      + 'standard main + PV check applies.';
+
   // -- Human-readable summary ----------------------------------------------
   var summary = [
     'BESS: ENABLED — ' + bess.batteryId + ' / ' + bess.strategy,
@@ -115,13 +168,28 @@ function runBessStep(ss) {
     'BESS: est. monthly throughput ' + monthlyThroughputKwh.toFixed(0)
       + ' kWh (RTE ' + Math.round(bess.rtePct * 100) + '%, '
       + bess.cyclesPerDay + ' cycle/day).',
+    'BESS: coupling ' + coupling + '. ' + busbarNote,
   ];
+  if (circuit && circuit.sizeable) {
+    for (var ri = 0; ri < circuit.runs.length; ri++) {
+      var r = circuit.runs[ri];
+      summary.push('BESS circuit [' + r.name + ']: '
+        + r.designCurrentA.toFixed(1) + ' A design, '
+        + 'conductor ' + r.conductorSize + ', OCPD ' + r.ocpdA + ' A, '
+        + 'EGC ' + r.egcSize + '.');
+    }
+  } else {
+    summary.push('BESS circuit: not sized (battery voltage not available).');
+  }
 
   return {
     bessEnabled: true,
     bess: bess,
     usableCapacityKwh: usableCapacityKwh,
     monthlyThroughputKwh: monthlyThroughputKwh,
+    coupling: coupling,
+    circuit: circuit,
+    busbarNote: busbarNote,
     warnings: warnings,
     summary: summary,
   };

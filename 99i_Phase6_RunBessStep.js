@@ -81,8 +81,17 @@ function addPhase6Tests(t, ss) {
     t.assert('usableCapacityKwh matches _bessUsableKwh helper',
              _bessUsableKwh(on.bess), on.usableCapacityKwh, 0.001);
 
-    // Clean valid battery -> no warnings.
-    t.assert('Valid battery -> 0 warnings', 0, on.warnings.length);
+    // Clean valid battery -> no SPEC warnings.
+    // NOTE (Increment 4b-2): runBessStep now also calls calcBessCircuit, which
+    // raises a "circuit not sized" warning whenever no battery voltage is
+    // available (INPUT_BESS has no voltage cell yet). That warning is EXPECTED
+    // and is covered by Phase 10. Phase 6 only asserts the battery SPEC itself
+    // is clean, so we exclude circuit warnings from this count.
+    var specWarnings = on.warnings.filter(function (w) {
+      return String(w).toLowerCase().indexOf('circuit') < 0;
+    });
+    t.assert('Valid battery -> 0 spec warnings (circuit warnings excluded)',
+             0, specWarnings.length);
 
     // === TEST 4: invalid spec -> throws ==================================
     // maxSoc <= minSoc must be a hard error, not a silent bad number.
