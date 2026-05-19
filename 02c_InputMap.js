@@ -46,13 +46,13 @@
 
 
 // ---------------------------------------------------------------------------
-// New tab names. Added to SH alongside the legacy names so both coexist
-// during migration. Legacy names will be dropped after the pilot lands.
+// Tab names: see the SH constant in 00_Main.gs. INPUT_PROJECT / INPUT_INSTALL
+// / INPUT_CFE now live in that single declaration. They used to be assigned
+// here as `SH.x = ...` at file-load time, which threw `ReferenceError: SH is
+// not defined` whenever Apps Script loaded 02c before 00_Main (file creation
+// can reshuffle load order). Folding them into 00_Main's `var SH = {...}`
+// removes the cross-file load-order dependency entirely.
 // ---------------------------------------------------------------------------
-SH.INPUT_PROJECT = 'INPUT_PROJECT';
-SH.INPUT_INSTALL = 'INPUT_INSTALL';
-SH.INPUT_CFE     = 'INPUT_CFE';
-// SH.INPUT_DESIGN already exists and keeps its name.
 
 
 // ---------------------------------------------------------------------------

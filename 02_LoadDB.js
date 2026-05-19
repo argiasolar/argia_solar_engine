@@ -76,6 +76,83 @@ function lookupInverter(ss, modelName) {
   }) || null;
 }
 
+// ---------------------------------------------------------------------------
+// BATTERY (BESS) PRODUCT DB   (Increment 4b-2.5a)
+// ---------------------------------------------------------------------------
+// Reads the 16M_PRODUCTS_BESS mirror tab. That tab is an IMPORTRANGE of the
+// Master_DB 16_PRODUCTS_BESS table -- the data is owned elsewhere and the
+// structure is frozen, so this reader is the ONLY code that touches the tab
+// and keys every field by HEADER NAME, never by column index. A reorder of
+// the source columns therefore cannot silently break it.
+//
+// IMPORTRANGE hazard: while the import is resolving, or if the source link is
+// broken, getValues() returns strings like 'Loading...', '#REF!', '#ERROR!'
+// or '#N/A' instead of the real data. A battery DB that has not finished
+// loading must NOT crash the engine and must NOT be mistaken for valid data.
+// _bessCellOk() screens those sentinels; getAllBatteryProducts() drops any
+// row whose Battery_ID is unusable. The downstream effect of a missing /
+// loading DB is simply that voltage falls back to the INPUT_BESS manual
+// cells (Increment 4b-2.5b) -- never a fabricated number.
+
+// True when a raw IMPORTRANGE cell holds usable data (not blank, not a
+// loading/error sentinel).
+function _bessCellOk(v) {
+  if (v === '' || v === null || v === undefined) return false;
+  var s = String(v).trim().toUpperCase();
+  if (s === '') return false;
+  // Spreadsheet error / loading sentinels.
+  if (s === 'LOADING...' || s === '#REF!' || s === '#ERROR!' ||
+      s === '#N/A' || s === '#NAME?' || s === '#VALUE!' || s === '#DIV/0!') {
+    return false;
+  }
+  return true;
+}
+
+// Returns every battery product as a header-keyed object. Rows whose
+// Battery_ID is blank or an IMPORTRANGE sentinel are skipped. If the tab is
+// missing entirely, returns [] (caller decides whether that is fatal) -- the
+// engine's BESS path treats an empty library as "no DB", not an error,
+// because a PV-only or CUSTOM_MANUAL project must still run.
+function getAllBatteryProducts(ss) {
+  var sh = ss.getSheetByName(SH.BESS_MIRROR);
+  if (!sh) return [];
+  var data = sh.getDataRange().getValues();
+  if (!data || data.length < 2) return [];
+  var hdrs = data[0].map(function(h) { return String(h).trim(); });
+  return data.slice(1)
+    .filter(function(r) { return _bessCellOk(r[0]); })
+    .map(function(row) {
+      var obj = {};
+      hdrs.forEach(function(h, i) { obj[h] = row[i]; });
+      return obj;
+    });
+}
+
+// Finds one battery product by Battery_ID (case / whitespace tolerant).
+// Returns the header-keyed object, or null when the id is not in the DB
+// (includes the case where the DB is still loading -> getAll returns []).
+function lookupBattery(ss, batteryId) {
+  var key = String(batteryId || '').trim().toUpperCase();
+  if (key === '') return null;
+  return getAllBatteryProducts(ss).find(function(b) {
+    return String(b['Battery_ID'] || '').trim().toUpperCase() === key;
+  }) || null;
+}
+
+// Resolves a battery's nominal DC voltage from its DB row.
+// Returns a positive number, or 0 when the product is unknown, the row is
+// not loaded, or the stored voltage is blank / non-positive (e.g.
+// CUSTOM_MANUAL, whose Nominal_Voltage_V is 0 by design). A 0 return is the
+// signal for the caller to fall back to the INPUT_BESS manual voltage cell.
+function lookupBatteryVoltage(ss, batteryId) {
+  var row = lookupBattery(ss, batteryId);
+  if (!row) return 0;
+  var raw = row['Nominal_Voltage_V'];
+  if (!_bessCellOk(raw)) return 0;
+  var v = Number(raw);
+  return (isFinite(v) && v > 0) ? v : 0;
+}
+
 // Builds typed InverterSpec[] from INPUT_DESIGN bank + MASTER_DB v3 lookup.
 // Raises on INVALID entries, warns on REVIEW entries.
 function buildInverterBank(ss, inverterBankRaw) {
