@@ -557,6 +557,31 @@ function runArgiaEngine() {
     engineLog(ss, 'Engine', 'INFO', 'Step 9: layout scaling');
     var lay = calcLayout(inp, dc, ac, nom);
 
+    // Step 9.5: BESS step ---------------------------------------------------
+    // Reads INPUT_BESS (toggle-aware). PV-only projects return a clean
+    // disabled result and the engine continues unchanged. A genuinely
+    // invalid battery spec throws and is caught by the outer handler.
+    engineLog(ss, 'Engine', 'INFO', 'Step 9.5: BESS step');
+    var bessResult;
+    try {
+      bessResult = runBessStep(ss);
+      bessResult.summary.forEach(function(line) {
+        engineLog(ss, 'BESS', 'INFO', line);
+      });
+      bessResult.warnings.forEach(function(w) {
+        engineLog(ss, 'BESS', 'WARNING', w);
+      });
+    } catch (bessErr) {
+      // A bad battery spec should not silently vanish, but it also should
+      // not block the PV MDC/BOM. Log it loudly; surface it in the alert.
+      bessResult = { bessEnabled: false, bess: null, usableCapacityKwh: 0,
+                     monthlyThroughputKwh: 0, warnings: [], summary: [],
+                     specError: bessErr.message };
+      engineLog(ss, 'BESS', 'MAJOR',
+        'BESS step failed: ' + bessErr.message +
+        '. PV outputs continue; fix INPUT_BESS and re-run.');
+    }
+
     // Step 10: write MDC ----------------------------------------------------
     _setArgiaProgress(10, TOTAL, 'Writing MDC\u2026');
     engineLog(ss, 'Engine', 'INFO', 'Step 10: writing MDC');
@@ -607,14 +632,26 @@ function runArgiaEngine() {
       dc.dc02Pass ? null : 'DC-02 Vmp FAIL',
       dc.vdropDCFail ? 'DC-07 vdrop FAIL' : null,
       dc.str01Pass ? null : 'STR-01 window FAIL',
+      (bessResult && bessResult.specError) ? 'BESS spec error (see LOGS)' : null,
     ].filter(Boolean);
+
+    var bessLine = '';
+    if (bessResult && bessResult.bessEnabled) {
+      bessLine = '\n\nBESS: ' + bessResult.bess.capacityKwh + ' kWh / '
+        + bessResult.bess.powerKw + ' kW '
+        + '(usable ' + bessResult.usableCapacityKwh.toFixed(0) + ' kWh)'
+        + (bessResult.warnings.length > 0
+            ? ' \u2014 ' + bessResult.warnings.length + ' warning(s), see LOGS.'
+            : '.');
+    }
 
     ui.alert(
       'ARGIA ENGINE \u2014 Complete',
       'MDC and BOM generated in ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's.\n\n' +
       (flags.length > 0
         ? 'Active flags:\n' + flags.join('\n') + '\n\nSee section 4.0 in MDC and LOGS sheet.'
-        : 'All NOM checks passed.'),
+        : 'All NOM checks passed.') +
+      bessLine,
       ui.ButtonSet.OK
     );
 

@@ -143,9 +143,18 @@ function runTests() {
   // -------------------------------------------------------------------------
   try { addPhase3Tests(t, ss); }
   catch (e) { t.error('Phase3 aborted', e); }
-  
+
   try { addPhase5Tests(t, ss); }
-   catch (e) { t.error('Phase5 aborted', e); }
+  catch (e) { t.error('Phase5 aborted', e); }
+  
+  try { addPhase6Tests(t, ss); }
+  catch (e) { t.error('Phase6 aborted', e); }
+
+  try { addPhase7Tests(t, ss); }
+  catch (e) { t.error('Phase7 aborted', e); }
+
+  try { addPhase8Tests(t, ss); }
+  catch (e) { t.error('Phase8 aborted', e); }
   // -------------------------------------------------------------------------
   // Tier 10 -- Phase 4 BESS_SIMULATION formula-sheet regression
   // Verifies the BESS_SIMULATION sheet against a JS oracle, per month.

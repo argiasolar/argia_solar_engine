@@ -191,6 +191,18 @@ function loadNomConstants(ss) {
   nom.altitudeTrigger   = nom.limits['project_altitude_derate_trigger_m']|| 2000;
   nom.roofClearanceLow  = nom.limits['project_roof_clearance_low_airflow_mm'] || 91;
 
+  // -- BESS limits (Increment 4a) ------------------------------------------
+  // Battery NOM constants. Keys come from 61_NOM_LIMITS rows 20-25. Each has
+  // a built-in fallback so a stale mirror never breaks the engine.
+  nom.bess = {
+    dcCurrentFactor: nom.limits['bess_dc_conductor_current_factor']  || 1.25,
+    minWorkClearMm:  nom.limits['bess_min_working_clearance_mm']      || 900,
+    fireClearMm:     nom.limits['bess_fire_clearance_mm']             || 1000,
+    minSocDefault:   nom.limits['bess_min_soc_default']               || 0.10,
+    maxSocDefault:   nom.limits['bess_max_soc_default']               || 0.90,
+    rteFloor:        nom.limits['bess_round_trip_efficiency_floor']   || 0.90,
+  };
+
   return nom;
 }
 
