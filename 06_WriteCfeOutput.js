@@ -242,10 +242,22 @@ function writeCfeOutput(ss) {
     }
   }
 
-  // -- 2. Wipe and recreate CFE_OUTPUT. ------------------------------------
+  // -- 2. Wipe and recreate CFE_OUTPUT, positioning it before MDC. --------
+  // Apps Script insertSheet(name, index) is 0-based and inserts AT that
+  // index (existing sheets at and after that index shift right). We want
+  // CFE_OUTPUT to land immediately before the MDC tab so users see the
+  // customer-facing economic-impact view first, then the engineering doc.
+  // getIndex() is 1-based, so to insert BEFORE MDC we pass mdcIndex - 1.
+  // Fallback: if MDC doesn't exist (fresh sheet), append at end.
   var existing = ss.getSheetByName(SH.CFE_OUTPUT);
   if (existing) ss.deleteSheet(existing);
-  var sh = ss.insertSheet(SH.CFE_OUTPUT);
+  var mdcSheet = ss.getSheetByName(SH.MDC);
+  var sh;
+  if (mdcSheet) {
+    sh = ss.insertSheet(SH.CFE_OUTPUT, mdcSheet.getIndex() - 1);
+  } else {
+    sh = ss.insertSheet(SH.CFE_OUTPUT);
+  }
 
   // -- 3. Canvas: 15 columns, widths matched to INPUT_CFE. -----------------
   // A=margin, B=label, C..N=12 months, O=spacer/total, P=right margin

@@ -425,6 +425,7 @@ function onOpen() {
   ui.createMenu('ARGIA')
     .addItem('Import Helioscope',         'importHelioscopePdf')
     .addItem('Verify Layout',             'verifyInputs')
+    .addItem('Update CFE_OUTPUT',         'setupCfeOutput')
     .addItem('Generate MDC and BOM',      'runArgiaEngine')
     .addItem('Generate Installation',     'runInstallCostStandalone')
     .addItem('Generate Project Card',     'runWriteProjectCard')

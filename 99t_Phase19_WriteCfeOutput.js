@@ -139,6 +139,19 @@ function addPhase19Tests(t, ss) {
 
   if (!sh) return;
 
+  // Tab positioning: CFE_OUTPUT should land immediately before MDC, so the
+  // customer-facing economic view comes before the engineering doc. If MDC
+  // doesn't exist (fresh sheet), this assertion is skipped.
+  var _mdcSheet = ss.getSheetByName(SH.MDC);
+  if (_mdcSheet) {
+    var cfeIdx = sh.getIndex();
+    var mdcIdx = _mdcSheet.getIndex();
+    t.assert('CFE_OUTPUT positioned immediately before MDC',
+             mdcIdx - 1, cfeIdx);
+  } else {
+    t.info('CFE_OUTPUT positioning', 'MDC tab missing -- position check skipped');
+  }
+
   // Freeze panes -- banner + header strip should stay on scroll.
   // Only vertical freeze is set; setFrozenColumns was removed because the
   // KPI strip on row 10 has merged ranges starting at col B that span across
