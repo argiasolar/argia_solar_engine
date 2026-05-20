@@ -92,16 +92,36 @@ function addPhase12Tests(t, ss) {
     t.assert('BESS_COUPLING row = engine coupling',
              bessRes.coupling, value(MDC_ROW.BESS_COUPLING));
 
-    // === TEST 4: circuit-status row is the honest "pendiente" line =======
-    // No battery voltage cell yet -> calcBessCircuit not sizeable.
-    t.assertTrue('BESS_CIRC_STAT shows a "Pendiente" line',
-                 value(MDC_ROW.BESS_CIRC_STAT).indexOf('Pendiente') >= 0);
-    t.assertTrue('BESS_CIRC_STAT status is a REVIEW flag',
-                 status(MDC_ROW.BESS_CIRC_STAT).indexOf('REVIEW') >= 0);
+    // === TEST 4: circuit-status row reflects the engine result honestly ===
+    // calcBessCircuit may be sizeable (battery voltage available from DB or
+    // manual cell) or not (no voltage). Either is correct -- assert that the
+    // status row matches whichever path the engine took.
+    var circStatus = String(value(MDC_ROW.BESS_CIRC_STAT));
+    var circStatusFlag = String(status(MDC_ROW.BESS_CIRC_STAT));
+    var circ = bessRes.circuit;
+    if (circ && circ.sizeable) {
+      // sized -> status row must be non-empty AND must not say "Pendiente".
+      // (Conductor/OCPD details live in BESS_CIRC_RUN1, asserted below.)
+      t.assertTrue('BESS_CIRC_STAT (sized): non-empty', circStatus.length > 0);
+      t.assertFalse('BESS_CIRC_STAT (sized): no Pendiente line',
+                    circStatus.indexOf('Pendiente') >= 0);
+    } else {
+      // not sized -> "Pendiente" + REVIEW flag (the original 4b-3b contract)
+      t.assertTrue('BESS_CIRC_STAT (not sized): shows a "Pendiente" line',
+                   circStatus.indexOf('Pendiente') >= 0);
+      t.assertTrue('BESS_CIRC_STAT (not sized): status is a REVIEW flag',
+                   circStatusFlag.indexOf('REVIEW') >= 0);
+    }
 
-    // === TEST 5: per-run rows are blank while circuit not sized ==========
-    t.assert('BESS_CIRC_RUN1 blank (reserved for 4b-2.5)',
-             '', value(MDC_ROW.BESS_CIRC_RUN1));
+    // === TEST 5: per-run rows match the circuit state ====================
+    // sized -> RUN1 carries conductor info; not sized -> RUN1 stays blank.
+    var run1 = String(value(MDC_ROW.BESS_CIRC_RUN1));
+    if (circ && circ.sizeable) {
+      t.assertTrue('BESS_CIRC_RUN1 (sized): non-empty conductor line',
+                   run1.length > 0);
+    } else {
+      t.assert('BESS_CIRC_RUN1 (not sized): blank', '', run1);
+    }
     t.assert('BESS_CIRC_RUN2 blank (reserved for 4b-2.5)',
              '', value(MDC_ROW.BESS_CIRC_RUN2));
 

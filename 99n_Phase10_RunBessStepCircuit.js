@@ -69,19 +69,35 @@ function addPhase10Tests(t, ss) {
                  typeof dc.busbarNote === 'string' && dc.busbarNote.length > 0);
     t.assertTrue('DC: busbarNote mentions DC-coupled',
                  dc.busbarNote.indexOf('DC-coupled') >= 0);
-    // circuit ran; with no battery voltage it must report not-sizeable
+    // circuit ran -- assert the call happened and produced a typed object.
+    // Sizeable depends on whether a battery voltage is available (DB or manual);
+    // accept BOTH paths so the test stays valid as the live battery picked in
+    // INPUT_BESS!C6 changes (CUSTOM_MANUAL = no voltage; catalog = real V).
     t.assertTrue('DC: result.circuit present', dc.circuit !== null
                                             && dc.circuit !== undefined);
     if (dc.circuit) {
-      t.assertFalse('DC: circuit not sizeable (no battery voltage yet)',
-                    dc.circuit.sizeable);
-      t.assertTrue('DC: circuit gives a reason',
-                   typeof dc.circuit.reason === 'string'
-                   && dc.circuit.reason.length > 0);
+      if (dc.circuit.sizeable) {
+        // Voltage available -> circuit was sized. Assert shape.
+        t.assertTrue('DC: sizeable -> has runs',
+                     Array.isArray(dc.circuit.runs) && dc.circuit.runs.length > 0);
+        // Note: conductorSize is a number/string like 3, "1/0" -- coerce to bool.
+        var hasCond = !!(dc.circuit.runs[0]
+                      && dc.circuit.runs[0].conductorSize !== undefined
+                      && dc.circuit.runs[0].conductorSize !== null
+                      && String(dc.circuit.runs[0].conductorSize).length > 0);
+        t.assertTrue('DC: sizeable -> first run has a conductor size', hasCond);
+        // sized circuit must NOT emit a "circuit not sized" warning
+        t.assertFalse('DC: sized -> no "circuit not sized" warning',
+                      _phase10HasWarning(dc.warnings, 'circuit not sized'));
+      } else {
+        // No voltage -> graceful "not sized" with a reason + warning.
+        t.assertTrue('DC: not sizeable -> gives a reason',
+                     typeof dc.circuit.reason === 'string'
+                     && dc.circuit.reason.length > 0);
+        t.assertTrue('DC: not sizeable -> "circuit not sized" warning raised',
+                     _phase10HasWarning(dc.warnings, 'circuit not sized'));
+      }
     }
-    // the not-sizeable state must surface as a warning
-    t.assertTrue('DC: a "circuit not sized" warning is raised',
-                 _phase10HasWarning(dc.warnings, 'circuit not sized'));
 
     // === TEST 2: AC_COUPLED path -- busbar note changes ==================
     shDesign.getRange(17, 3).setValue('AC_COUPLED');

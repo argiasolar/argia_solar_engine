@@ -2210,3 +2210,18 @@ function setupInputBess() {
   shBess.getRange(6, 3).setDataValidation(rule);
   SpreadsheetApp.flush();
 }
+
+// ===========================================================================
+// setupCfeOutput  (Increment 4b-2.5d)
+// ===========================================================================
+// Thin IDE-facing wrapper around writeCfeOutput(ss). Lets you regenerate the
+// CFE_OUTPUT tab on demand without running the full engine pipeline.
+//
+// To run: select setupCfeOutput in the Apps Script IDE, click Run.
+//
+// Idempotent. The underlying writeCfeOutput wipes and recreates the tab on
+// every call -- manual annotations in CFE_OUTPUT do NOT survive.
+function setupCfeOutput() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  writeCfeOutput(ss);
+}

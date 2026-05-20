@@ -146,6 +146,15 @@ function runTests() {
   catch (e) { t.error('Phase15 aborted', e); }
 
   // -------------------------------------------------------------------------
+  // Phase 19 -- CFE_OUTPUT writer (v2.4.0 -- Increment 4b-2.5d)
+  // Lives in 99t_Phase19_WriteCfeOutput.gs. Renders CFE_OUTPUT from
+  // INPUT_CFE / CFE_SIMULATION / BESS_SIMULATION (pure reader). Asserts
+  // source row labels (canary for row drift) + renderer pull-through.
+  // -------------------------------------------------------------------------
+  try { addPhase19Tests(t, ss); }
+  catch (e) { t.error('Phase19 aborted', e); }
+
+  // -------------------------------------------------------------------------
   // Tier 8 -- Phase 2 BESS impact (v2.2.0)
   // Added 2026-05-15. See 99e_TestRunner_Phase2.gs.
   // SCOPE: SELF_CONSUMPTION_MAX strategy only. PEAK_SHAVING and HYBRID
