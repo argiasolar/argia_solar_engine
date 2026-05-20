@@ -29,6 +29,9 @@ var SH = {
   INPUT_INSTALL  : 'INPUT_INSTALL',
   INPUT_CFE      : 'INPUT_CFE',
   INPUT_BESS     : 'INPUT_BESS',
+  CFE_SIM        : 'CFE_SIMULATION',
+  BESS_SIM       : 'BESS_SIMULATION',
+  CFE_OUTPUT     : 'CFE_OUTPUT',
   PANELS_MIRROR  : '11M_PRODUCTS_PANELS',
   INV_MIRROR     : '12M_PRODUCTS_INVERTERS',
   BESS_MIRROR    : '16M_PRODUCTS_BESS',
@@ -638,6 +641,20 @@ function runArgiaEngine() {
       engineLog(ss, 'Engine', 'WARNING',
         'Project Card skipped: ' + pcErr.message +
         '. Run "Generate Project Card" from menu after fixing.');
+    }
+
+    // Step 13.5: CFE_OUTPUT render -------------------------------------------
+    // Reads INPUT_CFE / CFE_SIMULATION / BESS_SIMULATION (already populated
+    // by their live formulas) and renders a customer-facing comparison tab.
+    // Pure renderer -- never modifies source sheets. try/catch matches
+    // Step 9.5 pattern: a render bug never breaks the rest of the pipeline.
+    engineLog(ss, 'Engine', 'INFO', 'Step 13.5: writing CFE_OUTPUT');
+    try {
+      writeCfeOutput(ss);
+    } catch (cfeErr) {
+      engineLog(ss, 'Engine', 'WARNING',
+        'CFE_OUTPUT skipped: ' + cfeErr.message +
+        '. Other outputs are unaffected.');
     }
 
     // Done ------------------------------------------------------------------

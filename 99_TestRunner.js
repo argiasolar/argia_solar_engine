@@ -385,7 +385,7 @@ function testEndToEnd(t, ss) {
   // ---------------------------------------------------------------------------
   var _SH_OPTIONAL = ['INSTALLATION','95_INSTALL_DRIVER_MAP',
     '90M_INSTALL_LIB','91M_INSTALL_FACTORS','92M_INSTALL_ROLE_RATES',
-    '93M_INSTALL_EQUIP_RATES','INPUT_GENERAL'];
+    '93M_INSTALL_EQUIP_RATES','INPUT_GENERAL','CFE_OUTPUT'];
   var _shMissing = [];
   Object.keys(SH).forEach(function(key) {
     var name = SH[key];
