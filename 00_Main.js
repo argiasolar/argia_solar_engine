@@ -29,9 +29,6 @@ var SH = {
   INPUT_INSTALL  : 'INPUT_INSTALL',
   INPUT_CFE      : 'INPUT_CFE',
   INPUT_BESS     : 'INPUT_BESS',
-  CFE_SIM        : 'CFE_SIMULATION',
-  BESS_SIM       : 'BESS_SIMULATION',
-  CFE_OUTPUT     : 'CFE_OUTPUT',
   PANELS_MIRROR  : '11M_PRODUCTS_PANELS',
   INV_MIRROR     : '12M_PRODUCTS_INVERTERS',
   BESS_MIRROR    : '16M_PRODUCTS_BESS',
@@ -499,8 +496,12 @@ function runArgiaEngine() {
     engineLog(ss, 'Engine', 'INFO', 'Step 1: checking sheets');
     // Install sheets are optional -- they only need IMPORTRANGE to be set up.
     // Core engine (MDC/BOM) runs even if install mirrors are missing.
+    // INPUT_GENERAL is RETIRED (v2.0.2+) -- the SH constant lingers for legacy
+    // references in unmigrated writers/exporters, but the sheet is no longer
+    // required at startup. Removing the SH constant fully is deferred cleanup.
     var OPTIONAL_SHEETS = ['INSTALLATION','95_INSTALL_DRIVER_MAP',
-      '90M_INSTALL_LIB','91M_INSTALL_FACTORS','92M_INSTALL_ROLE_RATES','93M_INSTALL_EQUIP_RATES'];
+      '90M_INSTALL_LIB','91M_INSTALL_FACTORS','92M_INSTALL_ROLE_RATES','93M_INSTALL_EQUIP_RATES',
+      'INPUT_GENERAL'];
     var missing = [];
     Object.keys(SH).forEach(function(key) {
       var name = SH[key];
@@ -637,20 +638,6 @@ function runArgiaEngine() {
       engineLog(ss, 'Engine', 'WARNING',
         'Project Card skipped: ' + pcErr.message +
         '. Run "Generate Project Card" from menu after fixing.');
-    }
-
-    // Step 13.5: CFE_OUTPUT render -------------------------------------------
-    // Reads INPUT_CFE / CFE_SIMULATION / BESS_SIMULATION (already populated
-    // by their live formulas) and renders a customer-facing comparison tab.
-    // Pure renderer -- never modifies source sheets. try/catch matches
-    // Step 9.5 pattern: a render bug never breaks the rest of the pipeline.
-    engineLog(ss, 'Engine', 'INFO', 'Step 13.5: writing CFE_OUTPUT');
-    try {
-      writeCfeOutput(ss);
-    } catch (cfeErr) {
-      engineLog(ss, 'Engine', 'WARNING',
-        'CFE_OUTPUT skipped: ' + cfeErr.message +
-        '. Other outputs are unaffected.');
     }
 
     // Done ------------------------------------------------------------------

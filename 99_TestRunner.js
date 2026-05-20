@@ -146,15 +146,6 @@ function runTests() {
   catch (e) { t.error('Phase15 aborted', e); }
 
   // -------------------------------------------------------------------------
-  // Phase 19 -- CFE_OUTPUT writer (v2.4.0 -- Increment 4b-2.5d)
-  // Lives in 99t_Phase19_WriteCfeOutput.gs. Renders CFE_OUTPUT from
-  // INPUT_CFE / CFE_SIMULATION / BESS_SIMULATION (pure reader). Asserts
-  // source row labels (canary for row drift) + renderer pull-through.
-  // -------------------------------------------------------------------------
-  try { addPhase19Tests(t, ss); }
-  catch (e) { t.error('Phase19 aborted', e); }
-
-  // -------------------------------------------------------------------------
   // Tier 8 -- Phase 2 BESS impact (v2.2.0)
   // Added 2026-05-15. See 99e_TestRunner_Phase2.gs.
   // SCOPE: SELF_CONSUMPTION_MAX strategy only. PEAK_SHAVING and HYBRID
@@ -383,6 +374,30 @@ function testCalcModules(t, ss) {
 // ---------------------------------------------------------------------------
 function testEndToEnd(t, ss) {
   t.suite('Tier 3 -- end-to-end');
+
+  // ---------------------------------------------------------------------------
+  // REGRESSION GUARD (added after the v2.3.x INPUT_GENERAL incident):
+  // runArgiaEngine() crashes at startup if any SH[key] points to a sheet that
+  // doesn't exist AND isn't in OPTIONAL_SHEETS. Tier 3 calls the calc pipeline
+  // directly (no UI), so it doesn't exercise that check. This block mirrors the
+  // check so a missing sheet for a non-optional SH constant fails loudly here.
+  // Keep OPTIONAL_SHEETS in sync with the list in 00_Main.js runArgiaEngine().
+  // ---------------------------------------------------------------------------
+  var _SH_OPTIONAL = ['INSTALLATION','95_INSTALL_DRIVER_MAP',
+    '90M_INSTALL_LIB','91M_INSTALL_FACTORS','92M_INSTALL_ROLE_RATES',
+    '93M_INSTALL_EQUIP_RATES','INPUT_GENERAL'];
+  var _shMissing = [];
+  Object.keys(SH).forEach(function(key) {
+    var name = SH[key];
+    if (name === 'LOGS' || name === 'BOM') return;     // engine creates these
+    if (_SH_OPTIONAL.indexOf(name) !== -1) return;     // optional
+    if (ss.getSheetByName(name) === null) _shMissing.push(key + ' -> ' + name);
+  });
+  t.assert('runArgiaEngine sheet-existence guard: no missing non-optional sheets',
+           0, _shMissing.length);
+  if (_shMissing.length > 0) {
+    t.info('Tier 3 missing sheets', _shMissing.join(' | '));
+  }
 
   // Check that MDC and INPUT sheets exist -- if not, skip with a clear message
   // v2.0.2: INPUT_GENERAL retired in favor of INPUT_PROJECT. The new
