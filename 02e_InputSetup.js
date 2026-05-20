@@ -2167,3 +2167,46 @@ function restyleInstallationTopZone() {
 
   return sh;
 }
+// ===========================================================================
+// setupInputBess  (Increment 4b-2.5c)
+// ===========================================================================
+// Rewires INPUT_BESS!C6 (BATTERY_ID) data-validation dropdown to read
+// dynamically from 16M_PRODUCTS_BESS!A2:A. The dropdown was hand-authored
+// with a stale allowlist (CATL_3MWH, BYD_2MWH, HUAWEI_2MWH, TESLA_3_9MWH,
+// LOCAL_INTEGRATOR) that does not match the live DB. A user cannot today
+// select any real catalog battery -- Phase 14 CASE 3 surfaced this.
+//
+// Pointing the validation at the DB's Battery_ID column means:
+//   - The dropdown always lists exactly the products in the live DB
+//   - Adding/removing a product in 16M_PRODUCTS_BESS auto-updates C6
+//   - Stale entries (CATL_3MWH etc.) are removed cleanly
+//
+// Idempotent: safe to run repeatedly. Touches ONLY C6's validation, leaves
+// the cell's current value alone (which may be a now-invalid stale ID --
+// the user picks the right one from the new dropdown).
+//
+// To run from the Apps Script IDE: select setupInputBess, click Run.
+function setupInputBess() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var shBess = ss.getSheetByName(SH.INPUT_BESS);
+  if (!shBess) {
+    throw new Error('setupInputBess: INPUT_BESS sheet not found.');
+  }
+  var shDb = ss.getSheetByName(SH.BESS_MIRROR);
+  if (!shDb) {
+    throw new Error('setupInputBess: ' + SH.BESS_MIRROR + ' tab not found '
+      + '-- cannot build dropdown from DB.');
+  }
+
+  // Point the validation at the DB's Battery_ID column (col A, from row 2
+  // down). requireValueInRange tracks the range live -- no need to
+  // re-enumerate the values here.
+  var dbIdRange = shDb.getRange('A2:A');
+  var rule = SpreadsheetApp.newDataValidation()
+    .requireValueInRange(dbIdRange, true)
+    .setAllowInvalid(false)
+    .setHelpText('Seleccione un Battery_ID de ' + SH.BESS_MIRROR + '!A:A')
+    .build();
+  shBess.getRange(6, 3).setDataValidation(rule);
+  SpreadsheetApp.flush();
+}

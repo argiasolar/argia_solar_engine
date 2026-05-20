@@ -1,8 +1,9 @@
 // =============================================================================
 // ARGIA ENGINE -- Phase 14 test suite: battery voltage resolution (4b-2.5b)
 // Paste into 99_TestRunner.gs, and add the call
-//   try { addPhase14Tests(t, ss); } catch (e) { t.error('Phase14 aborted', e); }
-// right after the addPhase13Tests block in runTests().
+//   try { addPhase14BessTests(t, ss); } catch (e) { t.error('Phase14 BESS aborted', e); }
+// right after the existing addPhase14Tests block (the v2.1.4 CFE intermedia
+// tests, which keep the addPhase14Tests name) in runTests().
 //
 // SCOPE: Increment 4b-2.5b wired battery voltage into readInputBess. It added
 // the resolveBessVoltage helper (01a_ReadInputsBess.gs), the INPUT_BESS C18
@@ -21,7 +22,7 @@
 // (C6,C7,C10,C11,C18,C19), and ALWAYS restores in a finally block.
 // =============================================================================
 
-function addPhase14Tests(t, ss) {
+function addPhase14BessTests(t, ss) {
   t.suite('Phase14: battery voltage resolution');
 
   // -- function availability ------------------------------------------------

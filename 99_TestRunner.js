@@ -127,6 +127,25 @@ function runTests() {
   catch (e) { t.error('Phase1.4 aborted', e); }
 
   // -------------------------------------------------------------------------
+  // Phase 14 BESS -- battery voltage resolution (v2.4.0 -- Increment 4b-2.5b)
+  // Lives in 99r_Phase14_BessVoltage.gs. Distinct from addPhase14Tests above
+  // (which is the v2.1.4 CFE intermedia suite). Originally named
+  // addPhase14Tests too, which silently SHADOWED the CFE suite in Apps
+  // Script's shared global scope. Renamed addPhase14BessTests in 4b-2.5c.
+  // -------------------------------------------------------------------------
+  try { addPhase14BessTests(t, ss); }
+  catch (e) { t.error('Phase14 BESS aborted', e); }
+
+  // -------------------------------------------------------------------------
+  // Phase 15 -- BESS C6 dropdown sync (v2.4.0 -- Increment 4b-2.5c)
+  // Lives in 99s_Phase15_BessDropdownSync.gs. Verifies that INPUT_BESS!C6
+  // data-validation reads from 16M_PRODUCTS_BESS!A:A. Phase 14 CASE 3
+  // surfaced that the C6 dropdown allowlist was stale relative to the DB.
+  // -------------------------------------------------------------------------
+  try { addPhase15Tests(t, ss); }
+  catch (e) { t.error('Phase15 aborted', e); }
+
+  // -------------------------------------------------------------------------
   // Tier 8 -- Phase 2 BESS impact (v2.2.0)
   // Added 2026-05-15. See 99e_TestRunner_Phase2.gs.
   // SCOPE: SELF_CONSUMPTION_MAX strategy only. PEAK_SHAVING and HYBRID
