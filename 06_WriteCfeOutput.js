@@ -60,12 +60,21 @@
 // D for annual scalars on BESS_SIM, or specific col for header strip).
 // Update this map and ONLY this map when a source row shifts.
 var CFE_OUT_SRC = {
-  // INPUT_CFE header strip (rows 5-8)
-  input_tariffCode      : { sheet: 'INPUT_CFE',      row:  5, col:  3 },  // C5
-  input_serviceName     : { sheet: 'INPUT_CFE',      row:  6, col:  5 },  // E6
-  input_serviceNumber   : { sheet: 'INPUT_CFE',      row:  7, col:  5 },  // E7
-  input_contractedKw    : { sheet: 'INPUT_CFE',      row:  8, col:  5 },  // E8
-  input_2pctBT          : { sheet: 'INPUT_CFE',      row:  8, col:  3 },  // C8 ("YES"/"NO")
+  // INPUT_CFE header strip (rows 4-7 in actual layout — auditing showed the
+  // map was off-by-one and reading from the wrong columns. Corrected against
+  // the live OASIS LATINOAMERICA sheet on 2026-05-20.)
+  //   B4 'TARIFF CODE:'      -> C4  ('GDMTH')
+  //   E4 'SERVICE NAME:'     -> F4  ('OASIS LATINOAMERICA S RL CV')
+  //   B5 'TARIFF LOCATION:'  -> C5  ('GOLFO CENTRO')      [unused in header strip]
+  //   E5 'SERVICE NUMBER:'   -> F5  (414240911417)
+  //   B6 'TARIFF DAP:'       -> C6  (0.0)                 [unused in header strip]
+  //   E6 'CONTRACTED DEMAND:'-> F6  (1620)
+  //   B7 '2% BAJA TENSION:'  -> C7  ('NO')
+  input_tariffCode      : { sheet: 'INPUT_CFE',      row:  4, col:  3 },  // C4
+  input_serviceName     : { sheet: 'INPUT_CFE',      row:  4, col:  6 },  // F4
+  input_serviceNumber   : { sheet: 'INPUT_CFE',      row:  5, col:  6 },  // F5
+  input_contractedKw    : { sheet: 'INPUT_CFE',      row:  6, col:  6 },  // F6
+  input_2pctBT          : { sheet: 'INPUT_CFE',      row:  7, col:  3 },  // C7 ("YES"/"NO")
 
   // INPUT_CFE monthly bands (cols C..N = months Ene..Dic)
   input_kwhBase         : { sheet: 'INPUT_CFE',      row: 10 },
@@ -76,10 +85,20 @@ var CFE_OUT_SRC = {
   input_total           : { sheet: 'INPUT_CFE',      row: 37 },
 
   // INPUT_CFE PV interconnection settings (col C)
-  input_interconnMode   : { sheet: 'INPUT_CFE',      row: 40, col:  3 },  // C40
-  input_exportPrice     : { sheet: 'INPUT_CFE',      row: 41, col:  3 },  // C41
-  input_autoconsumoPct  : { sheet: 'INPUT_CFE',      row: 42, col:  3 },  // C42
-  input_fpUmbral        : { sheet: 'INPUT_CFE',      row: 43, col:  3 },  // C43
+  // Audit 2026-05-20: actual layout is one row LOWER than the original map.
+  // Real layout:
+  //   B39 'PV INTERCONNECTION' (section header)
+  //   B41 'MODO INTERCONEXIÓN:'      C41 ('MEDICION_NETA')
+  //   B42 'PRECIO EXPORTACIÓN MXN/kWh:'  C42 (0.8)
+  //   B43 'AUTOCONSUMO %:'           C43 (blank — uses calcCfeBillWithPv default)
+  //   B44 'UMBRAL FACTOR POTENCIA:'  C44 (0.9)
+  // Previous map pointed at C40-C43 which read the wrong rows -- e.g.
+  // autoconsumoPct was reading the export-price cell (0.8), explaining the
+  // "80% autoconsumo" anomaly seen in CFE_OUTPUT header.
+  input_interconnMode   : { sheet: 'INPUT_CFE',      row: 41, col:  3 },  // C41
+  input_exportPrice     : { sheet: 'INPUT_CFE',      row: 42, col:  3 },  // C42
+  input_autoconsumoPct  : { sheet: 'INPUT_CFE',      row: 43, col:  3 },  // C43
+  input_fpUmbral        : { sheet: 'INPUT_CFE',      row: 44, col:  3 },  // C44
 
   // CFE_SIMULATION monthly bands
   csim_kwhBaseAfterPv   : { sheet: 'CFE_SIMULATION', row:  5 },

@@ -146,6 +146,27 @@ function runTests() {
   catch (e) { t.error('Phase15 aborted', e); }
 
   // -------------------------------------------------------------------------
+  // Phase 19 -- CFE_OUTPUT renderer (v2.3.6 -- Increment 4b-2.5d)
+  // Lives in 99t_Phase19_WriteCfeOutput.gs. Verifies label sanity in source
+  // sheets and the renderer's pull-through correctness. The dispatch was
+  // missing from this runner -- restored 2026-05-20 alongside Phase 20.
+  // -------------------------------------------------------------------------
+  try { addPhase19Tests(t, ss); }
+  catch (e) { t.error('Phase19 aborted', e); }
+
+  // -------------------------------------------------------------------------
+  // Phase 20 -- CFE_SIM totals repair + header cell-map fix
+  // Lives in 99u_Phase20_CfeSimRepairAndHeaderMap.gs. Covers bugs surfaced
+  // by the OASIS LATINOAMERICA audit (2026-05-20):
+  //   - BESS_SIMULATION!D12 read $0 because CFE_SIMULATION column O annual
+  //     totals were missing for rows 37, 39, 40, 41, 42.
+  //   - CFE_OUT_SRC header strip pointed at wrong cells (off-by-one and
+  //     wrong-column).
+  // -------------------------------------------------------------------------
+  try { addPhase20Tests(t, ss); }
+  catch (e) { t.error('Phase20 aborted', e); }
+
+  // -------------------------------------------------------------------------
   // Tier 8 -- Phase 2 BESS impact (v2.2.0)
   // Added 2026-05-15. See 99e_TestRunner_Phase2.gs.
   // SCOPE: SELF_CONSUMPTION_MAX strategy only. PEAK_SHAVING and HYBRID
