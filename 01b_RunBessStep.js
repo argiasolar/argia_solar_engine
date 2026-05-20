@@ -127,8 +127,11 @@ function runBessStep(ss) {
       bess: bess,
       tbls: tbls,
       nom: nom,
-      // dcBusVoltageV / acVoltageV: no INPUT_BESS voltage cell yet.
-      // Left undefined on purpose -> calcBessCircuit reports not-sizeable.
+      // dcBusVoltageV / acVoltageV come from readInputBess (Increment
+      // 4b-2.5b): catalog product DB voltage, else the INPUT_BESS C18/C19
+      // manual cell, else 0. A 0 is passed as undefined here so
+      // calcBessCircuit reports not-sizeable ("pendiente") rather than
+      // sizing on a fabricated voltage.
       dcBusVoltageV: (bess.dcBusVoltageV > 0) ? bess.dcBusVoltageV : undefined,
       acVoltageV:    (bess.acVoltageV    > 0) ? bess.acVoltageV    : undefined,
     });

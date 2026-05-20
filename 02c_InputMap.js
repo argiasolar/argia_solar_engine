@@ -1341,9 +1341,33 @@ var _MAP_BESS = {
     consumedBy: ['engine']
   },
 
+  // -- INPUT_BESS §2b BATTERY VOLTAGE  (Increment 4b-2.5b) -----------------
+  // Manual voltage override / CUSTOM_MANUAL fallback. The reader prefers the
+  // selected catalog product's Nominal_Voltage_V (16M_PRODUCTS_BESS via
+  // lookupBatteryVoltage); these cells are used only when the product has no
+  // DB voltage (CUSTOM_MANUAL) or the designer wants to force a value.
+  // Blank is a valid state -> calcBessCircuit reports "pendiente".
+  // Physically rows 18/19 of INPUT_BESS, inserted between §2 (C10-C17) and
+  // §3 (now C22). default 0 = "not supplied".
+  bessDcBusVoltageV: {
+    sheet: 'INPUT_BESS', row: 18, col: 3,       // C18
+    label: 'Voltaje bus DC / batería (V)', type: 'number',
+    default: 0, required: false, unit: 'V',
+    section: 'BESS 2 ESPECIFICACIONES',
+    consumedBy: ['engine']
+  },
+  bessAcVoltageV: {
+    sheet: 'INPUT_BESS', row: 19, col: 3,       // C19
+    label: 'Voltaje sistema AC (V)', type: 'number',
+    default: 0, required: false, unit: 'V',
+    section: 'BESS 2 ESPECIFICACIONES',
+    consumedBy: ['engine']
+  },
+
   // -- INPUT_BESS §3 INFORMACIÓN COMERCIAL ---------------------------------
   bessCapexMxn: {
-    sheet: 'INPUT_BESS', row: 20, col: 3,       // C20
+    sheet: 'INPUT_BESS', row: 22, col: 3,       // C22 (was C20; +2 after the
+                                                 // voltage rows were inserted)
     label: 'CAPEX MXN', type: 'number',
     default: 0, required: false, unit: 'MXN',
     section: 'BESS 3 COMERCIAL',
@@ -1352,21 +1376,21 @@ var _MAP_BESS = {
 
   // -- INPUT_BESS §4 PEAK SHAVING ------------------------------------------
   bessLoadFactorFC: {
-    sheet: 'INPUT_BESS', row: 23, col: 3,       // C23
+    sheet: 'INPUT_BESS', row: 25, col: 3,       // C25 (was C23; +2)
     label: 'Factor de carga (F.C.)', type: 'number',
     default: 0.57, required: false,
     section: 'BESS 4 PEAK SHAVING',
     consumedBy: ['engine']
   },
   bessPuntaWindowSummerH: {
-    sheet: 'INPUT_BESS', row: 24, col: 3,       // C24
+    sheet: 'INPUT_BESS', row: 26, col: 3,       // C26 (was C24; +2)
     label: 'Horas punta — verano', type: 'number',
     default: 2.0, required: false, unit: 'h',
     section: 'BESS 4 PEAK SHAVING',
     consumedBy: ['engine']
   },
   bessPuntaWindowWinterH: {
-    sheet: 'INPUT_BESS', row: 25, col: 3,       // C25
+    sheet: 'INPUT_BESS', row: 27, col: 3,       // C27 (was C25; +2)
     label: 'Horas punta — invierno', type: 'number',
     default: 4.0, required: false, unit: 'h',
     section: 'BESS 4 PEAK SHAVING',

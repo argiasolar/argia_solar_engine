@@ -3002,15 +3002,15 @@ function _p4_testJsOracleCrossCheck(t, ss) {
     tar.capacidad = capRate;                               // sheet's eff. rate
 
     // The BESS_SIMULATION row-26 formula picks the punta window per month:
-    // winter (INPUT_BESS C25) for cols C,D,M,N (COLUMN()<=4 or >=13),
-    // summer (INPUT_BESS C24) for the rest. The JS oracle must use the SAME
+    // winter (INPUT_BESS C27) for cols C,D,M,N (COLUMN()<=4 or >=13),
+    // summer (INPUT_BESS C26) for the rest. The JS oracle must use the SAME
     // window for that month or it computes a different shave (this was the
     // v2.3.2-v2.3.4 summer mismatch). Mirror the sheet rule exactly.
     var colNum = 3 + m;                                    // C=3 .. N=14
     var isWinterCol = (colNum <= 4 || colNum >= 13);
     var bess = {};
     for (var k3 in fx.bess) bess[k3] = fx.bess[k3];
-    bess.puntaWindowHours = isWinterCol ? 4 : 2;            // C25 / C24
+    bess.puntaWindowHours = isWinterCol ? 4 : 2;            // C27 / C26
 
     var r = calcPeakShavingImpact(jin, tar, bess);
     var jsCap    = r.capacidadSavingYear1;

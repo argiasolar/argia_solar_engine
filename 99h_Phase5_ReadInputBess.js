@@ -32,7 +32,7 @@ function addPhase5Tests(t, ss) {
     c15: shBess.getRange(15, 3).getValue(),
     c16: shBess.getRange(16, 3).getValue(),
     c17: shBess.getRange(17, 3).getValue(),
-    c20: shBess.getRange(20, 3).getValue(),
+    c22: shBess.getRange(22, 3).getValue(),   // capex moved C20->C22 (4b-2.5b)
   };
 
   function restore() {
@@ -47,7 +47,7 @@ function addPhase5Tests(t, ss) {
     shBess.getRange(15, 3).setValue(snap.c15);
     shBess.getRange(16, 3).setValue(snap.c16);
     shBess.getRange(17, 3).setValue(snap.c17);
-    shBess.getRange(20, 3).setValue(snap.c20);
+    shBess.getRange(22, 3).setValue(snap.c22);
     SpreadsheetApp.flush();
   }
 
@@ -84,7 +84,7 @@ function addPhase5Tests(t, ss) {
     shBess.getRange(15, 3).setValue(1.0);        // cycles/day
     shBess.getRange(16, 3).setValue(0.025);      // degradation
     shBess.getRange(17, 3).setValue(0.0);        // backup reserve
-    shBess.getRange(20, 3).setValue(1500000);    // capex MXN
+    shBess.getRange(22, 3).setValue(1500000);    // capex MXN (C20->C22, 4b-2.5b)
     SpreadsheetApp.flush();
 
     var bess = readInputBess(ss);

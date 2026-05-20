@@ -20,7 +20,8 @@ function addPhase6Tests(t, ss) {
   }
 
   // -- Snapshot every cell runBessStep (via readInputBess) touches ---------
-  var rows = [6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 20];
+  // 18/19 = voltage cells, 22 = capex (moved from 20 in 4b-2.5b).
+  var rows = [6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 22];
   var snap = { toggle: shProj.getRange(64, 4).getValue(), bess: {} };
   rows.forEach(function(r) { snap.bess[r] = shBess.getRange(r, 3).getValue(); });
 
@@ -43,7 +44,7 @@ function addPhase6Tests(t, ss) {
     shBess.getRange(15, 3).setValue(1.0);
     shBess.getRange(16, 3).setValue(0.025);
     shBess.getRange(17, 3).setValue(0.0);
-    shBess.getRange(20, 3).setValue(1500000);
+    shBess.getRange(22, 3).setValue(1500000);   // capex (C20->C22, 4b-2.5b)
     SpreadsheetApp.flush();
   }
 
@@ -107,7 +108,7 @@ function addPhase6Tests(t, ss) {
     // Low RTE (0.70) + zero CAPEX -> warnings, but NOT an error.
     writeValidBattery();
     shBess.getRange(14, 3).setValue(0.70);   // low RTE
-    shBess.getRange(20, 3).setValue(0);      // zero CAPEX
+    shBess.getRange(22, 3).setValue(0);      // zero CAPEX (C20->C22, 4b-2.5b)
     SpreadsheetApp.flush();
     var warned = runBessStep(ss);
     t.assertTrue('Low RTE + zero CAPEX -> still enabled (no throw)',
