@@ -21,7 +21,7 @@
 //   - calcPeakShavingImpact (04a_CalcCFEBill.gs)
 //   - _bessUsableKwh (04a_CalcCFEBill.gs)
 //   - BESS_STRATEGY constants (04a_CalcCFEBill.gs)
-//   - TESTPROJ_PEAK_001 fixture (98_TestData.gs)
+//   - TESTPROJ_PEAK_001 fixture (test/TestProjects.gs)
 //
 // CO-EXISTENCE
 //   Legacy addPhase3Tests in 99_TestRunner.gs is unchanged. After Pass 9

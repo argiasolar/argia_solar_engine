@@ -37,7 +37,7 @@
 //
 // DEPENDENCIES
 //   Engine: calcPeakShavingImpact (04a_CalcCFEBill.gs)
-//   Fixture: TESTPROJ_PEAK_001 (98_TestData.gs)
+//   Fixture: TESTPROJ_PEAK_001 (test/TestProjects.gs)
 //   Sheets: INPUT_CFE, INPUT_BESS, INPUT_PROJECT, INPUT_DESIGN,
 //           CFE_SIMULATION, BESS_SIMULATION (all required, fails loudly
 //           if any missing)

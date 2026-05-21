@@ -29,13 +29,13 @@
 //   Copied verbatim from 99_TestRunner.gs lines 932-1029 (buildTestInputs,
 //   buildTestPanel, buildTestInverterBank). The data is the contract --
 //   any change here must also be reflected in TESTPROJ_001.expected in
-//   98_TestData.gs so the engine output still matches.
+//   test/TestProjects.gs so the engine output still matches.
 //
 // PROVENANCE OF NUMBERS
 //   Every field matches the TESTPROJ-001 spec. The minTemp -1 (not 0) value
 //   is intentional: the engine has `|| -14` fallback that JavaScript treats
 //   as falsy for 0, mis-firing the temperature default. See the comment in
-//   98_TestData.gs for the same reasoning.
+//   test/TestProjects.gs for the same reasoning.
 // =============================================================================
 
 
@@ -65,7 +65,7 @@ function tdBuildTestInputs() {
     modsPerString: 18,
     parallelStrings: 1,
     // minTemp -1 (not 0) is INTENTIONAL: engine's `|| -14` fallback
-    // treats 0 as falsy. See 98_TestData.gs for full reasoning.
+    // treats 0 as falsy. See test/TestProjects.gs for full reasoning.
     minTemp: -1,
     maxTemp: 38,
     avgTemp: 25,

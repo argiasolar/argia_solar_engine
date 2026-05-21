@@ -33,7 +33,7 @@
 //   group=unit. All sub-suites are pure-function calls. No sheet I/O.
 //
 // DEPENDENCIES
-//   - TESTPROJ_SYNTH_001 fixture (98_TestData.gs)
+//   - TESTPROJ_SYNTH_001 fixture (test/TestProjects.gs)
 //   - calcCfeBill, calcCfeBillAnnual, calcCfeBillWithPv,
 //     calcCfeBillWithPvAnnual (04a_CalcCFEBill.gs)
 //   - CFE_MODE constants (04a_CalcCFEBill.gs)

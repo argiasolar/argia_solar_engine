@@ -79,7 +79,7 @@
 //   Constants: SH, MDC_COL, MDC_ROW, BOM_ROW (00_Main.gs)
 //   Framework: writeTestprojInputs, backupAllInputSheets,
 //              restoreAllInputSheets (Pass 15 additions in test/)
-//   Fixture: TESTPROJ_001 (98_TestData.gs)
+//   Fixture: TESTPROJ_001 (test/TestProjects.gs)
 //
 // FIRST USE OF PASS 15 HELPERS
 //   This test is the first consumer of writeTestprojInputs +

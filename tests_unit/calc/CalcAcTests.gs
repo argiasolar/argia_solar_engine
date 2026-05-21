@@ -20,7 +20,7 @@
 //     also calls calcDC. If calcDC is broken, this test will also fail --
 //     correct behavior. Separation from UNIT_CALC_DC_TESTPROJ001 lets
 //     each failure mode be diagnosed independently.
-//   - TESTPROJ_001 (98_TestData.gs)
+//   - TESTPROJ_001 (test/TestProjects.gs)
 //   - tdBuildTestInputs, tdBuildTestPanel, tdBuildTestInverterBank
 //     (test/TestFixtures.gs -- Pass 15 framework helpers; the legacy
 //     buildTest* functions in 99_TestRunner.gs were removed in Pass 23)

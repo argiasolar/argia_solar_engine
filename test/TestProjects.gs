@@ -1,20 +1,50 @@
 // =============================================================================
-// ARGIA ENGINE -- File: 98_TestData.gs
-// Test fixture: TESTPROJ-001 deterministic contract (spec v3).
+// ARGIA TEST FRAMEWORK -- test/TestProjects.gs
+// -----------------------------------------------------------------------------
+// PASS 24: moved here from the repository-root file `98_TestData.gs` so the
+// entire test infrastructure lives under `test/` and `tests_*/`. The legacy
+// `98_TestData.gs` was deleted in the same pass. Contents below are byte-
+// identical to the legacy file from line 19 onward; only the header changed.
 //
-// This is the "one JSON file" that holds both:
-//   - The synthetic inputs (Part A of spec v3)
-//   - The expected engine outputs  (Parts C1, C2, C3, C4 of spec v3)
+// NAMING NOTE
+//   `test/TestFixtures.gs` already exists and holds three small fixture
+//   BUILDER functions (tdBuildTestInputs / tdBuildTestPanel /
+//   tdBuildTestInverterBank). To keep the data/builder split honest, this
+//   file (`TestProjects.gs`) holds the static fixture DATA -- three large
+//   project-spec objects (TESTPROJ_001 / TESTPROJ_SYNTH_001 /
+//   TESTPROJ_PEAK_001). Different concerns, two files. See Pass 24 commit
+//   message for the merge-vs-split rationale.
 //
-// Edit this file only when spec v3 is explicitly updated. Do NOT edit expected
-// values to make failing tests pass -- investigate the engine instead.
+// CONSUMERS (as of Pass 24)
+//   TESTPROJ_001:
+//     test/TestSheetBackup.gs                     (writeTestprojInputs)
+//     tests_unit/calc/CalcDcTests.gs              (.expected.dc, .tolerance)
+//     tests_unit/calc/CalcAcTests.gs              (.expected.ac, .tolerance)
+//     tests_integration/e2e/Testproj001PipelineTests.gs (.expected, .tolerance)
+//   TESTPROJ_SYNTH_001:
+//     tests_unit/calc/CalcBessImpactTests.gs      (.inputs, .expected.snapshot,
+//                                                  .bessScenarios)
+//     tests_unit/calc/CalcCfeBillTests.gs         (.inputs, .expected,
+//                                                  .scenarios, .fpThresholdScenarios)
+//   TESTPROJ_PEAK_001:
+//     tests_unit/calc/CalcPeakShavingTests.gs     (whole fixture)
+//     tests_regression/sheet_formulas/BessSimulationFormulasTests.gs (whole)
 //
-// Phase A (2026-04-28): legacy `general:` dict deleted. Every value it held
-// duplicated a key in `project:` above. After INPUT_GENERAL was retired,
-// keeping a redundant set of A1-coord writes was just a footgun.
+// EDITING POLICY (preserved from legacy file)
+//   This is the "one JSON file" that holds both:
+//     - The synthetic inputs (Part A of spec v3)
+//     - The expected engine outputs (Parts C1, C2, C3, C4 of spec v3)
+//   Edit this file only when spec v3 is explicitly updated. Do NOT edit
+//   expected values to make failing tests pass -- investigate the engine
+//   instead.
 //
-// Lock-value rationale is documented inline beside each value.
+//   Phase A (2026-04-28): legacy `general:` dict deleted. Every value it
+//   held duplicated a key in `project:` above. After INPUT_GENERAL was
+//   retired, keeping a redundant set of A1-coord writes was just a footgun.
+//
+//   Lock-value rationale is documented inline beside each value.
 // =============================================================================
+
 
 var TESTPROJ_001 = {
 

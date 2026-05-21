@@ -40,11 +40,13 @@
 //   backupInputCells(fieldKeys, ss)       -> snapshot for restore-after-test
 //   restoreInputCells(snapshot, ss)       -> reverse a backup
 //
-// CO-EXISTENCE WITH LEGACY 98_TestData.gs
-//   98_TestData.gs holds TESTPROJ_SYNTH_001 fixtures referenced from many
-//   places. This file ADDS TEST_SCENARIOS alongside; it does not replace
-//   the legacy fixtures yet. Migration of legacy fixtures into the new
-//   scenario shape happens in Pass 2.
+// RELATIONSHIP TO test/TestProjects.gs
+//   test/TestProjects.gs holds the three large fixture data objects
+//   (TESTPROJ_001 / TESTPROJ_SYNTH_001 / TESTPROJ_PEAK_001) referenced
+//   from many tests. This file (TestData.gs) holds framework-side
+//   scenario plumbing (TEST_SCENARIOS, setInputValue, etc.) and is
+//   separate from the fixture data. Both files are loaded by the same
+//   Apps Script project; the globals from each are visible to all tests.
 // =============================================================================
 
 

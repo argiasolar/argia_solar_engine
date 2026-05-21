@@ -21,7 +21,7 @@
 //   = sheet mutations or assertions over sheet state.
 //
 // DEPENDENCIES
-//   - TESTPROJ_001 fixture (98_TestData.gs)
+//   - TESTPROJ_001 fixture (test/TestProjects.gs)
 //   - tdBuildTestInputs, tdBuildTestPanel, tdBuildTestInverterBank
 //     (test/TestFixtures.gs -- Pass 15 framework helpers; the legacy
 //     buildTest* functions in 99_TestRunner.gs were removed in Pass 23)
