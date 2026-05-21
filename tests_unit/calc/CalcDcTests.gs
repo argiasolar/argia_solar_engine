@@ -22,7 +22,9 @@
 //
 // DEPENDENCIES
 //   - TESTPROJ_001 fixture (98_TestData.gs)
-//   - buildTestInputs, buildTestPanel, buildTestInverterBank (99_TestRunner.gs)
+//   - tdBuildTestInputs, tdBuildTestPanel, tdBuildTestInverterBank
+//     (test/TestFixtures.gs -- Pass 15 framework helpers; the legacy
+//     buildTest* functions in 99_TestRunner.gs were removed in Pass 23)
 //     ^^^ When 99_TestRunner.gs is deleted in Pass 7, these helpers MUST be
 //     moved into test/TestData.gs first or the new tests will break.
 //   - calcDC (04_CalcDC.gs)
@@ -51,9 +53,9 @@ registerTest({
     var tol = TESTPROJ_001.tolerance;
 
     // Synthetic inputs -- repeatable regardless of INPUT_DESIGN state.
-    var inp     = buildTestInputs();
-    var panel   = buildTestPanel();
-    var invBank = buildTestInverterBank();
+    var inp     = tdBuildTestInputs();
+    var panel   = tdBuildTestPanel();
+    var invBank = tdBuildTestInverterBank();
     var nom     = loadNomConstants(ctx.ss);
     var tbls    = readElecTables(ctx.ss);
 

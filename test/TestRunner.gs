@@ -22,10 +22,13 @@
 // Tests are wrapped in try/catch so a throw in one doesn't kill the run.
 // Exceptions are recorded via t.error() so they show up in the result sheet.
 //
-// CO-EXISTENCE
-//   The legacy runTests() in 99_TestRunner.gs is unchanged. The new runner
-//   uses different function names (runAllTests, etc.) and writes to a
-//   different sheet (_TEST_RESULTS_V2) so the two are fully isolated.
+// LEGACY COMPATIBILITY
+//   The legacy runTests() in 99_TestRunner.gs was deleted in Pass 23.
+//   A compatibility shim function runTests() near the bottom of this
+//   file redirects calls to runAllTests() so users who had runTests
+//   bookmarked or set as their default Apps Script function still get
+//   a working entry point. Output goes to _TEST_RESULTS_V2 (NOT the
+//   stale _TEST_RESULTS sheet from legacy).
 // =============================================================================
 
 
@@ -217,4 +220,35 @@ function _tr_generateRunId() {
   return Utilities.formatDate(d, Session.getScriptTimeZone(),
                               'yyyyMMdd-HHmmss')
        + '-' + Math.floor(Math.random() * 1000);
+}
+
+
+// ============================================================================
+// LEGACY COMPATIBILITY SHIM (added Pass 23 alongside legacy deletion)
+// ============================================================================
+// The legacy runTests() in 99_TestRunner.gs ran every addPhase*Tests
+// function in sequence and wrote to _TEST_RESULTS. Pass 23 deleted that
+// file and all 14 phase files. This shim preserves the runTests() name
+// so users who:
+//   - Had runTests set as the default function in the Apps Script editor
+//   - Bookmarked Run > runTests in the menu
+//   - Reference runTests() in docs / READMEs
+// get a working entry point instead of a ReferenceError.
+//
+// runTests() now invokes runAllTests() (every test in TEST_REGISTRY).
+// Output goes to _TEST_RESULTS_V2, NOT the legacy _TEST_RESULTS.
+//
+// This shim does NOT replicate every behavior of the legacy runTests
+// (e.g. specific phase-by-phase ordering). It runs all 46 registered
+// tests in registry order, which is the closest semantic match.
+// ============================================================================
+
+/**
+ * Compatibility shim for the legacy runTests() entry point.
+ * Redirects to runAllTests(). See file header for context.
+ *
+ * @return {string} Summary string from runAllTests
+ */
+function runTests() {
+  return runAllTests();
 }

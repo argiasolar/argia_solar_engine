@@ -21,7 +21,9 @@
 //     correct behavior. Separation from UNIT_CALC_DC_TESTPROJ001 lets
 //     each failure mode be diagnosed independently.
 //   - TESTPROJ_001 (98_TestData.gs)
-//   - buildTestInputs, buildTestPanel, buildTestInverterBank
+//   - tdBuildTestInputs, tdBuildTestPanel, tdBuildTestInverterBank
+//     (test/TestFixtures.gs -- Pass 15 framework helpers; the legacy
+//     buildTest* functions in 99_TestRunner.gs were removed in Pass 23)
 //     (99_TestRunner.gs -- see migration note in CalcDcTests.gs)
 //   - calcDC (04_CalcDC.gs), calcAC (05_CalcAC.gs)
 //   - loadNomConstants (02_LoadDB.gs), readElecTables (03_ElecTables.gs)
@@ -41,9 +43,9 @@ registerTest({
     var exp = TESTPROJ_001.expected;
     var tol = TESTPROJ_001.tolerance;
 
-    var inp     = buildTestInputs();
-    var panel   = buildTestPanel();
-    var invBank = buildTestInverterBank();
+    var inp     = tdBuildTestInputs();
+    var panel   = tdBuildTestPanel();
+    var invBank = tdBuildTestInverterBank();
     var nom     = loadNomConstants(ctx.ss);
     var tbls    = readElecTables(ctx.ss);
 
