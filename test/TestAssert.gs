@@ -154,6 +154,26 @@ function createTestContext() {
   }
 
   /**
+   * Assert that a value is truthy. Mirrors the legacy `t.assertTrue` so
+   * migrated tests can carry over unchanged. Records the actual value as
+   * 'TRUE'/'FALSE' for consistency with the legacy result format.
+   */
+  function assertTrue(label, actual) {
+    var ok = !!actual;
+    _record(ok ? 'PASS' : 'FAIL', label, 'TRUE',
+            ok ? 'TRUE' : 'FALSE', '');
+    return ok;
+  }
+
+  /** Assert that a value is falsy. Inverse of assertTrue. */
+  function assertFalse(label, actual) {
+    var ok = !actual;
+    _record(ok ? 'PASS' : 'FAIL', label, 'FALSE',
+            actual ? 'TRUE' : 'FALSE', '');
+    return ok;
+  }
+
+  /**
    * Deep equality between expected and actual. Used for golden-output
    * snapshot tests. Drift fails loud with a JSON diff in the note column.
    *
@@ -320,6 +340,8 @@ function createTestContext() {
     assertNear      : assertNear,
     assertThrows    : assertThrows,
     assertContains  : assertContains,
+    assertTrue      : assertTrue,
+    assertFalse     : assertFalse,
     assertSnapshot  : assertSnapshot,
     expectWarning   : expectWarning,
     expectNoWarning : expectNoWarning,

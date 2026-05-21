@@ -30,8 +30,20 @@
 // =============================================================================
 
 
-/** The single source of truth for all tests in the new framework. */
-var TEST_REGISTRY = [];
+/**
+ * The single source of truth for all tests in the new framework.
+ *
+ * Why the funny init? Apps Script's cross-file load order is not strictly
+ * alphabetical, and we can't assume this file loads before suite files that
+ * call registerTest() at their own load time. If a suite file loads first
+ * and triggers a registerTest() call (which lazy-inits the array via the
+ * guard below), then this file loads, a plain `var TEST_REGISTRY = []`
+ * would overwrite the array and wipe the entries. The guard below makes
+ * initialization idempotent: only assign [] if nothing's there yet.
+ */
+var TEST_REGISTRY = (typeof TEST_REGISTRY !== 'undefined' && TEST_REGISTRY)
+  ? TEST_REGISTRY
+  : [];
 
 
 /**
@@ -48,6 +60,14 @@ var TEST_REGISTRY = [];
  * @param {Object} entry  See REGISTRY ENTRY SHAPE above.
  */
 function registerTest(entry) {
+  // Lazy init guard. If this is called before the `var TEST_REGISTRY = ...`
+  // above has executed (Apps Script cross-file load order is not strictly
+  // alphabetical), initialize it ourselves. The `var` line above is also
+  // guarded so this assignment isn't overwritten when that line later runs.
+  if (typeof TEST_REGISTRY === 'undefined' || !TEST_REGISTRY) {
+    TEST_REGISTRY = [];
+  }
+
   if (!entry || typeof entry !== 'object') {
     throw new Error('registerTest: entry must be an object');
   }
