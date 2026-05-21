@@ -39,6 +39,14 @@
 //     ($325,780.51 MXN) + 6 driver values. Includes Patch 2/3 regression
 //     guards (EST_PROJECT_DAYS derived from productive MH; crewDays sync).
 //
+//   LAYER 3b (Tier 3.5b) -- install cost line items (~6 asserts, PASS 19)
+//     ADDED IN PASS 19: resurrects orphaned testInstallCostLineItems from
+//     99_TestRunner.gs (was defined but never called). Asserts 6 specific
+//     line-item TOTAL_MXN values (AC-01, DC-01, DC-03, RK-01, SF-02,
+//     IN-02). Drills down from Layer 3's section aggregates to individual
+//     items -- catches drift in any one item that gets averaged out at
+//     the section level.
+//
 // CLASSIFICATION
 //   group=integration. Largest cell surface in any test:
 //     - Writes 50+ cells across INPUT_PROJECT/INSTALL/DESIGN/GENERAL
@@ -86,7 +94,7 @@ registerTest({
   module  : 'e2e/testproj001',
   scenarios: [],
   tags    : ['e2e', 'pipeline', 'testproj001', 'mdc', 'bom', 'bom-cells',
-             'install-cost', 'end-to-end'],
+             'install-cost', 'install-cost-items', 'end-to-end'],
   source  : 'tests_integration/e2e/Testproj001PipelineTests.gs',
   fn: function (t, ctx) {
     t.suite('INT e2e/testproj001: full calc pipeline');
@@ -181,8 +189,21 @@ registerTest({
 
       // ====================================================================
       // LAYER 3 (Tier 3.5): install cost diagnostic
+      // Captures result so Layer 3b can assert on result.items without
+      // re-running the expensive runInstallCost call.
       // ====================================================================
-      _layer3_assertInstallCost(t, ss, inp, invBank, dc, ac, lay);
+      var installResult = _layer3_assertInstallCost(t, ss, inp, invBank, dc, ac, lay);
+
+      // ====================================================================
+      // LAYER 3b (Tier 3.5b): install cost line items (Pass 19 addition)
+      // Resurrects orphaned testInstallCostLineItems from 99_TestRunner.gs
+      // (was defined but never called). Asserts 6 specific line-item
+      // TOTAL_MXN values. Skipped if Layer 3 returned null (e.g.
+      // INSTALL_DB mirrors empty) -- we already failed loudly there.
+      // ====================================================================
+      if (installResult) {
+        _layer3b_assertInstallLineItems(t, installResult.items || []);
+      }
 
     } catch (e) {
       t.error('e2e pipeline threw', e);
@@ -472,13 +493,13 @@ function _layer3_assertInstallCost(t, ss, inp, invBank, dc, ac, lay) {
     result = runInstallCost(ss, inp, invBank, dc, ac, lay);
   } catch (e) {
     t.error('runInstallCost threw', e);
-    return;
+    return null;
   }
 
   if (!result) {
     t.fail('runInstallCost returned null',
            'INSTALL_DB mirror sheets likely empty or IMPORTRANGE not synced');
-    return;
+    return null;
   }
 
   // -- Emit line items as INFO (no per-item assertions) ---------------
@@ -621,4 +642,78 @@ function _layer3_assertInstallCost(t, ss, inp, invBank, dc, ac, lay) {
     t.info('per kWp DC',
            (computedGrand / projectDcKwp).toFixed(2) + ' MXN/kWp');
   }
+
+  // Return the install-cost result so Layer 3b can assert on result.items
+  // without re-running the expensive runInstallCost call.
+  return result;
+}
+
+
+// ===========================================================================
+// LAYER 3b -- install cost line items (Pass 19 addition; was orphaned in legacy)
+//
+// SOURCE: testInstallCostLineItems in 99_TestRunner.gs (lines 1666-1696).
+//         The legacy function was DEFINED but NEVER CALLED from anywhere
+//         (fourth orphaned-coverage resurrection this session, after
+//         Phase 1.2 in Pass 4, testResolveStructure in Pass 10, and
+//         testBomLineItems in Pass 18).
+//
+// COVERAGE
+//   6 asserts on specific runInstallCost line-item TOTAL_MXN values.
+//   Complements Layer 3 which asserts on section totals (aggregates)
+//   and grand total. Layer 3b drills down to individual items:
+//
+//     AC-01 (AC cable productivity):           $2,346.69
+//     DC-01 (DC modules productivity):         $8,424.00
+//     DC-03 (DC cable productivity):           $4,545.21
+//     RK-01 (Racking modules):                $10,516.72
+//     SF-02 (Safety days, Patch 3 derived):   $23,760.00
+//     IN-02 (Indirect % of subtotal):         $15,380.74
+//
+//   Tolerance 0.50 MXN matches Layer 3 section assertions.
+//
+// DEPENDENCIES
+//   - result.items from runInstallCost (passed in via caller)
+//   - No direct sheet I/O -- works purely from the items array
+//
+// BASELINES
+//   Locked from legacy file's 2026-04-28 captured run. Since the legacy
+//   function was never called, these baselines have never been verified
+//   in any test runner. Pass 19 is the first time they run.
+//
+// FAILURE MODES
+//   - Item ID not in result.items (filtered out by APPLIES_TO, or lib
+//     changed): t.fail with explanation, that lock is skipped
+//   - totalMxn differs from baseline beyond 0.50 MXN tolerance: t.assert
+//     fails with expected vs actual
+// ===========================================================================
+
+function _layer3b_assertInstallLineItems(t, items) {
+  function findItem(id) {
+    return items.filter(function (r) {
+      return r && r.item && r.item.id === id;
+    })[0];
+  }
+
+  // Each lock pins a TOTAL_MXN for one line item. Tolerance 0.50 MXN
+  // matches the section assertions in Layer 3.
+  var locks = [
+    { id: 'AC-01', total:  2346.69, label: 'AC cable productivity' },
+    { id: 'DC-01', total:  8424.00, label: 'DC modules productivity' },
+    { id: 'DC-03', total:  4545.21, label: 'DC cable productivity' },
+    { id: 'RK-01', total: 10516.72, label: 'Racking modules' },
+    { id: 'SF-02', total: 23760.00, label: 'Safety days (Patch 3 derived)' },
+    { id: 'IN-02', total: 15380.74, label: 'Indirect % of subtotal' }
+  ];
+
+  locks.forEach(function (L) {
+    var item = findItem(L.id);
+    if (!item) {
+      t.fail('LineItem ' + L.id,
+             'not found in result.items (filtered out or lib changed)');
+      return;
+    }
+    t.assert('LineItem ' + L.id + ' (' + L.label + ') TOTAL',
+             L.total, item.totalMxn || 0, 0.50);
+  });
 }
