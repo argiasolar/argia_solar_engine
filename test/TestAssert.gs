@@ -174,6 +174,23 @@ function createTestContext() {
   }
 
   /**
+   * Manual fail. Used when control flow proves a test failure without an
+   * assert/actual comparison (e.g. a setup branch you know shouldn't be
+   * reached, or a fixture that should have been present but wasn't).
+   *
+   * The legacy framework's t.fail(label, note) recorded a FAIL row with
+   * the note in the Actual column; this preserves that semantic.
+   *
+   * @param {string} label
+   * @param {string} note  Diagnostic text shown in the Actual column.
+   */
+  function fail(label, note) {
+    _record('FAIL', label, '<expected pass>',
+            note == null ? '<no note>' : String(note), '');
+    return false;
+  }
+
+  /**
    * Deep equality between expected and actual. Used for golden-output
    * snapshot tests. Drift fails loud with a JSON diff in the note column.
    *
@@ -342,6 +359,7 @@ function createTestContext() {
     assertContains  : assertContains,
     assertTrue      : assertTrue,
     assertFalse     : assertFalse,
+    fail            : fail,
     assertSnapshot  : assertSnapshot,
     expectWarning   : expectWarning,
     expectNoWarning : expectNoWarning,
