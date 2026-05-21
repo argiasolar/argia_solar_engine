@@ -47,6 +47,15 @@
 //     items -- catches drift in any one item that gets averaged out at
 //     the section level.
 //
+//   LAYER 4 (Tier 3.8) -- RFQ sheet writers (~20 asserts, PASS 21)
+//     ADDED IN PASS 21: resurrects orphaned testRfqSmoke from
+//     99_TestRunner.gs (was defined but never called -- 6th orphan
+//     resurrection). Writes 5 RFQ sheets (RFQ_PANELES, RFQ_INVERSORES,
+//     RFQ_ESTRUCTURA, RFQ_ELECTRICO, RFQ_MONITOREO) via writeRfqSheet_.
+//     For each: asserts BOM items >= minimum, sheet exists, > 15 rows
+//     of content, title bar contains "REQUEST FOR QUOTATION".
+//     Smoke-level coverage of writer mechanics, NOT per-cell content.
+//
 // CLASSIFICATION
 //   group=integration. Largest cell surface in any test:
 //     - Writes 50+ cells across INPUT_PROJECT/INSTALL/DESIGN/GENERAL
@@ -94,7 +103,7 @@ registerTest({
   module  : 'e2e/testproj001',
   scenarios: [],
   tags    : ['e2e', 'pipeline', 'testproj001', 'mdc', 'bom', 'bom-cells',
-             'install-cost', 'install-cost-items', 'end-to-end'],
+             'install-cost', 'install-cost-items', 'rfq', 'end-to-end'],
   source  : 'tests_integration/e2e/Testproj001PipelineTests.gs',
   fn: function (t, ctx) {
     t.suite('INT e2e/testproj001: full calc pipeline');
@@ -204,6 +213,17 @@ registerTest({
       if (installResult) {
         _layer3b_assertInstallLineItems(t, installResult.items || []);
       }
+
+      // ====================================================================
+      // LAYER 4 (Tier 3.8): RFQ sheet writers (Pass 21 addition)
+      // Resurrects orphaned testRfqSmoke from 99_TestRunner.gs (was
+      // defined but never called -- SIXTH orphan resurrection).
+      // Writes 5 RFQ sheets (RFQ_PANELES, RFQ_INVERSORES, RFQ_ESTRUCTURA,
+      // RFQ_ELECTRICO, RFQ_MONITOREO) via writeRfqSheet_, asserts each
+      // exists with correct title, row count, and BOM items. Mutates
+      // inp.projectManager (safe -- inp is local to this fn:).
+      // ====================================================================
+      _layer4_assertRfqSheets(t, ss, inp);
 
     } catch (e) {
       t.error('e2e pipeline threw', e);
@@ -716,4 +736,163 @@ function _layer3b_assertInstallLineItems(t, items) {
     t.assert('LineItem ' + L.id + ' (' + L.label + ') TOTAL',
              L.total, item.totalMxn || 0, 0.50);
   });
+}
+
+
+// ===========================================================================
+// LAYER 4 -- RFQ sheet writers (Pass 21 addition; 6th orphan resurrection)
+//
+// SOURCE: testRfqSmoke in 99_TestRunner.gs (lines 1563-1651).
+//         DEFINED but NEVER CALLED from anywhere -- sixth orphaned
+//         coverage resurrection of the session. Running total:
+//
+//           Phase 1.2 FP threshold (Pass 4)                -- 18 asserts
+//           testResolveStructure (Pass 10)                 -- 17 asserts
+//           testBomLineItems (Pass 18 / Layer 2b)          -- 10 asserts
+//           testInstallCostLineItems (Pass 19 / Layer 3b)  --  6 asserts
+//           testValidationRules (Pass 20)                  -- 26 asserts
+//           testRfqSmoke (Pass 21, THIS / Layer 4)         -- 20 asserts
+//           =================================================================
+//           TOTAL                                          -- 97 asserts
+//
+// COVERAGE
+//   5 RFQ category cases (PANELES, INVERSORES, ESTRUCTURA, ELECTRICO,
+//   MONITOREO). For each case:
+//     1. Read BOM items in the category's row range (>=expectMinItems)
+//     2. Call writeRfqSheet_ to render the RFQ sheet
+//     3. Assert the sheet now exists
+//     4. Assert it has > 15 rows of content
+//     5. Assert row-1 title bar contains "REQUEST FOR QUOTATION"
+//   = 4 asserts per case * 5 cases = 20 asserts total.
+//
+// SPECIAL CASE -- ELECTRICO
+//   Concatenates DC items (BOM rows DC_CABLE..SUBTOTAL_DC-1) with AC
+//   items (AC_FEEDER..SUBTOTAL_TRANSFORMER-1) because the electrical
+//   BOS section spans two BOM blocks. expectMinItems=5 reflects the
+//   minimum reasonable count when both halves contribute.
+//
+// SIDE EFFECTS
+//   - Mutates inp.projectManager (preserved from fn: scope; safe since
+//     inp is local to the e2e test)
+//   - Creates 5 RFQ sheets in the active spreadsheet. Like MDC/BOM/
+//     CFE_OUTPUT, these are output sheets the engine regenerates each
+//     run -- intentional persistent state, not a leak.
+//
+// DEPENDENCIES
+//   - readPcInputs_   (14_WriteProjectCard.gs) -- best-effort PM lookup
+//   - readBomItems_   (15_WriteRFQ.gs) -- pulls BOM rows in range
+//   - writeRfqSheet_  (15_WriteRFQ.gs) -- creates the RFQ sheet
+//   - RFQ_SHEETS      (15_WriteRFQ.gs) -- sheet name constants
+//   - BOM_ROW         (00_Main.gs) -- row range constants
+//
+// FAILURE MODES
+//   - BOM sheet missing -> t.fail('Tier 3.8 skipped'), early return
+//   - readPcInputs_ throws -> falls back to designer/bizManager/'TEST PM'
+//   - writeRfqSheet_ throws -> t.error for that case, continues
+//   - BOM items < expectMinItems -> assertion failure with category name
+//
+// NOTE ON SHEET CONTENT
+//   This is a SMOKE TEST -- it verifies the writer mechanics produce a
+//   populated sheet with the expected structural anchors. It does NOT
+//   verify per-cell content (item descriptions, prices, supplier
+//   sections, etc.). That deeper verification was not in the legacy
+//   either, and would belong to a separate RFQ-content regression test.
+// ===========================================================================
+
+function _layer4_assertRfqSheets(t, ss, inp) {
+  if (!ss.getSheetByName(SH.BOM)) {
+    t.fail('Tier 3.8 skipped', 'BOM sheet not present');
+    return;
+  }
+
+  // RFQ writer expects inp.projectManager populated. Mirror
+  // runWriteAllRFQs's chain: readPcInputs_ -> designer -> bizManager ->
+  // hardcoded last-resort. Best-effort -- failure here doesn't block.
+  try {
+    var pcIn = readPcInputs_(ss);
+    inp.projectManager = pcIn.projectManager
+                         || inp.designer
+                         || inp.bizManager
+                         || 'TEST PM';
+  } catch (e) {
+    inp.projectManager = inp.designer || inp.bizManager || 'TEST PM';
+  }
+
+  // 5 categories matching runWriteAllRFQs structure.
+  // expectMinItems = loose lower bound on items pulled from TESTPROJ-001 BOM.
+  var cases = [
+    {
+      sheet: RFQ_SHEETS.PANELES,    title: 'Paneles Solares',  code: 'PAN',
+      start: BOM_ROW.PANEL_PRIMARY, end: BOM_ROW.SUBTOTAL_PANELS - 1,
+      ccy: 'USD', expectMinItems: 1
+    },
+    {
+      sheet: RFQ_SHEETS.INVERSORES, title: 'Inversores',       code: 'INV',
+      start: BOM_ROW.INVERTER_PRIMARY,
+      end: BOM_ROW.SUBTOTAL_INVERTERS - 1,
+      ccy: 'USD', expectMinItems: 1
+    },
+    {
+      sheet: RFQ_SHEETS.ESTRUCTURA, title: 'Estructura',       code: 'STR',
+      start: BOM_ROW.STRUCTURE_PRIMARY,
+      end: BOM_ROW.STRUCTURE_INVERTER,
+      ccy: 'MXN', expectMinItems: 1
+    },
+    {
+      // ELECTRICO is special -- DC + AC concatenated
+      sheet: RFQ_SHEETS.ELECTRICO,  title: 'Electrico BOS',    code: 'ELEC',
+      ccy: 'MXN', expectMinItems: 5,
+      special: 'elec'
+    },
+    {
+      sheet: RFQ_SHEETS.MONITOREO,  title: 'Monitoreo',        code: 'MON',
+      start: BOM_ROW.MON_DATALOGGER, end: BOM_ROW.MON_THERMOGRAPHY,
+      ccy: 'MXN', expectMinItems: 1
+    }
+  ];
+
+  cases.forEach(function (c) {
+    var items;
+    if (c.special === 'elec') {
+      var dcItems = readBomItems_(ss, BOM_ROW.DC_CABLE,
+                                      BOM_ROW.SUBTOTAL_DC - 1);
+      var acItems = readBomItems_(ss, BOM_ROW.AC_FEEDER,
+                                      BOM_ROW.SUBTOTAL_TRANSFORMER - 1);
+      items = dcItems.concat(acItems);
+    } else {
+      items = readBomItems_(ss, c.start, c.end);
+    }
+
+    t.assertTrue('RFQ ' + c.sheet + ' BOM items >= ' + c.expectMinItems,
+                 items.length >= c.expectMinItems);
+
+    try {
+      // Empty cert/notes -- cosmetic in RFQ output, irrelevant to
+      // whether the sheet got written. Testing writer mechanics here,
+      // not the cert text.
+      writeRfqSheet_(ss, c.sheet, inp, c.title, c.code, items, {},
+                     '', c.ccy);
+    } catch (e) {
+      t.error('writeRfqSheet_ ' + c.sheet, e);
+      return;
+    }
+
+    var rfq = ss.getSheetByName(c.sheet);
+    t.assertTrue('RFQ ' + c.sheet + ' sheet exists', rfq !== null);
+    if (!rfq) return;
+
+    // Each RFQ has metadata block (~5 rows) + headers + items +
+    // supplier response section (~10 rows) + footer. Sane minimum is
+    // around 15.
+    t.assertTrue('RFQ ' + c.sheet + ' has > 15 rows of content',
+                 rfq.getLastRow() > 15);
+
+    // Title bar at row 1 should mention the category
+    var titleCell = String(rfq.getRange(1, 1).getValue() || '');
+    t.assertTrue('RFQ ' + c.sheet
+                 + ' title contains "REQUEST FOR QUOTATION"',
+                 titleCell.indexOf('REQUEST FOR QUOTATION') !== -1);
+  });
+
+  SpreadsheetApp.flush();
 }
