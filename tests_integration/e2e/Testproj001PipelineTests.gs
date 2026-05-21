@@ -27,6 +27,13 @@
 //     writeBOM, reads back the BOM sheet, asserts grand total
 //     ($194,492.5126) and AC main conduit qty regression guard.
 //
+//   LAYER 2b (Tier 3.6b) -- BOM sheet cell qtys (~10 asserts, PASS 18)
+//     ADDED IN PASS 18: resurrects orphaned testBomLineItems from
+//     99_TestRunner.gs (was defined but never called). Asserts 10
+//     specific BOM cells (panels=720, inverters=4, DC cable=6720m,
+//     etc.) caught Layer 2 baseline math but the writer could still
+//     put numbers in the wrong rows -- this layer guards against that.
+
 //   LAYER 3 (Tier 3.5) -- testInstallCostDiagnostic (~14 asserts + INFO)
 //     Calls runInstallCost. Locks 8 section totals + grand total
 //     ($325,780.51 MXN) + 6 driver values. Includes Patch 2/3 regression
@@ -78,7 +85,7 @@ registerTest({
   group   : 'integration',
   module  : 'e2e/testproj001',
   scenarios: [],
-  tags    : ['e2e', 'pipeline', 'testproj001', 'mdc', 'bom',
+  tags    : ['e2e', 'pipeline', 'testproj001', 'mdc', 'bom', 'bom-cells',
              'install-cost', 'end-to-end'],
   source  : 'tests_integration/e2e/Testproj001PipelineTests.gs',
   fn: function (t, ctx) {
@@ -162,6 +169,15 @@ registerTest({
       // LAYER 2 (Tier 3.6): BOM quantities + writeBOM smoke
       // ====================================================================
       _layer2_assertBom(t, ss, inp, panel, invBank, dc, ac, lay);
+
+      // ====================================================================
+      // LAYER 2b (Tier 3.6b): BOM sheet cell qtys (Pass 18 addition)
+      // Reads back specific BOM rows that Layer 2's writeBOM just wrote.
+      // Catches "right math, wrong cell" -- if calcLayout is correct but
+      // the writer puts a value in the wrong row, Layer 2 passes (it
+      // asserts on lay.bom.*) and Layer 2b fails (it asserts on cells).
+      // ====================================================================
+      _layer2b_assertBomCells(t, ss);
 
       // ====================================================================
       // LAYER 3 (Tier 3.5): install cost diagnostic
@@ -384,6 +400,65 @@ function _layer2_assertBom(t, ss, inp, panel, invBank, dc, ac, lay) {
   var expectedConduitQty = Math.ceil(lay.bom.mainFeederCableM / 3 / 3);
   t.assert('AC main conduit qty (cableM / 3 phases / 3 m-per-stick)',
            expectedConduitQty, acConduitQty);
+}
+
+
+// ===========================================================================
+// LAYER 2b -- BOM sheet cell qtys (Pass 18 addition; was orphaned in legacy)
+//
+// SOURCE: testBomLineItems in 99_TestRunner.gs (lines 1708-1740).
+//         The legacy function was DEFINED but NEVER CALLED from anywhere
+//         (third orphaned-coverage resurrection this session, after
+//         Phase 1.2 in Pass 4 and testResolveStructure in Pass 10).
+//
+// COVERAGE
+//   10 asserts on specific BOM-sheet QTY cells (column C). Complements
+//   Layer 2 which asserts on lay.bom.* (engine math). If calcLayout is
+//   right but the WRITER puts numbers in the wrong row, Layer 2 passes
+//   and Layer 2b catches it. This is the "right math, wrong cell" guard.
+//
+// DEPENDENCIES
+//   - SH.BOM, BOM_ROW, BOM_COL (00_Main.gs)
+//   - BOM sheet already populated by Layer 2's writeBOM call
+//
+// BASELINES
+//   Locked from the legacy file's 2026-04-28 captured run. NOTE: since
+//   the legacy function was never called, these baselines have never
+//   actually been verified. Pass 18 is the first time they run.
+// ===========================================================================
+
+function _layer2b_assertBomCells(t, ss) {
+  var sh = ss.getSheetByName(SH.BOM);
+  if (!sh) {
+    t.fail('Layer 2b skipped', 'BOM sheet not found');
+    return;
+  }
+
+  // Row -> expected qty in column C (BOM_COL.QTY)
+  var locks = [
+    { row: BOM_ROW.PANEL_PRIMARY,     qty: 720,  label: 'panels qty' },
+    { row: BOM_ROW.INVERTER_PRIMARY,  qty: 4,    label: 'inverter qty' },
+    { row: BOM_ROW.STRUCTURE_PRIMARY, qty: 720,  label: 'panel structure qty' },
+    { row: BOM_ROW.DC_CABLE,          qty: 6720, label: 'DC cable m' },
+    { row: BOM_ROW.DC_GROUNDING,      qty: 2500, label: 'DC grounding m' },
+    { row: BOM_ROW.DC_MC4,            qty: 40,   label: 'DC MC4 pairs' },
+    { row: BOM_ROW.DC_OCPD,           qty: 40,   label: 'DC OCPD' },
+    { row: BOM_ROW.AC_FEEDER,         qty: 234,  label: 'AC feeder cable m' },
+    { row: BOM_ROW.AC_EGC,            qty: 78,   label: 'AC main EGC m' },
+    { row: BOM_ROW.AC_BREAKER,        qty: 1,    label: 'AC main breaker' }
+  ];
+
+  locks.forEach(function (L) {
+    var got = sh.getRange(L.row, BOM_COL.QTY).getValue();
+    var gotNum = parseFloat(got);
+    if (isNaN(gotNum)) {
+      t.fail('BOM row ' + L.row + ' qty (' + L.label + ')',
+             'cell is non-numeric: ' + JSON.stringify(got));
+      return;
+    }
+    t.assert('BOM row ' + L.row + ' qty (' + L.label + ')',
+             L.qty, gotNum);
+  });
 }
 
 
