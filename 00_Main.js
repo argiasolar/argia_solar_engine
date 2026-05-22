@@ -660,6 +660,24 @@ function runArgiaEngine() {
         '. Other outputs are unaffected.');
     }
 
+    // Step 14: output consistency check --------------------------------------
+    // Asserts MDC / BOM / INSTALLATION / PROJECT_CARD agree on project
+    // identity (project name, module count, inverter count). Catches the
+    // bug class where test fixtures wrote to output sheets and the engine
+    // has not re-run -- the workbook looks normal but is internally
+    // inconsistent (different projects per sheet).
+    //
+    // Wrapped in try/catch matching Steps 9.5 / 13.5: a validator bug
+    // never breaks the rest of the engine. The validator emits its own
+    // CRITICAL logs + UI alert on mismatch.
+    engineLog(ss, 'Engine', 'INFO', 'Step 14: output consistency check');
+    try {
+      runOutputConsistencyCheck(ss);
+    } catch (ocErr) {
+      engineLog(ss, 'Engine', 'WARNING',
+        'Output consistency check threw (non-fatal): ' + ocErr.message);
+    }
+
     // Done ------------------------------------------------------------------
     _setArgiaProgress(TOTAL, TOTAL, '\u2705 Complete!');
     logRunEnd(ss, Date.now() - startTime);
