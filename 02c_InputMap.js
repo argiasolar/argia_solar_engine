@@ -1396,6 +1396,36 @@ var _MAP_BESS = {
     section: 'BESS 4 PEAK SHAVING',
     consumedBy: ['engine']
   },
+
+  // -- INPUT_BESS §5 ECONOMICS GUARDRAILS  (BDF-3) ------------------------
+  // Threshold and tariff overrides. setupInputBessEconomicsRows() in
+  // 02e_InputSetup.js writes the labels and the threshold default. The
+  // engine reads them via readBessMinSavingsThreshold / readInputBessTariffOverride.
+  bessMinAnnualSavingMxn: {
+    sheet: 'INPUT_BESS', row: 37, col: 3,        // C37
+    label: 'Mín. ahorro anual MXN', type: 'number',
+    default: 2000000, required: false, unit: 'MXN',
+    section: 'BESS 5 ECONOMICS',
+    consumedBy: ['engine'],
+    notes: 'Sizing engine flags candidates whose annual saving is below this. ' +
+           '0 = disabled (no filtering).'
+  },
+  bessPuntaRateOverride: {
+    sheet: 'INPUT_BESS', row: 38, col: 3,        // C38
+    label: 'Override tarifa punta MXN/kWh', type: 'number',
+    default: 0, required: false, unit: 'MXN/kWh',
+    section: 'BESS 5 ECONOMICS',
+    consumedBy: ['engine'],
+    notes: 'Blank/0 = auto-derive from INPUT_CFE 12-month weighted average.'
+  },
+  bessBaseRateOverride: {
+    sheet: 'INPUT_BESS', row: 39, col: 3,        // C39
+    label: 'Override tarifa base MXN/kWh', type: 'number',
+    default: 0, required: false, unit: 'MXN/kWh',
+    section: 'BESS 5 ECONOMICS',
+    consumedBy: ['engine'],
+    notes: 'Blank/0 = auto-derive from INPUT_CFE 12-month weighted average.'
+  },
 };
 
 // ---------------------------------------------------------------------------

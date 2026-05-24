@@ -30,12 +30,12 @@
 //   primDocTitle        top-of-page title + subtitle
 //   primSectionHeader   "01 IDENTIFICACIÓN" style with optional progress pill
 //   primBodyRow         label + value + optional status icon
+//   primSubtotalRow     BOM / InstallCost section subtotals  (added Chunk 0)
+//   primTotalRow        grand totals with double-rule above   (added Chunk 0)
 //
 // DEFERRED (added as writers are refactored — we build from real usage,
 // not speculation)
 //   primAuditCells      MDC off-print auditoría columns (PROV / CITATION / FORMULA)
-//   primSubtotalRow     BOM / InstallCost / ProjectCard subtotals
-//   primTotalRow        grand totals with double-rule above
 //   primCalloutBox      DES-FLAG / DATA-FLAG boxes
 //   primStatBlock       Project Card big-number cells (655.2 kWp etc.)
 //   primReadinessBar    Input-sheet readiness + action buttons
@@ -205,4 +205,125 @@ function primApplyPageCanvas(sh) {
   sh.setColumnWidth(5, 160);  // E
   sh.setColumnWidth(6, 160);  // F
   sh.setColumnWidth(7, 80);   // G (status icon column)
+}
+
+// -----------------------------------------------------------------------------
+// primSubtotalRow
+// -----------------------------------------------------------------------------
+//   Writes a section subtotal: bold label on the left, bold numeric total on
+//   the right, light cream background, thin top border. Used at the end of
+//   each BOM / InstallCost section.
+//
+//   Layout:
+//     cols B-E   label, left-aligned, bold       e.g. "SUBTOTAL PANELES"
+//     col F      total value, right-aligned      e.g. 142500.00
+//     col G      reserved / blank
+//
+//   The value cell number format defaults to '#,##0.00'. Pass a different
+//   numberFormat to override (e.g. '#,##0' for whole-number MXN totals).
+//
+//   sh             sheet
+//   row            row to write
+//   label          left text — e.g. "SUBTOTAL ESTRUCTURA"
+//   value          numeric value OR a formula string starting with '='
+//   numberFormat   optional number format (default '#,##0.00')
+// -----------------------------------------------------------------------------
+function primSubtotalRow(sh, row, label, value, numberFormat) {
+  var fmt = numberFormat || '#,##0.00';
+
+  // Whole-row background band (B..G inclusive, 6 cols)
+  sh.getRange(row, 2, 1, 6)
+    .setBackground(token('BG_SUBTOTAL'))
+    .setFontFamily(token('FONT_FAMILY'))
+    .setFontSize(tokenNum('FONT_SIZE_BODY'))
+    .setFontWeight(token('FONT_WEIGHT_EMPHASIS'))
+    .setFontColor(token('TEXT_PRIMARY'))
+    .setVerticalAlignment('middle');
+
+  // Label (cols B-E merged, left-aligned)
+  sh.getRange(row, 2, 1, 4).breakApart().merge()
+    .setValue(label)
+    .setHorizontalAlignment('left');
+
+  // Value (col F, right-aligned, numeric)
+  var valueCell = sh.getRange(row, 6);
+  if (typeof value === 'string' && value.charAt(0) === '=') {
+    valueCell.setFormula(value);
+  } else {
+    valueCell.setValue(value);
+  }
+  valueCell
+    .setNumberFormat(fmt)
+    .setHorizontalAlignment('right');
+
+  sh.setRowHeight(row, tokenNum('ROW_H_BODY'));
+
+  // Thin top border to separate the subtotal from the item rows above
+  sh.getRange(row, 2, 1, 6).setBorder(
+    true, null, null, null, null, null,
+    token('DIVIDER_LINE'), SpreadsheetApp.BorderStyle.SOLID
+  );
+}
+
+// -----------------------------------------------------------------------------
+// primTotalRow
+// -----------------------------------------------------------------------------
+//   Writes a grand total: strongest emphasis. Bold larger label on the left,
+//   bold larger total on the right, light cream background, thick double-rule
+//   above to visually separate from subtotals.
+//
+//   Layout:
+//     cols B-E   label, left-aligned, bold       e.g. "TOTAL"
+//     col F      total value, right-aligned      e.g. 287450.00
+//     col G      reserved / blank
+//
+//   Larger row height than subtotal. Always uses DIVIDER_STRONG border above.
+//
+//   sh             sheet
+//   row            row to write
+//   label          left text — e.g. "TOTAL", "GRAN TOTAL", "TOTAL USD"
+//   value          numeric value OR a formula string starting with '='
+//   numberFormat   optional number format (default '#,##0.00')
+// -----------------------------------------------------------------------------
+function primTotalRow(sh, row, label, value, numberFormat) {
+  var fmt = numberFormat || '#,##0.00';
+
+  // Slightly larger font than subtotal for emphasis (body + 2px)
+  var totalFontSize = tokenNum('FONT_SIZE_BODY') + 2;
+
+  // Whole-row band
+  sh.getRange(row, 2, 1, 6)
+    .setBackground(token('BG_SUBTOTAL'))
+    .setFontFamily(token('FONT_FAMILY'))
+    .setFontSize(totalFontSize)
+    .setFontWeight(token('FONT_WEIGHT_EMPHASIS'))
+    .setFontColor(token('TEXT_PRIMARY'))
+    .setVerticalAlignment('middle');
+
+  // Label
+  sh.getRange(row, 2, 1, 4).breakApart().merge()
+    .setValue(label)
+    .setHorizontalAlignment('left');
+
+  // Value
+  var valueCell = sh.getRange(row, 6);
+  if (typeof value === 'string' && value.charAt(0) === '=') {
+    valueCell.setFormula(value);
+  } else {
+    valueCell.setValue(value);
+  }
+  valueCell
+    .setNumberFormat(fmt)
+    .setHorizontalAlignment('right');
+
+  // Taller than body — pull from ROW_H_SECTION which is already 28px in defaults
+  sh.setRowHeight(row, tokenNum('ROW_H_SECTION'));
+
+  // Strong top rule for grand-total emphasis (Google Sheets has no native
+  // double-rule; SOLID_THICK is the closest visual approximation that
+  // renders reliably across the Sheets web/mobile clients).
+  sh.getRange(row, 2, 1, 6).setBorder(
+    true, null, null, null, null, null,
+    token('DIVIDER_STRONG'), SpreadsheetApp.BorderStyle.SOLID_THICK
+  );
 }

@@ -1,5 +1,5 @@
 // =============================================================================
-// ARGIA ENGINE v2.0.0 -- File: 00a_Version.gs
+// ARGIA ENGINE v3.0.0 -- File: 00a_Version.gs
 // Version stamping. Loaded right after 00_Main.gs.
 //
 // PURPOSE:
@@ -26,7 +26,14 @@
 //   DB_VERSION uses YYYY.MM
 //     Bump when any *_DB or master table changes.
 //
-var ENGINE_VERSION = '2.3.5';
+// 3.0.0 — MAJOR bump (2026-05-24). BDF-11 fixed four CFE Capacidad math
+// bugs validated against 12 real CULLIGAN bills. Existing projects WILL
+// recalculate to different numbers (year-1 Capacidad savings typically
+// DROP, steady-state savings typically RISE). See CHANGELOG.md for details
+// and run "Repair CFE_SIM Capacidad (BDF-11)" + "Setup BESS Steady-state
+// (BDF-11.1)" on each project workbook to migrate.
+//
+var ENGINE_VERSION = '3.0.0';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default

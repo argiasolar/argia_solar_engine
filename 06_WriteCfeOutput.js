@@ -136,6 +136,14 @@ var CFE_OUT_SRC = {
   bsim_energiaUsable    : { sheet: 'BESS_SIMULATION', row: 36, col:  4 },
   bsim_potenciaKw       : { sheet: 'BESS_SIMULATION', row: 37, col:  4 },
   bsim_horasPunta       : { sheet: 'BESS_SIMULATION', row: 38, col:  4 },
+
+  // BDF-11.1: steady-state (Year 2+) values. Populated by
+  // 02i_SetupBessSimulationSteady.gs in BESS_SIMULATION rows 43-48.
+  // If the setup tool hasn't been run, these reads return '' and the
+  // year-1/steady tile/section silently falls back to year-1 only.
+  bsim_ahorroMesCapSteady   : { sheet: 'BESS_SIMULATION', row: 45 },         // monthly
+  bsim_ahorroCapSteadyAnnual: { sheet: 'BESS_SIMULATION', row: 47, col: 4 }, // D47
+  bsim_reciboFinalSteady    : { sheet: 'BESS_SIMULATION', row: 48, col: 4 }, // D48
 };
 
 
@@ -200,10 +208,17 @@ var CFE_OUT_ROW = {
   FOOTER_HEADER       : 33,
   FOOTER_LABELS       : 34,
   FOOTER_VALUES       : 35,
-  // Charts band
-  CHART1_TOP          : 38,  // waterfall
-  CHART2_TOP          : 53,  // monthly comparison
-  CHART3_TOP          : 68,  // demand shaving
+  // BDF-11.1: Year-1 vs Year-2+ comparison (rows 37-42)
+  Y1SS_HEADER         : 37,
+  Y1SS_LABELS         : 38,   // column labels: Año 1 | Año 2+
+  Y1SS_RECIBO         : 39,   // Recibo final con BESS
+  Y1SS_AHORRO_CAP     : 40,   // Ahorro BESS Capacidad
+  Y1SS_AHORRO_TOTAL   : 41,   // Ahorro total vs sin PV
+  Y1SS_NOTE           : 42,   // explanatory note
+  // Charts band (DEPRECATED in BDF-11)
+  CHART1_TOP          : 44,
+  CHART2_TOP          : 59,
+  CHART3_TOP          : 74,
 };
 
 // Column constants (1-based)
@@ -218,12 +233,17 @@ var CFE_OUT_MONTHS = ['Ene','Feb','Mar','Abr','May','Jun',
 
 
 // =============================================================================
-// PUBLIC: writeCfeOutput(ss)
+// PUBLIC: writeCfeOutput(ss, hourlySim)
 // =============================================================================
 // Renders the CFE_OUTPUT tab from scratch. Reads INPUT_CFE / CFE_SIMULATION /
 // BESS_SIMULATION cells via CFE_OUT_SRC. Adds three charts. Idempotent --
 // safe to call repeatedly; each call wipes and rebuilds.
-function writeCfeOutput(ss) {
+//
+// BDF-5: optional hourlySim parameter. When passed, an additional section
+// renders the hourly simulator's annual cost number side-by-side with the
+// monthly engine's. When null/omitted, the legacy single-number output is
+// produced unchanged.
+function writeCfeOutput(ss, hourlySim) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
 
   // -- Design tokens: every renderer that uses token()/tokenNum() must load
@@ -261,10 +281,16 @@ function writeCfeOutput(ss) {
 
   // -- 3. Canvas: 15 columns, widths matched to INPUT_CFE. -----------------
   // A=margin, B=label, C..N=12 months, O=spacer/total, P=right margin
+  //
+  // BDF-11.1: month columns widened from 75 → 113px (50% wider) so the
+  // RESUMEN ANUAL cascade row (which formats values like "$13,569,664" in
+  // a single column) is fully visible without truncation. Column O (totals)
+  // grows proportionally from 90 → 135.
   sh.setHiddenGridlines(true);
-  var widths = [25, 260, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 90, 25];
+  var widths = [25, 260, 113, 113, 113, 113, 113, 113, 113, 113, 113, 113, 113, 113, 135, 25];
   widths.forEach(function(w, idx) { sh.setColumnWidth(idx + 1, w); });
 
+  // -- 4. Banner (rows 1-3) -- ARGIA logo + title, same helpers as INPUT_CFE.
   // -- 4. Banner (rows 1-3) -- ARGIA logo + title, same helpers as INPUT_CFE.
   _insertArgiaLogo(sh, 2, 2);
   _writeTitleShifted(sh, 2, 'CFE OUTPUT',
@@ -285,8 +311,31 @@ function writeCfeOutput(ss) {
   // -- 9. Annual footer (rows 33-35). --------------------------------------
   _cfeOutWriteFooter(sh, ss);
 
-  // -- 10. Charts (rows 38+). ----------------------------------------------
-  _cfeOutBuildCharts(sh);
+  // -- 9b. BDF-11.1: Year-1 vs Year-2+ section (rows 37-42). ---------------
+  // Reads from BESS_SIMULATION rows 45/47/48 (populated by setup tool
+  // 02i_SetupBessSimulationSteady). If setup hasn't run, this section
+  // is skipped — no error, no placeholder.
+  _cfeOutWriteYear1SteadySection(sh, ss);
+
+  // -- 10. Charts.  REMOVED in BDF-11. ------------------------------------
+  // The previous _cfeOutBuildCharts() rendered three charts (annual savings
+  // waterfall, monthly bill comparison, demand shaving line). They were
+  // visually confusing in production (color collisions, scale issues, and
+  // overlap with the data tables that already told the story). The data
+  // they pulled from is still on the sheet in tabular form; designers who
+  // want a chart can build one ad-hoc from those cells. The hidden helper
+  // blocks at rows 80-88 are also no longer written.
+  // See bdf11_truth_table_final.md for the rationale.
+  // _cfeOutBuildCharts(sh);
+
+  // -- BDF-5: Hourly simulation comparison ---------------------------------
+  // When hourlySim was passed from the pipeline, append a small section
+  // showing the hourly engine's annual cost number for designer comparison.
+  // This is INTENTIONALLY minimal and DESIGNER-FACING (not customer-facing).
+  // Production switchover to hourly-as-primary is a future decision.
+  if (hourlySim && !hourlySim.blocked) {
+    _cfeOutWriteHourlySimAddendum(sh, hourlySim);
+  }
 
   // -- 11. Freeze banner + header strip so they stay visible on scroll. ----
   // NOTE: setFrozenColumns(2) was removed -- the KPI strip on row 10 has
@@ -359,6 +408,10 @@ function _cfeOutWriteHeaderStrip(sh, ss) {
 
 // =============================================================================
 // KPI HEADLINE (row 10) -- three big numbers, color-coded
+//
+// BDF-11.1: third tile now shows YEAR-1 and YEAR-2+ side-by-side when
+// steady-state data is available (i.e. 02i_SetupBessSimulationSteady has
+// been run on this workbook). When unavailable, falls back to year-1 only.
 // =============================================================================
 function _cfeOutWriteKpiStrip(sh, ss) {
   var FF = token('FONT_FAMILY');
@@ -367,6 +420,10 @@ function _cfeOutWriteKpiStrip(sh, ss) {
   var reciboBase  = Number(_cfeOutReadScalar(ss, 'bsim_reciboBase'))   || 0;
   var reciboPv    = Number(_cfeOutReadScalar(ss, 'bsim_reciboTrasPv')) || 0;
   var reciboFinal = Number(_cfeOutReadScalar(ss, 'bsim_reciboFinal')) || 0;
+  // BDF-11.1: try to read steady-state. Empty string when setup not run.
+  var reciboFinalSteadyRaw = _cfeOutReadScalar(ss, 'bsim_reciboFinalSteady');
+  var hasSteady = reciboFinalSteadyRaw !== '' && reciboFinalSteadyRaw !== null;
+  var reciboFinalSteady = hasSteady ? Number(reciboFinalSteadyRaw) : null;
 
   function kpi(col, label, value, accent) {
     // Label cell (small, muted)
@@ -378,14 +435,52 @@ function _cfeOutWriteKpiStrip(sh, ss) {
       .setHorizontalAlignment('left')
       .setVerticalAlignment('top')
       .setBackground(accent);
-    // Value cell (overlaid via next-row trick? Sheets doesn't allow stacked
-    // values in a merged cell, so we put value on row 10 by overwriting the
-    // merge with value text on top + label below using a newline.)
+    // Value cell — 15pt per user preference (was FONT_SIZE_TITLE=22, too large)
     sh.getRange(10, col).setValue(label + '\n$' + _cfeOutFmt(value))
       .setFontFamily(FF)
-      .setFontSize(tokenNum('FONT_SIZE_TITLE'))
+      .setFontSize(15)
       .setFontWeight(EMPH)
       .setFontColor(token('TEXT_PRIMARY'))
+      .setVerticalAlignment('middle')
+      .setWrap(true);
+  }
+
+  // BDF-11.1: special "year-1 vs steady" tile when both numbers exist.
+  // Matches the visual weight of the other two tiles: same label style,
+  // same 15pt value lines (two lines: Año 1 and Año 2+).
+  function kpiYear1Steady(col, year1Val, steadyVal, accent) {
+    sh.getRange(10, col, 1, 4).breakApart().merge()
+      .setValue('')
+      .setBackground(accent)
+      .setVerticalAlignment('middle')
+      .setWrap(true);
+    // Mixed font sizes in one cell — use RichTextValue.
+    var labelText = 'RECIBO ANUAL CON PV + BESS';
+    var y1Text    = '\nAño 1: $' + _cfeOutFmt(year1Val);
+    var ssText    = '\nAño 2+: $' + _cfeOutFmt(steadyVal);
+    var full      = labelText + y1Text + ssText;
+    var valueSize = 15;   // matches kpi() values
+    var smallSize = tokenNum('FONT_SIZE_SMALL');
+
+    var labelStyle = SpreadsheetApp.newTextStyle()
+      .setFontFamily(FF)
+      .setFontSize(smallSize)
+      .setForegroundColor('#666666')
+      .build();
+    var valueStyle = SpreadsheetApp.newTextStyle()
+      .setFontFamily(FF)
+      .setFontSize(valueSize)
+      .setBold(true)
+      .setForegroundColor(token('TEXT_PRIMARY'))
+      .build();
+
+    var rich = SpreadsheetApp.newRichTextValue()
+      .setText(full)
+      .setTextStyle(0, labelText.length, labelStyle)
+      .setTextStyle(labelText.length, full.length, valueStyle)
+      .build();
+
+    sh.getRange(10, col).setRichTextValue(rich)
       .setVerticalAlignment('middle')
       .setWrap(true);
   }
@@ -395,9 +490,14 @@ function _cfeOutWriteKpiStrip(sh, ss) {
   // Recibo con PV -- light green
   kpi(7,  'RECIBO ANUAL CON PV',          reciboPv,    '#E8F5E9');
   // Recibo con PV+BESS -- darker green
-  kpi(12, 'RECIBO ANUAL CON PV + BESS',   reciboFinal, '#C8E6C9');
+  if (hasSteady) {
+    kpiYear1Steady(12, reciboFinal, reciboFinalSteady, '#C8E6C9');
+  } else {
+    kpi(12, 'RECIBO ANUAL CON PV + BESS',   reciboFinal, '#C8E6C9');
+  }
 
-  sh.setRowHeight(10, 60);
+  // Row height: 60 fits one-line tiles; 80 fits the three-line steady tile.
+  sh.setRowHeight(10, hasSteady ? 80 : 60);
 }
 
 
@@ -549,6 +649,130 @@ function _cfeOutWriteFooter(sh, ss) {
 
 
 // =============================================================================
+// BDF-11.1: YEAR-1 vs YEAR-2+ (STEADY-STATE) SECTION
+// =============================================================================
+// Renders a side-by-side comparison of the customer's bill in:
+//   - Year 1 (CFE's 12-month rolling demand window still loaded with
+//     pre-BESS peaks; 0.7 × movil floor binds; BESS Capacidad savings are
+//     limited)
+//   - Year 2+ (rolling window decayed to post-BESS peaks; floor no longer
+//     binds; full BESS Capacidad savings realized)
+//
+// Reads from BESS_SIMULATION cells written by 02i_SetupBessSimulationSteady:
+//   - O45 = annual steady Capacidad savings
+//   - D48 = steady-state final bill
+//
+// If the setup tool hasn't been run (D48 is blank), this section is skipped
+// entirely — no headers, no placeholder rows. The CFE_OUTPUT looks the same
+// as pre-BDF-11.1 for those workbooks.
+// =============================================================================
+function _cfeOutWriteYear1SteadySection(sh, ss) {
+  var R = CFE_OUT_ROW;
+  // Probe: is steady-state data available?
+  var steadyReciboRaw = _cfeOutReadScalar(ss, 'bsim_reciboFinalSteady');
+  if (steadyReciboRaw === '' || steadyReciboRaw === null) {
+    return;   // setup tool hasn't run; render nothing
+  }
+
+  var FF = token('FONT_FAMILY');
+  var EMPH = token('FONT_WEIGHT_EMPHASIS');
+
+  // Pull the numbers we need
+  var year1Recibo       = Number(_cfeOutReadScalar(ss, 'bsim_reciboFinal'))         || 0;
+  var steadyRecibo      = Number(steadyReciboRaw)                                   || 0;
+  var year1CapAhorro    = Number(_cfeOutReadScalar(ss, 'bsim_ahorroBessCap'))       || 0;
+  // ahorroBessCap is stored as a NEGATIVE in D15 (subtraction); flip for display
+  year1CapAhorro        = Math.abs(year1CapAhorro);
+  var steadyCapAhorro   = Number(_cfeOutReadScalar(ss, 'bsim_ahorroCapSteadyAnnual')) || 0;
+  var reciboBase        = Number(_cfeOutReadScalar(ss, 'bsim_reciboBase'))          || 0;
+  var year1TotalAhorro  = reciboBase - year1Recibo;
+  var steadyTotalAhorro = reciboBase - steadyRecibo;
+
+  // r37: Section header
+  sh.getRange(R.Y1SS_HEADER, 2, 1, 13).breakApart().merge()
+    .setValue('AÑO 1  vs  AÑO 2+  (después que la ventana móvil de CFE se renueva)')
+    .setFontFamily(FF)
+    .setFontSize(tokenNum('FONT_SIZE_SECTION'))
+    .setFontWeight(EMPH)
+    .setFontColor(token('TEXT_PRIMARY'))
+    .setBackground('#FFF8E1');   // pale amber, distinct from the main green theme
+  sh.setRowHeight(R.Y1SS_HEADER, tokenNum('ROW_H_SECTION'));
+
+  // r38: column labels  "                | Año 1 | Año 2+ | Diferencia"
+  sh.getRange(R.Y1SS_LABELS, 2).setValue('Concepto')
+    .setFontFamily(FF).setFontSize(tokenNum('FONT_SIZE_SMALL'))
+    .setFontColor('#666666');
+  sh.getRange(R.Y1SS_LABELS, 5).setValue('Año 1')
+    .setFontFamily(FF).setFontSize(tokenNum('FONT_SIZE_SMALL'))
+    .setFontColor('#666666').setHorizontalAlignment('right');
+  sh.getRange(R.Y1SS_LABELS, 7).setValue('Año 2+')
+    .setFontFamily(FF).setFontSize(tokenNum('FONT_SIZE_SMALL'))
+    .setFontColor('#666666').setHorizontalAlignment('right');
+  sh.getRange(R.Y1SS_LABELS, 9).setValue('Diferencia (Año 2+ − Año 1)')
+    .setFontFamily(FF).setFontSize(tokenNum('FONT_SIZE_SMALL'))
+    .setFontColor('#666666').setHorizontalAlignment('right');
+
+  // r39-41: three data rows
+  // `betterWhenHigher`: if true, larger SS than Y1 is good (green); if false,
+  // smaller SS than Y1 is good (green). Recibo: lower is better. Ahorros:
+  // higher is better.
+  function row(rowNum, label, y1, ss_, bold, betterWhenHigher) {
+    sh.getRange(rowNum, 2).setValue(label)
+      .setFontFamily(FF).setFontSize(tokenNum('FONT_SIZE_BODY'))
+      .setFontColor(token('TEXT_PRIMARY'));
+    if (bold) sh.getRange(rowNum, 2).setFontWeight('bold');
+
+    sh.getRange(rowNum, 5).setValue('$' + _cfeOutFmt(y1))
+      .setFontFamily(FF).setFontSize(tokenNum('FONT_SIZE_BODY'))
+      .setFontColor(token('TEXT_PRIMARY'))
+      .setHorizontalAlignment('right');
+    sh.getRange(rowNum, 7).setValue('$' + _cfeOutFmt(ss_))
+      .setFontFamily(FF).setFontSize(tokenNum('FONT_SIZE_BODY'))
+      .setFontColor(token('TEXT_PRIMARY'))
+      .setHorizontalAlignment('right');
+    var diff = ss_ - y1;
+    var diffStr = (diff >= 0 ? '+$' : '-$') + _cfeOutFmt(Math.abs(diff));
+    // Green = "better for customer". For "Recibo" lower is better, so a
+    // negative diff is green. For "Ahorro" higher is better, so positive
+    // diff is green.
+    var isGoodChange = betterWhenHigher ? (diff > 0) : (diff < 0);
+    var diffColor = (diff === 0) ? token('TEXT_PRIMARY')
+                  : isGoodChange ? '#2E7D32' : '#C62828';
+    sh.getRange(rowNum, 9).setValue(diffStr)
+      .setFontFamily(FF).setFontSize(tokenNum('FONT_SIZE_BODY'))
+      .setFontColor(diffColor)
+      .setHorizontalAlignment('right');
+    if (bold) {
+      sh.getRange(rowNum, 5).setFontWeight('bold');
+      sh.getRange(rowNum, 7).setFontWeight('bold');
+      sh.getRange(rowNum, 9).setFontWeight('bold');
+    }
+  }
+
+  // For Recibo: lower is better (betterWhenHigher=false)
+  // For Ahorros: higher is better (betterWhenHigher=true)
+  row(R.Y1SS_RECIBO,       'Recibo CFE final (PV + BESS)', year1Recibo,      steadyRecibo,      true,  false);
+  row(R.Y1SS_AHORRO_CAP,   'Ahorro BESS — Capacidad',      year1CapAhorro,   steadyCapAhorro,   false, true);
+  row(R.Y1SS_AHORRO_TOTAL, 'Ahorro total vs Sin PV',       year1TotalAhorro, steadyTotalAhorro, true,  true);
+
+  // r42: explanatory note
+  sh.getRange(R.Y1SS_NOTE, 2, 1, 13).breakApart().merge()
+    .setValue('Nota: CFE cobra Capacidad sobre MAX(kW punta, 0.7 × kW máx de los últimos 12 meses). '
+            + 'En el año 1 después de instalar BESS, la "ventana móvil" aún incluye picos de demanda '
+            + 'pre-BESS, que mantienen el piso de 0.7×movil elevado. A partir del año 2, la ventana '
+            + 'se ha renovado con los nuevos picos (más bajos gracias al BESS), y el ahorro de '
+            + 'Capacidad llega a su valor estable. Distribución y Ahorro Variable son iguales en '
+            + 'ambos escenarios.')
+    .setFontFamily(FF)
+    .setFontSize(tokenNum('FONT_SIZE_SMALL'))
+    .setFontColor('#666666')
+    .setWrap(true)
+    .setVerticalAlignment('top');
+  sh.setRowHeight(R.Y1SS_NOTE, 60);
+}
+
+
+// =============================================================================
 // MONTH HEADER ROW
 // =============================================================================
 function _cfeOutWriteMonthHeader(sh, row) {
@@ -602,7 +826,17 @@ function _cfeOutWriteRow(sh, row, label, values, fmt, bold, bg) {
 
 
 // =============================================================================
-// CHARTS
+// CHARTS — DEPRECATED in BDF-11
+// =============================================================================
+// These functions are no longer called from _cfeOutWrite. They are left in
+// place for backward compatibility (anything in older code paths that may
+// still reference them won't crash) but produce no visible output unless
+// invoked explicitly. The customer-facing CFE_OUTPUT report now relies on
+// the data tables alone — designers found the colored charts unreadable
+// in proposal PDFs and the tables already convey the same information.
+//
+// To revive charts in the future, re-enable the call site in _cfeOutWrite
+// (search for "BDF-11" + "_cfeOutBuildCharts").
 // =============================================================================
 function _cfeOutBuildCharts(sh) {
   var R = CFE_OUT_ROW;
@@ -716,4 +950,108 @@ function _cfeOutFmt(n) {
   var v = Number(n) || 0;
   // Spanish-style thousands separator -- match INPUT_CFE display
   return Math.round(v).toLocaleString('en-US');
+}
+
+// =============================================================================
+// BDF-5 HOURLY-SIM ADDENDUM
+// =============================================================================
+// Designer-facing section appended at the bottom of CFE_OUTPUT showing the
+// hourly simulator's annual cost number. Designer compares this to the
+// monthly engine output (already on the sheet above) and decides which
+// number to use for the customer proposal.
+//
+// Intentionally minimal: 6 rows. No charts. No tokens. Plain labels and
+// values that wouldn't be confused with the polished customer-facing
+// numbers above.
+function _cfeOutWriteHourlySimAddendum(sh, hourlySim) {
+  // Find an empty row near the bottom — use getLastRow()+3 as a safe gap
+  var startRow = sh.getLastRow() + 3;
+  if (startRow < 20) startRow = 20;
+
+  sh.getRange(startRow, 2)
+    .setValue('Hourly Simulation (BDF-5, designer reference)')
+    .setFontWeight('bold').setFontSize(11).setFontColor('#1565c0');
+
+  var ann = hourlySim.annual || {};
+  var baseline = hourlySim.baseline || null;
+  var savingsMxn = Number(hourlySim.savingsMxn) || 0;
+
+  // Row +1: side-by-side cost vs baseline ----------------------------------
+  // Reads as: "Hourly engine SAYS the current bill is ~$X, the proposed
+  // design would bill ~$Y, saving ~$Z."
+  sh.getRange(startRow + 1, 2).setValue('Sin PV (hourly):');
+  sh.getRange(startRow + 1, 4).setValue(
+    baseline ? Math.round(baseline.totalCostMxn) : 'n/a'
+  ).setNumberFormat('"$"#,##0');
+
+  sh.getRange(startRow + 2, 2).setValue('Con PV + BESS (hourly):');
+  sh.getRange(startRow + 2, 4).setValue(Math.round(ann.totalCostMxn || 0))
+    .setNumberFormat('"$"#,##0').setFontWeight('bold');
+
+  sh.getRange(startRow + 3, 2).setValue('Ahorro anual (hourly):');
+  sh.getRange(startRow + 3, 4).setValue(Math.round(savingsMxn))
+    .setNumberFormat('"$"#,##0').setFontWeight('bold').setFontColor('#1b5e20');
+
+  // Row +4: monthly engine cross-check -------------------------------------
+  // The monthly engine populates a "Recibo Final con BESS" cell elsewhere
+  // on the sheet (already visible above). We can't easily read its value
+  // back without circular logic, so the addendum just LABELS where to look
+  // and reminds the designer to compare. If discrepancy > ~10%, investigate.
+  sh.getRange(startRow + 4, 2).setValue(
+    'Comparison: see "RECIBO ANUAL CON PV + BESS" in section above. ' +
+    'Disagreement > 10% means one engine has a bug — investigate.'
+  ).setFontStyle('italic').setFontSize(9).setFontColor('#555555').setWrap(true);
+
+  // Row +5: bill component breakdown (only when full-bill available) -------
+  var fullBill = ann.fullBill;
+  if (fullBill && fullBill.components) {
+    var c = fullBill.components;
+    var sum = function(arr) { var s = 0; for (var i = 0; i < arr.length; i++) s += arr[i]; return s; };
+    var componentRow = startRow + 6;
+    sh.getRange(componentRow, 2).setValue('Bill components (annual MXN, proposed):')
+      .setFontWeight('bold').setFontSize(10);
+    var rows = [
+      ['  Capacidad',         sum(c.capacidad)],
+      ['  Distribución',      sum(c.distribucion)],
+      ['  Transmisión',       sum(c.transmision)],
+      ['  CENACE',            sum(c.cenace)],
+      ['  Energía B/I/P',     sum(c.energiaB) + sum(c.energiaI) + sum(c.energiaP)],
+      ['  SCnMEM + Suministro', sum(c.scnmem) + sum(c.suministro)],
+      ['  2% Baja Tension',   sum(c.bajaTension)],
+      ['  Cargo FP',          sum(c.cargoFp)],
+      ['  Subtotal',          sum(c.subtotal)],
+      ['  IVA (16%)',         sum(c.iva)],
+      ['  Facturación TOTAL', sum(c.facturacion)],
+    ];
+    for (var rr = 0; rr < rows.length; rr++) {
+      sh.getRange(componentRow + 1 + rr, 2).setValue(rows[rr][0]);
+      sh.getRange(componentRow + 1 + rr, 4).setValue(Math.round(rows[rr][1]))
+        .setNumberFormat('"$"#,##0');
+    }
+    // Provenance row
+    sh.getRange(componentRow + rows.length + 2, 2).setValue(
+      'Provenance: ' + (hourlySim.provenance ? hourlySim.provenance.loadShape : '?') +
+      ' · ' + (hourlySim.provenance ? hourlySim.provenance.windows : '?') +
+      ' · ' + fullBill.provenance
+    ).setFontStyle('italic').setFontSize(9).setFontColor('#555555').setWrap(true);
+    if (hourlySim.warnings && hourlySim.warnings.length > 0) {
+      sh.getRange(componentRow + rows.length + 3, 2).setValue(
+        'Warnings: ' + hourlySim.warnings.join(' | ')
+      ).setFontStyle('italic').setFontSize(9).setFontColor('#cc7700').setWrap(true);
+    }
+  } else {
+    // R1 fallback (no full bill): show the energy+demand split as before
+    sh.getRange(startRow + 6, 2).setValue('  Energy cost (energy only):');
+    sh.getRange(startRow + 6, 4).setValue(Math.round(ann.energyCostMxn || 0))
+      .setNumberFormat('"$"#,##0');
+    sh.getRange(startRow + 7, 2).setValue('  Demand charges (kW peaks):');
+    sh.getRange(startRow + 7, 4).setValue(Math.round(ann.demandChargeMxn || 0))
+      .setNumberFormat('"$"#,##0');
+    sh.getRange(startRow + 8, 2).setValue(
+      'NOTE: full CFE bill components (Distribución, Transmisión, CENACE, ' +
+      'SCnMEM, Suministro, IVA) NOT modeled — 20M_CFE_TARIFFS rate data missing. ' +
+      'totalCost reflects energy+demand only; not directly comparable to ' +
+      'monthly engine number above.'
+    ).setFontStyle('italic').setFontSize(9).setFontColor('#cc7700').setWrap(true);
+  }
 }

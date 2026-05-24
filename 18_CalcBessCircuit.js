@@ -152,5 +152,16 @@ function _sizeRun(name, side, circuitCurrentA, currentFactor, tbls) {
     conductorAmpacity: conductor.ampacity,
     ocpdA: ocpdA,
     egcSize: egc.egcSize,
+    // BDF-7: extra fields exposed for voltage drop, BoS quantity calc, and
+    // BOM line-item generation. Same shape conventions as the PV side
+    // (04_CalcDC.js's dc.areaConDC / dc.egcDCArea) so MDC citations align.
+    cuAreaMm2:       conductor.cuAreaMm2 || 0,
+    insAreaMm2:      conductor.insAreaMm2 || 0,
+    conductorLabel:  conductor.size || '',     // e.g. "AWG 2/0"
+    egcLabel:        egc.egcSize || '',
+    egcCuAreaMm2:    egc.cuAreaMm2 || 0,
+    ocpdAmps:        ocpdA,
+    ocpdLabel:       ocpdA ? (ocpdA + 'A') : '',
+    parallels:       1,    // single-conductor sizing today; multi-parallel TBD
   };
 }

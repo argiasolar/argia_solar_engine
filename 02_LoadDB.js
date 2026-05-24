@@ -111,14 +111,60 @@ function _bessCellOk(v) {
 // Returns every battery product as a header-keyed object. Rows whose
 // Battery_ID is blank or an IMPORTRANGE sentinel are skipped. If the tab is
 // missing entirely, returns [] (caller decides whether that is fatal) -- the
-// engine's BESS path treats an empty library as "no DB", not an error,
+// engine's BESS path treats an empty catalog as "no DB", not an error,
 // because a PV-only or CUSTOM_MANUAL project must still run.
+//
+// BDF-1 hardening: detects duplicate column headers in the source DB. If the
+// schema has two columns with the same name, the second silently overwrites
+// the first in the JS object -- which means a swap could zero out prices
+// without any error. We now collect duplicates and:
+//   - throw HARD if a price-critical column is duplicated (would corrupt sizing)
+//   - log (engineLog if available) a soft warning for non-critical duplicates
+// The list of price-critical columns is conservative; add to it whenever a
+// new engine consumer reads from this DB.
+var _BESS_DB_PRICE_CRITICAL_COLS = ['Installed_CAPEX_MXN', 'Nominal_Capacity_kWh',
+                                    'Usable_Capacity_kWh', 'Power_kW',
+                                    'Nominal_Voltage_V', 'Battery_ID'];
+
 function getAllBatteryProducts(ss) {
   var sh = ss.getSheetByName(SH.BESS_MIRROR);
   if (!sh) return [];
   var data = sh.getDataRange().getValues();
   if (!data || data.length < 2) return [];
   var hdrs = data[0].map(function(h) { return String(h).trim(); });
+
+  // -- Duplicate header detection ---------------------------------------
+  var hdrCounts = {};
+  hdrs.forEach(function(h) {
+    if (h) hdrCounts[h] = (hdrCounts[h] || 0) + 1;
+  });
+  var dups = [];
+  for (var h in hdrCounts) {
+    if (hdrCounts[h] > 1) dups.push(h);
+  }
+  if (dups.length > 0) {
+    var criticalDups = dups.filter(function(d) {
+      return _BESS_DB_PRICE_CRITICAL_COLS.indexOf(d) !== -1;
+    });
+    if (criticalDups.length > 0) {
+      // Hard fail: the engine cannot safely produce sizing/pricing output
+      // when a critical column is ambiguous. Fix MASTER_DB schema before
+      // running again.
+      throw new Error('getAllBatteryProducts: duplicate critical column(s) in '
+        + SH.BESS_MIRROR + ': [' + criticalDups.join(', ') + ']. '
+        + 'Fix MASTER_DB schema: ensure each of these columns appears EXACTLY once.');
+    }
+    // Soft warning: non-critical duplicates (like Notes) get a log entry
+    // but don't block execution.
+    try {
+      if (typeof engineLog === 'function') {
+        engineLog(ss, 'LoadDB', 'WARNING',
+          'getAllBatteryProducts: non-critical duplicate column(s) in ' + SH.BESS_MIRROR
+          + ': [' + dups.join(', ') + ']. Last occurrence wins in the result object.');
+      }
+    } catch (_) { /* engineLog unavailable in pure-test contexts -- OK to swallow */ }
+  }
+
   return data.slice(1)
     .filter(function(r) { return _bessCellOk(r[0]); })
     .map(function(row) {
@@ -152,6 +198,521 @@ function lookupBatteryVoltage(ss, batteryId) {
   var v = Number(raw);
   return (isFinite(v) && v > 0) ? v : 0;
 }
+
+
+// ---------------------------------------------------------------------------
+// Resolves the per-unit selling price for a battery from 16M_PRODUCTS_BESS.
+// BDF-7.
+//
+// HONEST CAVEAT: This reader assumes the live DB has a column whose header
+// matches one of the recognized names below. The exact column position is
+// IRRELEVANT — getAllBatteryProducts returns header-keyed objects. As long
+// as the column exists with a recognized header, this reader finds it.
+//
+// Recognized header names (in priority order, case-insensitive comparison):
+//   1. BESS_price_per_unit              -- the new column you added
+//   2. BESS_PRICE_PER_UNIT
+//   3. Price_Per_Unit_MXN
+//   4. Installed_CAPEX_MXN              -- legacy fallback (NOT correct
+//                                          long-term, since installed CAPEX
+//                                          includes installation, but
+//                                          better than 0)
+//
+// Returns:
+//   { priceMxn: number, provenance: 'BESS_PRICE_PER_UNIT' | 'CAPEX_FALLBACK' |
+//                                   'NO_DATA', headerUsed: '...' }
+//   On unknown battery: { priceMxn: 0, provenance: 'NO_BATTERY' }
+function lookupBatteryUnitPrice(ss, batteryId) {
+  var row = lookupBattery(ss, batteryId);
+  if (!row) return { priceMxn: 0, provenance: 'NO_BATTERY', headerUsed: null };
+  var candidates = [
+    { header: 'BESS_price_per_unit', prov: 'BESS_PRICE_PER_UNIT' },
+    { header: 'BESS_PRICE_PER_UNIT', prov: 'BESS_PRICE_PER_UNIT' },
+    { header: 'Price_Per_Unit_MXN',  prov: 'BESS_PRICE_PER_UNIT' },
+    { header: 'Installed_CAPEX_MXN', prov: 'CAPEX_FALLBACK' },
+  ];
+  // Build a normalized map of the row's keys for case-insensitive lookup
+  var normalized = {};
+  for (var k in row) {
+    if (Object.prototype.hasOwnProperty.call(row, k)) {
+      normalized[String(k).trim().toLowerCase()] = { key: k, val: row[k] };
+    }
+  }
+  for (var i = 0; i < candidates.length; i++) {
+    var c = candidates[i];
+    var hit = normalized[c.header.toLowerCase()];
+    if (hit && _bessCellOk(hit.val)) {
+      var n = Number(hit.val);
+      if (isFinite(n) && n >= 0) {
+        return { priceMxn: n, provenance: c.prov, headerUsed: hit.key };
+      }
+    }
+  }
+  return { priceMxn: 0, provenance: 'NO_DATA', headerUsed: null };
+}
+
+
+// ---------------------------------------------------------------------------
+// BESS sizing tariff rates -- BDF-1
+// ---------------------------------------------------------------------------
+// The sizing engine (calcBessSizing) needs annualized punta and base energy
+// rates to estimate the energy-shift component of BESS savings. We derive
+// these from the project's own INPUT_CFE bills rather than the catalog
+// (20M_CFE_TARIFFS), because:
+//   - The catalog requires a tariff-resolver (region, voltage, season, month)
+//     which is a chunk of work on its own.
+//   - INPUT_CFE already has the actual billed MXN per kWh per month, so the
+//     weighted-average over 12 months IS the rate the project pays.
+//
+// Returns: { puntaMxnPerKwh, baseMxnPerKwh, provenance, monthsRead }
+//   provenance: 'INPUT_CFE_DERIVED' when at least 6 months had data,
+//               'INSUFFICIENT_DATA' otherwise (returns 0 rates).
+//   monthsRead: how many monthly entries contributed.
+//
+// The INPUT_BESS override step happens AFTER this call -- this function just
+// derives the default. Callers compose:
+//   var auto     = deriveBessTariffRatesFromInputCfe(ss);
+//   var override = readInputBessTariffOverride(ss);  // {punta?, base?}
+//   var punta    = override.punta != null ? override.punta : auto.puntaMxnPerKwh;
+//   var base     = override.base  != null ? override.base  : auto.baseMxnPerKwh;
+function deriveBessTariffRatesFromInputCfe(ss) {
+  var sh = ss.getSheetByName('INPUT_CFE');
+  if (!sh) {
+    return { puntaMxnPerKwh: 0, baseMxnPerKwh: 0,
+             provenance: 'NO_INPUT_CFE_SHEET', monthsRead: 0 };
+  }
+  // INPUT_CFE layout (verified against ARGIA_ENGINE_18):
+  //   r10 = kWh base, r12 = kWh punta, r25 = Energía B (MXN), r27 = Energía P (MXN)
+  //   cols C..N = ENE..DIC (12 months)
+  var rowKwhBase = 10, rowKwhPunta = 12, rowEnergB = 25, rowEnergP = 27;
+  var firstMonthCol = 3, lastMonthCol = 14;  // C..N
+  var sumKwhP = 0, sumKwhB = 0, sumEnergP = 0, sumEnergB = 0, months = 0;
+  for (var c = firstMonthCol; c <= lastMonthCol; c++) {
+    var kwhP = Number(sh.getRange(rowKwhPunta, c).getValue()) || 0;
+    var kwhB = Number(sh.getRange(rowKwhBase,  c).getValue()) || 0;
+    var enrP = Number(sh.getRange(rowEnergP,   c).getValue()) || 0;
+    var enrB = Number(sh.getRange(rowEnergB,   c).getValue()) || 0;
+    if (kwhP > 0 && kwhB > 0 && enrP > 0 && enrB > 0) {
+      sumKwhP   += kwhP;
+      sumKwhB   += kwhB;
+      sumEnergP += enrP;
+      sumEnergB += enrB;
+      months++;
+    }
+  }
+  if (months < 6) {
+    return { puntaMxnPerKwh: 0, baseMxnPerKwh: 0,
+             provenance: 'INSUFFICIENT_DATA',
+             monthsRead: months };
+  }
+  return {
+    puntaMxnPerKwh: sumEnergP / sumKwhP,
+    baseMxnPerKwh:  sumEnergB / sumKwhB,
+    provenance: 'INPUT_CFE_DERIVED',
+    monthsRead: months,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Full tariff-rate derivation including intermedia -- BDF-5
+// ---------------------------------------------------------------------------
+// The hourly simulator needs all three bucket rates (base/intermedia/punta).
+// The BDF-1 reader above only returns punta+base for backward compat with
+// the BESS sizer. This function extends it to include intermedia (INPUT_CFE
+// row 26 = Energía I), needed for 8760-hour TOU cost calculation.
+//
+// Returns { puntaMxnPerKwh, intermediaMxnPerKwh, baseMxnPerKwh, provenance,
+//           monthsRead }. Falls back to 0 for any rate with insufficient data.
+function deriveFullTariffRatesFromInputCfe(ss) {
+  var sh = ss.getSheetByName('INPUT_CFE');
+  if (!sh) {
+    return { puntaMxnPerKwh: 0, intermediaMxnPerKwh: 0, baseMxnPerKwh: 0,
+             provenance: 'NO_INPUT_CFE_SHEET', monthsRead: 0 };
+  }
+  // r10 = kWh base, r11 = kWh intermedia, r12 = kWh punta
+  // r25 = Energía B, r26 = Energía I, r27 = Energía P  (MXN amounts)
+  var firstMonthCol = 3, lastMonthCol = 14;  // C..N
+  var sumKwhP = 0, sumKwhI = 0, sumKwhB = 0;
+  var sumMxnP = 0, sumMxnI = 0, sumMxnB = 0;
+  var months = 0;
+  for (var c = firstMonthCol; c <= lastMonthCol; c++) {
+    var kwhB = Number(sh.getRange(10, c).getValue()) || 0;
+    var kwhI = Number(sh.getRange(11, c).getValue()) || 0;
+    var kwhP = Number(sh.getRange(12, c).getValue()) || 0;
+    var mxnB = Number(sh.getRange(25, c).getValue()) || 0;
+    var mxnI = Number(sh.getRange(26, c).getValue()) || 0;
+    var mxnP = Number(sh.getRange(27, c).getValue()) || 0;
+    // Require at least the base+punta pair to count this month
+    if (kwhP > 0 && kwhB > 0 && mxnP > 0 && mxnB > 0) {
+      sumKwhP += kwhP; sumKwhI += kwhI; sumKwhB += kwhB;
+      sumMxnP += mxnP; sumMxnI += mxnI; sumMxnB += mxnB;
+      months++;
+    }
+  }
+  if (months < 6) {
+    return { puntaMxnPerKwh: 0, intermediaMxnPerKwh: 0, baseMxnPerKwh: 0,
+             provenance: 'INSUFFICIENT_DATA', monthsRead: months };
+  }
+  return {
+    puntaMxnPerKwh:      sumMxnP / sumKwhP,
+    intermediaMxnPerKwh: (sumKwhI > 0) ? (sumMxnI / sumKwhI) : 0,
+    baseMxnPerKwh:       sumMxnB / sumKwhB,
+    provenance: 'INPUT_CFE_DERIVED',
+    monthsRead: months,
+  };
+}
+
+// Reads the BESS tariff override cells from INPUT_BESS (BDF-1 reader,
+// row positions updated in BDF-3 when economics section was added).
+// Returns { punta, base } where each is null when blank/zero, or a positive
+// number when the designer has typed in an override.
+function readInputBessTariffOverride(ss) {
+  var sh = ss.getSheetByName('INPUT_BESS');
+  if (!sh) return { punta: null, base: null };
+  // INPUT_BESS layout (BDF-3 economics section):
+  //   row 36 B = "5. ECONOMICS GUARDRAILS" (section header)
+  //   row 37 C = min annual savings threshold MXN
+  //   row 38 C = punta override MXN/kWh   (BESS_PUNTA_RATE_MXN_KWH)
+  //   row 39 C = base override MXN/kWh    (BESS_BASE_RATE_MXN_KWH)
+  // If sheet doesn't have these rows yet (pre-BDF-3 workbook), these
+  // reads return blank values and the function returns nulls -- which is
+  // exactly the "no override" behavior we want.
+  var puntaRaw = sh.getRange(38, 3).getValue();
+  var baseRaw  = sh.getRange(39, 3).getValue();
+  var punta = Number(puntaRaw);
+  var base  = Number(baseRaw);
+  return {
+    punta: (isFinite(punta) && punta > 0) ? punta : null,
+    base:  (isFinite(base)  && base  > 0) ? base  : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Min-savings threshold reader -- BDF-3
+// ---------------------------------------------------------------------------
+// Reads the min annual savings threshold from INPUT_BESS row 37 col C.
+// Threshold is in MXN. Returns 0 when:
+//   - the sheet doesn't have row 37 yet (pre-BDF-3 workbook), OR
+//   - the cell is blank, OR
+//   - the cell holds 0 or a negative number (designer explicitly disabled).
+// In all "0" cases the engine treats threshold as DISABLED and produces
+// behavior identical to BDF-2 -- no regression for pre-BDF-3 callers.
+//
+// Returns { thresholdMxn, provenance }.
+//   provenance: 'INPUT_BESS' when the cell has a positive value,
+//               'DISABLED' otherwise.
+function readBessMinSavingsThreshold(ss) {
+  var sh = ss.getSheetByName('INPUT_BESS');
+  if (!sh) return { thresholdMxn: 0, provenance: 'DISABLED' };
+  var raw = sh.getRange(37, 3).getValue();
+  var n = Number(raw);
+  if (!isFinite(n) || n <= 0) {
+    return { thresholdMxn: 0, provenance: 'DISABLED' };
+  }
+  return { thresholdMxn: n, provenance: 'INPUT_BESS' };
+}
+
+// ---------------------------------------------------------------------------
+// Load profile assembly for BESS sizing -- BDF-1
+// ---------------------------------------------------------------------------
+// calcBessSizing's loadProfile.months expects [{kwhPunta, kwPunta, days}, ...]
+// We assemble it from INPUT_CFE rows 12 (kWh punta), 15 (kW punta), 18 (days).
+// Months with zero/missing data are excluded -- the sizer warns when fewer
+// than 12 are present, so callers don't need to fake months.
+function buildBessLoadProfileFromInputCfe(ss) {
+  var sh = ss.getSheetByName('INPUT_CFE');
+  if (!sh) return { months: [], provenance: 'NO_INPUT_CFE_SHEET' };
+  var rowKwhPunta = 12, rowKwPunta = 15, rowDias = 18;
+  var firstCol = 3, lastCol = 14;  // C..N = ENE..DIC
+  var months = [];
+  for (var c = firstCol; c <= lastCol; c++) {
+    var kwhP = Number(sh.getRange(rowKwhPunta, c).getValue()) || 0;
+    var kwP  = Number(sh.getRange(rowKwPunta,  c).getValue()) || 0;
+    var days = Number(sh.getRange(rowDias,     c).getValue()) || 30;
+    if (kwhP > 0 && kwP > 0) {
+      months.push({ kwhPunta: kwhP, kwPunta: kwP, days: days });
+    }
+  }
+  // Provenance follows the same SYNTHESIZED-vs-METERED contract the sizer
+  // already documents. Monthly CFE-bill data is always SYNTHESIZED relative
+  // to true hourly load (the bill is aggregated). If/when we add a metered
+  // 15-min interval path, we'll set 'METERED' here instead.
+  return {
+    months: months,
+    provenance: 'SYNTHESIZED',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Full-bill reader for hourly simulation -- BDF-5
+// ---------------------------------------------------------------------------
+// The BESS sizer (BDF-1..4) only needs punta data. The hourly simulator
+// (BDF-5) needs ALL THREE tariff buckets (base, intermedia, punta) plus
+// the tariff code and region from INPUT_CFE header rows.
+//
+// Returns { tariff, region, monthlyBill, provenance } where monthlyBill
+// is the shape calcHourlySimulation expects:
+//   { kwhBase[12], kwhIntermedia[12], kwhPunta[12],
+//     kwBase[12], kwIntermedia[12], kwPunta[12] }
+//
+// On any missing data, the corresponding array entry is 0. The simulator
+// handles 0-entries gracefully (no consumption that month -> no cost).
+function buildFullBillFromInputCfe(ss) {
+  var sh = ss.getSheetByName('INPUT_CFE');
+  if (!sh) return {
+    tariff: '', region: '', monthlyBill: null, provenance: 'NO_INPUT_CFE_SHEET'
+  };
+  // Header
+  var tariff = String(sh.getRange(4, 3).getValue() || '').trim().toUpperCase();
+  var region = String(sh.getRange(5, 3).getValue() || '').trim().toUpperCase();
+  // Bill rows (1-indexed in CFE sheet, 0-indexed in our arrays):
+  // r10 = kWh base, r11 = kWh intermedia, r12 = kWh punta
+  // r13 = kW base, r14 = kW intermedia, r15 = kW punta
+  var firstCol = 3, lastCol = 14;  // C..N = Jan..Dec
+  var kwhBase = [], kwhInter = [], kwhPunta = [];
+  var kwBase = [], kwInter = [], kwPunta = [];
+  for (var c = firstCol; c <= lastCol; c++) {
+    kwhBase.push(Number(sh.getRange(10, c).getValue()) || 0);
+    kwhInter.push(Number(sh.getRange(11, c).getValue()) || 0);
+    kwhPunta.push(Number(sh.getRange(12, c).getValue()) || 0);
+    kwBase.push(Number(sh.getRange(13, c).getValue()) || 0);
+    kwInter.push(Number(sh.getRange(14, c).getValue()) || 0);
+    kwPunta.push(Number(sh.getRange(15, c).getValue()) || 0);
+  }
+  // Check if we have enough data to be useful
+  var totalKwh = 0;
+  for (var i = 0; i < 12; i++) totalKwh += kwhBase[i] + kwhInter[i] + kwhPunta[i];
+  var provenance = (totalKwh > 0) ? 'INPUT_CFE' : 'EMPTY';
+  return {
+    tariff: tariff,
+    region: region,
+    monthlyBill: {
+      kwhBase: kwhBase, kwhIntermedia: kwhInter, kwhPunta: kwhPunta,
+      kwBase: kwBase, kwIntermedia: kwInter, kwPunta: kwPunta,
+    },
+    provenance: provenance,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Full CFE tariff rates reader for hourly simulation -- BDF-5 R2
+// ---------------------------------------------------------------------------
+// Reads 20M_CFE_TARIFFS for (tariff, region) and returns a per-month rate
+// table covering ALL bill components needed to reconstruct a full CFE bill:
+//   - ENERGIA BASE / INTERMEDIA / PUNTA  (MXN/kWh, kWh-driven)
+//   - TRANSMISION / CENACE / SERVICIOS CONEXOS  (MXN/kWh, kWh-driven)
+//   - CAPACIDAD  (MXN/kW-month, demanda-facturable-driven)
+//   - DISTRIBUCION  (MXN/kW-month, max-monthly-kW-driven)
+//   - SUMINISTRO BASICO  (flat MXN/month)
+//
+// HONEST CAVEAT: 20M_CFE_TARIFFS' CFE_GDMTH_UNIT column is INCONSISTENT for
+// DISTRIBUCION and SUMINISTRO BASICO (labeled MXN/KWH but used as MXN/KW-month
+// and flat MXN/month respectively per the INPUT_CFE formulas). We trust the
+// FORMULA SEMANTICS in 04a_CalcCFEBill and follow them, not the UNIT column.
+//
+// Returns:
+//   {
+//     months: [               // 12 entries (Jan..Dec)
+//       {
+//         energiaBase: 0.8066, energiaIntermedia: 1.499, energiaPunta: 1.768,
+//         transmision: 0.1801, cenace: 0.0076, serviciosConexos: 0.0069,
+//         capacidadMxnPerKw: 392.2, distribucionMxnPerKw: 124.4,
+//         suministroBasicoMxnFlat: 461.8,
+//       },
+//       ...
+//     ],
+//     provenance: '20M_CFE_TARIFFS' | 'MISSING' | 'INCOMPLETE',
+//     tariff: 'GDMTH', region: 'GOLFO CENTRO',
+//   }
+//
+// On any missing month / charge, the value is 0 (engine handles 0 gracefully).
+function loadCfeTariffRates(ss, tariff, region) {
+  var sh = ss.getSheetByName('20M_CFE_TARIFFS');
+  if (!sh) {
+    return { months: [], provenance: 'MISSING', tariff: tariff, region: region };
+  }
+  var tariffUc = String(tariff || '').trim().toUpperCase();
+  var regionUc = String(region || '').trim().toUpperCase();
+  var lastRow = sh.getLastRow();
+  // Columns (per header): C=tariff, E=region, G=month, H=charge, J=value
+  var data = sh.getRange(2, 1, lastRow - 1, 12).getValues();
+  // Spanish month names in column G
+  var monthMap = {
+    'ENE': 0, 'FEB': 1, 'MAR': 2, 'ABR': 3, 'MAY': 4, 'JUN': 5,
+    'JUL': 6, 'AGO': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DIC': 11,
+  };
+  // Initialize 12 empty months
+  var months = [];
+  for (var m = 0; m < 12; m++) {
+    months.push({
+      energiaBase: 0, energiaIntermedia: 0, energiaPunta: 0,
+      transmision: 0, cenace: 0, serviciosConexos: 0,
+      capacidadMxnPerKw: 0, distribucionMxnPerKw: 0,
+      suministroBasicoMxnFlat: 0,
+    });
+  }
+  // Walk the tariff table
+  var rowsFound = 0;
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var rowTariff = String(row[2] || '').trim().toUpperCase();    // col C
+    var rowRegion = String(row[4] || '').trim().toUpperCase();    // col E
+    var rowMonth  = String(row[6] || '').trim().toUpperCase();    // col G
+    var rowCharge = String(row[7] || '').trim().toUpperCase();    // col H
+    var rowValue  = Number(row[9]) || 0;                           // col J
+    if (rowTariff !== tariffUc) continue;
+    if (rowRegion !== regionUc) continue;
+    var mIdx = monthMap[rowMonth];
+    if (mIdx === undefined) continue;
+    rowsFound++;
+    switch (rowCharge) {
+      case 'ENERGIA BASE':       months[mIdx].energiaBase = rowValue; break;
+      case 'ENERGIA INTERMEDIA': months[mIdx].energiaIntermedia = rowValue; break;
+      case 'ENERGIA PUNTA':      months[mIdx].energiaPunta = rowValue; break;
+      case 'TRANSMISION':        months[mIdx].transmision = rowValue; break;
+      case 'CENACE':             months[mIdx].cenace = rowValue; break;
+      case 'SERVICIOS CONEXOS':  months[mIdx].serviciosConexos = rowValue; break;
+      case 'CAPACIDAD':          months[mIdx].capacidadMxnPerKw = rowValue; break;
+      case 'DISTRIBUCION':       months[mIdx].distribucionMxnPerKw = rowValue; break;
+      case 'SUMINISTRO BASICO':  months[mIdx].suministroBasicoMxnFlat = rowValue; break;
+      // FACTOR DE CARGA and other rows: ignored (informational only)
+    }
+  }
+  var prov;
+  if (rowsFound === 0) prov = 'MISSING';
+  else if (rowsFound < 60) prov = 'INCOMPLETE';   // expect ~9 charges × 12 months = 108
+  else prov = '20M_CFE_TARIFFS';
+  return { months: months, provenance: prov, tariff: tariff, region: region };
+}
+
+
+// Reads CFE_SIMULATION row 8 ("Solar kWh" — the monthly PV PRODUCTION,
+// not the surplus). The existing PV calc step populates this row before
+// the hourly simulator runs.
+//
+// Returns { kwh: [12 numbers], provenance } where 'CFE_SIMULATION' means
+// data was found, 'MISSING' means the sheet/row is empty (sim runs without
+// PV, which is fine for pre-PV-step or PV-disabled projects).
+function readMonthlyPvFromCfeSimulation(ss) {
+  var sh = ss.getSheetByName('CFE_SIMULATION');
+  if (!sh) return { kwh: new Array(12).fill(0), provenance: 'NO_SHEET' };
+  var rowSolar = 8;  // 'Solar kWh' row
+  var firstCol = 3, lastCol = 14;
+  var kwh = [];
+  for (var c = firstCol; c <= lastCol; c++) {
+    kwh.push(Number(sh.getRange(rowSolar, c).getValue()) || 0);
+  }
+  var hasAny = kwh.some(function(v) { return v > 0; });
+  return {
+    kwh: kwh,
+    provenance: hasAny ? 'CFE_SIMULATION' : 'MISSING',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Demand-charge rate derivation -- BDF-1
+// ---------------------------------------------------------------------------
+// calcBessSizing needs MXN/kW for the demand-charge saving. Like the energy
+// rates above, we derive this from INPUT_CFE's actual billed "Capacidad"
+// line (row 21) divided by demanda facturable (row 19). Weighted-average
+// across the months that have valid data.
+//
+// Returns { demandChargeMxnPerKw, provenance, monthsRead }.
+function deriveBessDemandChargeFromInputCfe(ss) {
+  var sh = ss.getSheetByName('INPUT_CFE');
+  if (!sh) {
+    return { demandChargeMxnPerKw: 0,
+             provenance: 'NO_INPUT_CFE_SHEET', monthsRead: 0 };
+  }
+  var rowCapacidad = 21, rowDemandaFact = 19;
+  var firstCol = 3, lastCol = 14;
+  var sumKw = 0, sumMxn = 0, months = 0;
+  for (var c = firstCol; c <= lastCol; c++) {
+    var capMxn = Number(sh.getRange(rowCapacidad,   c).getValue()) || 0;
+    var demKw  = Number(sh.getRange(rowDemandaFact, c).getValue()) || 0;
+    if (capMxn > 0 && demKw > 0) {
+      sumMxn += capMxn;
+      sumKw  += demKw;
+      months++;
+    }
+  }
+  if (months < 6) {
+    return { demandChargeMxnPerKw: 0,
+             provenance: 'INSUFFICIENT_DATA', monthsRead: months };
+  }
+  return {
+    demandChargeMxnPerKw: sumMxn / sumKw,
+    provenance: 'INPUT_CFE_DERIVED',
+    monthsRead: months,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Interconnection mode + export price -- BDF-2
+// ---------------------------------------------------------------------------
+// Reads INPUT_CFE rows 41-42 to identify how the project interfaces with the
+// grid. The CFE Spanish codes (MEDICION_NETA / FACTURACION_NETA /
+// SIN_EXPORTACION) map to the BESS_INTERCONN_MODE enum from 17_CalcBessSizing.
+//
+// Returns { mode, exportPriceMxnPerKwh, provenance }.
+//   mode: one of NET_METERING/NET_BILLING/ZERO_EXPORT/UNKNOWN.
+//   exportPriceMxnPerKwh: 0 if not applicable.
+//   provenance: 'INPUT_CFE' on success, 'MISSING' otherwise.
+function readBessInterconnectionFromInputCfe(ss) {
+  var sh = ss.getSheetByName('INPUT_CFE');
+  if (!sh) return { mode: 'UNKNOWN', exportPriceMxnPerKwh: 0, provenance: 'MISSING' };
+  var rawMode = String(sh.getRange(41, 3).getValue() || '').trim().toUpperCase();
+  var mode;
+  switch (rawMode) {
+    case 'MEDICION_NETA':    mode = 'NET_METERING'; break;
+    case 'FACTURACION_NETA': mode = 'NET_BILLING';  break;
+    case 'SIN_EXPORTACION':  mode = 'ZERO_EXPORT';  break;
+    default:                 mode = 'UNKNOWN';
+  }
+  var exportPrice = Number(sh.getRange(42, 3).getValue()) || 0;
+  return {
+    mode: mode,
+    exportPriceMxnPerKwh: exportPrice,
+    provenance: (mode === 'UNKNOWN') ? 'MISSING' : 'INPUT_CFE',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// PV surplus annual total -- BDF-2
+// ---------------------------------------------------------------------------
+// Reads CFE_SIMULATION row 42 ("PV Exportado kWh") — the monthly kWh that
+// solar produced minus what the load consumed. This is the "available for
+// battery charging" pool that the BDF-2 sizing engine uses for NET_BILLING
+// and ZERO_EXPORT modes.
+//
+// HONEST CAVEAT (monthly proxy): in TIME, surplus and battery-charge-need
+// don't always align. Treating annual surplus as fully captureable by the
+// battery is optimistic when battery is small (it fills up during midday
+// surplus, can't capture more) and reasonable when battery is large
+// relative to surplus (the CULLIGAN case at 2032 kWh battery vs 900 MWh
+// surplus). BDF-5 (hourly synthesizer) will tighten this.
+//
+// Returns { annualSurplusKwh, monthsRead, provenance }.
+function readPvAnnualSurplusFromCfeSimulation(ss) {
+  var sh = ss.getSheetByName('CFE_SIMULATION');
+  if (!sh) return { annualSurplusKwh: 0, monthsRead: 0, provenance: 'MISSING' };
+  var rowPvExportado = 42;
+  var firstCol = 3, lastCol = 14;
+  var total = 0, monthsRead = 0;
+  for (var c = firstCol; c <= lastCol; c++) {
+    var v = Number(sh.getRange(rowPvExportado, c).getValue()) || 0;
+    if (v > 0) {
+      total += v;
+      monthsRead++;
+    }
+  }
+  return {
+    annualSurplusKwh: total,
+    monthsRead: monthsRead,
+    provenance: (monthsRead > 0) ? 'CFE_SIMULATION' : 'MISSING',
+  };
+}
+
 
 // Builds typed InverterSpec[] from INPUT_DESIGN bank + MASTER_DB v3 lookup.
 // Raises on INVALID entries, warns on REVIEW entries.

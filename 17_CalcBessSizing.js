@@ -46,8 +46,28 @@ var BESS_SHAVE_MODE = {
   AUTO:        'AUTO',          // sweep, pick best payback
 };
 
+// BDF-2: Interconnection mode. Changes the economic value of a kWh of
+// stored energy because the alternative-use cost differs per mode.
+//   NET_METERING -- surplus exports at retail (free grid storage). Battery
+//                   energy-shift collapses to ~0; demand-charge saving
+//                   intact. CFE Spanish: MEDICION_NETA.
+//   NET_BILLING  -- surplus exports at exportPrice (typically lower than
+//                   import retail). Battery captures the gap. CFE: FACTURACION_NETA.
+//   ZERO_EXPORT  -- surplus is curtailed (wasted). Battery captures full
+//                   punta-rate value. CFE: SIN_EXPORTACION.
+//   UNKNOWN      -- mode not provided. Falls back to BDF-1 math (pure
+//                   grid-to-grid arbitrage), which is conservative for
+//                   NET_METERING/ZERO_EXPORT but approximate for NET_BILLING.
+// See _scoreCandidate's BDF-2 block for the exact math per mode.
+var BESS_INTERCONN_MODE = {
+  NET_METERING: 'NET_METERING',
+  NET_BILLING:  'NET_BILLING',
+  ZERO_EXPORT:  'ZERO_EXPORT',
+  UNKNOWN:      'UNKNOWN',
+};
+
 // Default capacity ladder (kWh). Covers commercial/industrial scale, which
-// the BESS_BATTERY_LIBRARY containers (2-3.9 MWh) do not.
+// the 16M_PRODUCTS_BESS containers (2 MWh+) do not.
 var BESS_SIZING_LADDER_KWH = [100, 250, 500, 1000, 2000];
 
 // ---------------------------------------------------------------------------
@@ -71,6 +91,59 @@ var BESS_SIZING_LADDER_KWH = [100, 250, 500, 1000, 2000];
 //   ladderKwh            : number[] (optional override of the sweep ladder)
 //   libraryProducts      : [ { batteryId, capacityKwh, powerKw,
 //                              installedCapexMxn }, ... ]  (optional)
+//
+//   --- ADDED IN BDF-1 (energy-shift savings, Issue 3 fix) ----------------
+//   puntaRateMxnPerKwh   : number   (default 0) -- punta-tariff energy rate
+//   baseRateMxnPerKwh    : number   (default 0) -- base-tariff energy rate
+//                                                  Both required for energy-
+//                                                  shift savings calc;
+//                                                  if either is 0, energy
+//                                                  shift contribution is 0
+//                                                  and engine falls back to
+//                                                  the legacy demand-only
+//                                                  estimate (no regression
+//                                                  for callers that don't
+//                                                  pass these yet).
+//
+//   --- ADDED IN BDF-2 (interconnection-mode-aware sizing) -----------------
+//   interconnMode        : BESS_INTERCONN_MODE.*   (default UNKNOWN)
+//   exportPriceMxnPerKwh : number   (default 0) -- only used for NET_BILLING.
+//                                                  MXN/kWh credit for surplus
+//                                                  PV exported to grid.
+//   pvAnnualSurplusKwh   : number   (default 0) -- annual PV that's NOT
+//                                                  consumed by the load.
+//                                                  Used by NET_BILLING/
+//                                                  ZERO_EXPORT to bound how
+//                                                  much battery throughput
+//                                                  is actually charged from
+//                                                  solar (vs from grid base).
+//
+//                                                  When the battery's annual
+//                                                  throughput need exceeds
+//                                                  the available PV surplus,
+//                                                  the OVERFLOW kWh fall
+//                                                  back to BDF-1 grid-base
+//                                                  arbitrage math.
+//
+//                                                  HONEST CAVEAT: this is a
+//                                                  monthly-resolution proxy.
+//                                                  In reality, surplus and
+//                                                  battery-charge-need don't
+//                                                  always align in TIME --
+//                                                  surplus at 13:00 can't
+//                                                  charge a battery that's
+//                                                  already full from 12:00
+//                                                  surplus. Precise math
+//                                                  requires hourly modeling
+//                                                  (deferred to BDF-5).
+//                                                  This monthly proxy
+//                                                  OVERSTATES the
+//                                                  solar-charge fraction
+//                                                  when battery is small
+//                                                  relative to surplus,
+//                                                  and is fine when battery
+//                                                  is large relative to
+//                                                  surplus (the CULLIGAN case).
 //
 // @return {Object} see buildResult() at the bottom for the full shape.
 // ---------------------------------------------------------------------------
@@ -136,32 +209,88 @@ function calcBessSizing(opts) {
   var demandRate = _numOr(opts.demandChargeMxnPerKw, 0);
   var capexPerKwh = _numOr(opts.capexMxnPerKwh, 0);
 
-  // -- Build the candidate list: ladder + library products -----------------
+  // -- Build the candidate list: library products with stacks (BDF-4) ------
+  //
+  // For each library product we generate qty=1..maxStackUnits candidates.
+  // Non-stackable products (Stackable=NO in DB) only emit a qty=1 candidate.
+  // Stackable products emit qty=1, qty=2, ..., qty=maxStackUnits candidates,
+  // each treated as an independent sizing option with LINEAR CAPEX scaling.
+  //
+  // CAPEX MODEL: qty × singlePrice. No volume discounts assumed. Real-world
+  // CAPEX may differ (parallel BMS controllers, common inverters, container
+  // infrastructure all complicate this). The simple linear assumption is
+  // honest about its precision; designers should expect ±10-15% variance
+  // when getting real supplier quotes for stacks.
+  //
+  // POWER + CAPACITY: linear (qty × single). The shave-capable formula in
+  // _scoreCandidate still uses energy/window so stacks may be conservative
+  // on shave kW when they're actually energy-limited (which is usually the
+  // case for 4h windows). A future chunk could add the powerKw constraint
+  // properly.
+  //
+  // LADDER FALLBACK: when libraryProducts is empty (testing / hypothetical
+  // analysis paths), the engine falls back to synthesizing ladder candidates
+  // at fixed kWh sizes. Production path always passes a library, so the
+  // ladder fallback is invisible to designers. It's preserved for backward
+  // compat with the BDF-1/2/3 unit tests that didn't pass libraryProducts.
+  // When a library IS present, NO ladder candidates are generated (avoids
+  // the BDF-1/2/3 issue where $0-CAPEX ladder rows out-ranked real products).
   var candidates = [];
-  for (var L = 0; L < ladder.length; L++) {
-    candidates.push(_scoreCandidate({
-      label: ladder[L] + ' kWh (ladder)',
-      source: 'LADDER',
-      capacityKwh: ladder[L],
-      installedCapexMxn: capexPerKwh > 0 ? ladder[L] * capexPerKwh : 0,
-    }, goal, usableFrac, cycles, window, maxPuntaKw, avgMonthlyPuntaKwh,
-       rte, demandRate, opts));
-  }
   var lib = opts.libraryProducts || [];
-  for (var P = 0; P < lib.length; P++) {
-    var p = lib[P];
-    if (!p || !(p.capacityKwh > 0)) continue;   // skip CUSTOM/placeholder rows
-    candidates.push(_scoreCandidate({
-      label: (p.batteryId || 'product') + ' (' + p.capacityKwh + ' kWh)',
-      source: 'LIBRARY',
-      capacityKwh: p.capacityKwh,
-      installedCapexMxn: _numOr(p.installedCapexMxn, 0),
-    }, goal, usableFrac, cycles, window, maxPuntaKw, avgMonthlyPuntaKwh,
-       rte, demandRate, opts));
+
+  if (lib.length === 0) {
+    // No library -> ladder fallback (BDF-1/2/3 backward-compat path)
+    for (var L = 0; L < ladder.length; L++) {
+      candidates.push(_scoreCandidate({
+        label: ladder[L] + ' kWh (ladder)',
+        source: 'LADDER',
+        capacityKwh: ladder[L],
+        installedCapexMxn: capexPerKwh > 0 ? ladder[L] * capexPerKwh : 0,
+      }, goal, usableFrac, cycles, window, maxPuntaKw, avgMonthlyPuntaKwh,
+         rte, demandRate, opts));
+    }
+  } else {
+    // Library present -> expand each product into stack candidates
+    for (var P = 0; P < lib.length; P++) {
+      var p = lib[P];
+      if (!p || !(p.capacityKwh > 0)) continue;   // skip CUSTOM/placeholder rows
+      var maxQty = (p.stackable === true && p.maxStackUnits >= 1)
+                   ? Math.floor(p.maxStackUnits) : 1;
+      for (var qty = 1; qty <= maxQty; qty++) {
+        var label = (qty === 1)
+                    ? (p.batteryId || 'product') + ' (' + p.capacityKwh + ' kWh)'
+                    : qty + ' × ' + (p.batteryId || 'product') + ' (' +
+                      Math.round(qty * p.capacityKwh) + ' kWh, ' +
+                      Math.round(qty * (p.powerKw || 0)) + ' kW)';
+        candidates.push(_scoreCandidate({
+          label: label,
+          source: 'LIBRARY',
+          capacityKwh: qty * p.capacityKwh,
+          powerKw:     qty * (p.powerKw || 0),
+          installedCapexMxn: qty * _numOr(p.installedCapexMxn, 0),
+          // BDF-4 stack metadata for writer + tests
+          stackQty:    qty,
+          baseBatteryId: p.batteryId || '',
+          baseCapacityKwh: p.capacityKwh,
+          basePowerKw:    p.powerKw || 0,
+        }, goal, usableFrac, cycles, window, maxPuntaKw, avgMonthlyPuntaKwh,
+           rte, demandRate, opts));
+      }
+    }
   }
 
   // -- Pick the recommendation ---------------------------------------------
-  var recommendation = _pickRecommendation(candidates, goal, opts);
+  // BDF-3: when a min-savings threshold is configured, only candidates that
+  // MEET it are eligible to be the recommendation. If none meet, the
+  // recommendation is null and a warning surfaces the verdict.
+  var minThreshold = _numOr(opts.minAnnualSavingMxn, 0);
+  var eligibleCandidates;
+  if (minThreshold > 0) {
+    eligibleCandidates = candidates.filter(function(c) { return c.meetsThreshold; });
+  } else {
+    eligibleCandidates = candidates;
+  }
+  var recommendation = _pickRecommendation(eligibleCandidates, goal, opts);
 
   // -- Warnings ------------------------------------------------------------
   var warnings = [];
@@ -170,6 +299,29 @@ function calcBessSizing(opts) {
       + 'data, no 15-min intervals). Results are best-case — actual demand '
       + 'varies with which machinery runs. Confirm with a site survey.');
   }
+
+  // BDF-3: threshold verdict messaging
+  if (minThreshold > 0 && !recommendation) {
+    // Find the best candidate that DIDN'T meet, so we tell the designer
+    // how far short we were.
+    var bestBelow = null;
+    for (var bi = 0; bi < candidates.length; bi++) {
+      var cb = candidates[bi];
+      if (!bestBelow || cb.annualSavingMxn > bestBelow.annualSavingMxn) {
+        bestBelow = cb;
+      }
+    }
+    if (bestBelow) {
+      warnings.push('No candidate meets the configured minimum savings threshold '
+        + '(' + Math.round(minThreshold).toLocaleString() + ' MXN/yr). '
+        + 'Best candidate is ' + bestBelow.label
+        + ' at ' + Math.round(bestBelow.annualSavingMxn).toLocaleString()
+        + ' MXN/yr — ' + Math.round(100 * bestBelow.annualSavingMxn / minThreshold)
+        + '% of threshold. Options: lower threshold, choose a different '
+        + 'interconnection mode, or add a larger BESS product to the catalog.');
+    }
+  }
+
   if (recommendation) {
     // Demand-exceedance: the recommended battery is sized to the worst
     // observed month. If the plant runs heavier, demand will exceed it.
@@ -187,8 +339,8 @@ function calcBessSizing(opts) {
           + fit.ratio.toFixed(1) + 'x). Consider a CUSTOM_MANUAL entry for '
           + 'an exact-size quote.');
       } else if (lib.length > 0) {
-        warnings.push('No BESS_BATTERY_LIBRARY product is close to the ideal '
-          + recommendation.capacityKwh + ' kWh — the library only contains '
+        warnings.push('No 16M_PRODUCTS_BESS product is close to the ideal '
+          + recommendation.capacityKwh + ' kWh — the catalog only contains '
           + 'utility-scale containers. Add a C&I-scale product or use '
           + 'CUSTOM_MANUAL.');
       }
@@ -254,22 +406,198 @@ function _scoreCandidate(cand, goal, usableFrac, cycles, window,
   // Energy throughput (for LOAD_SHIFTING context).
   var monthlyThroughputKwh = usableKwh * cycles * 30.42 * rte;
 
+  // ---- BDF-2: Mode-aware energy-shift savings (extends BDF-1) ------------
+  // The economic value of one shifted kWh depends on WHERE the charge energy
+  // comes from AND WHAT the alternative use was. BDF-1 assumed pure grid-to-
+  // grid arbitrage (charge from base-tariff grid, save at punta). BDF-2
+  // splits this by interconnection mode + PV surplus availability:
+  //
+  //   NET_METERING -- grid stores surplus PV at full retail with zero RTE
+  //                   loss. Battery competes against free grid storage and
+  //                   loses; energy-shift saving collapses to ~0.
+  //                   Net per shifted kWh: 0.
+  //
+  //   NET_BILLING  -- surplus PV exports at exportPrice (typically << retail
+  //                   import). Battery captures the gap (puntaRate - export-
+  //                   Price), minus RTE loss on the displaced opportunity.
+  //                   Net per shifted kWh from solar surplus:
+  //                        puntaRate - (exportPrice / rte)
+  //                   If pvAnnualSurplusKwh < annualThroughputNeed, the
+  //                   overflow falls back to grid-base arbitrage at BDF-1
+  //                   math: puntaRate - (baseRate / rte).
+  //
+  //   ZERO_EXPORT  -- surplus PV is curtailed (wasted). Battery captures
+  //                   100% of the punta-rate value because the alternative
+  //                   was zero. RTE loss applies to wasted-anyway energy,
+  //                   so doesn't reduce the saving when charging from
+  //                   surplus. Overflow (surplus < need) falls back to
+  //                   grid-base BDF-1 math.
+  //
+  //   UNKNOWN      -- preserves BDF-1 behavior exactly (no regression for
+  //                   callers that don't yet pass interconnMode).
+  //
+  // HONEST CAVEAT (monthly-resolution proxy): we assume the battery can
+  // capture all PV surplus up to its annual throughput need. In reality the
+  // battery may be full when surplus appears, or empty when load needs it.
+  // BDF-5 (hourly synthesizer) will tighten this. For sites where PV surplus
+  // is much larger than battery throughput (CULLIGAN: 900 MWh surplus vs
+  // ~600 MWh battery need), this monthly proxy is reasonably tight.
+
+  var puntaRate    = _numOr(opts.puntaRateMxnPerKwh, 0);
+  var baseRate     = _numOr(opts.baseRateMxnPerKwh,  0);
+  var interconnMode = opts.interconnMode || BESS_INTERCONN_MODE.UNKNOWN;
+  var exportPrice  = _numOr(opts.exportPriceMxnPerKwh, 0);
+  var pvSurplus    = _numOr(opts.pvAnnualSurplusKwh, 0);
+
+  var annualThroughputKwh = monthlyThroughputKwh * 12;
+
+  // Split annual throughput between solar-charged and grid-charged.
+  // Solar fraction is bounded by what's actually exportable.
+  var solarChargedKwh, gridChargedKwh;
+  if (interconnMode === BESS_INTERCONN_MODE.NET_BILLING
+   || interconnMode === BESS_INTERCONN_MODE.ZERO_EXPORT) {
+    solarChargedKwh = Math.min(pvSurplus, annualThroughputKwh);
+    gridChargedKwh  = Math.max(0, annualThroughputKwh - solarChargedKwh);
+  } else {
+    solarChargedKwh = 0;
+    gridChargedKwh  = annualThroughputKwh;
+  }
+
+  // Per-kWh net values
+  var netShiftFromSolar = 0;
+  var netShiftFromGrid  = 0;
+
+  if (puntaRate > 0 && rte > 0) {
+    switch (interconnMode) {
+      case BESS_INTERCONN_MODE.NET_METERING:
+        // Grid handles arbitrage at zero cost. Battery's time-shift adds nothing.
+        netShiftFromGrid  = 0;
+        netShiftFromSolar = 0;
+        break;
+
+      case BESS_INTERCONN_MODE.NET_BILLING:
+        // Solar surplus: would have exported at exportPrice -> capture gap
+        // Grid overflow: same arbitrage as BDF-1 (base-to-punta)
+        netShiftFromSolar = puntaRate - (exportPrice / rte);
+        if (baseRate > 0) {
+          netShiftFromGrid = puntaRate - (baseRate / rte);
+        }
+        break;
+
+      case BESS_INTERCONN_MODE.ZERO_EXPORT:
+        // Solar surplus: would have been curtailed -> full punta capture,
+        // no RTE penalty (the wasted energy didn't cost anything to "buy").
+        // Grid overflow: BDF-1 base-to-punta arbitrage
+        netShiftFromSolar = puntaRate;
+        if (baseRate > 0) {
+          netShiftFromGrid = puntaRate - (baseRate / rte);
+        }
+        break;
+
+      case BESS_INTERCONN_MODE.UNKNOWN:
+      default:
+        // BDF-1 backward-compat: pure grid-to-grid arbitrage
+        if (baseRate > 0) {
+          netShiftFromGrid = puntaRate - (baseRate / rte);
+        }
+        break;
+    }
+  }
+
+  // Clamp negative values to 0. Battery can choose NOT to arbitrage when it
+  // would lose money (RTE eats thin tariff gaps).
+  if (netShiftFromSolar < 0) netShiftFromSolar = 0;
+  if (netShiftFromGrid  < 0) netShiftFromGrid  = 0;
+
+  var annualShiftFromSolarMxn = solarChargedKwh * netShiftFromSolar;
+  var annualShiftFromGridMxn  = gridChargedKwh  * netShiftFromGrid;
+  var annualEnergyShiftSavingMxn = annualShiftFromSolarMxn + annualShiftFromGridMxn;
+
+  // Legacy single-rate field (kept for backward compat with existing tests
+  // and writers). Reflects the dominant charge source.
+  var netShiftValueMxnPerKwh;
+  if (annualThroughputKwh > 0) {
+    netShiftValueMxnPerKwh = annualEnergyShiftSavingMxn / annualThroughputKwh;
+  } else {
+    netShiftValueMxnPerKwh = 0;
+  }
+  // Edge case: when no tariff rates passed AND mode is UNKNOWN, BDF-1
+  // recorded the raw differential (could be negative for thin spreads).
+  // Preserve that exactly for the negative-net-shift backward-compat test.
+  if (puntaRate > 0 && baseRate > 0 && rte > 0
+      && interconnMode === BESS_INTERCONN_MODE.UNKNOWN) {
+    netShiftValueMxnPerKwh = puntaRate - (baseRate / rte);
+  }
+
+  // Total annual saving = demand + energy-shift. This is what payback
+  // should be computed against.
+  var annualSavingMxn = annualDemandSavingMxn + annualEnergyShiftSavingMxn;
+
+  // ---- BDF-1: Peak coverage flag (Issue 2 fix) ---------------------------
+  // shavedKw tells us how much demand the battery removed. If that's less
+  // than the worst observed monthly punta demand, the customer will still
+  // pay demand charges for the uncovered portion -- which is a meaningful
+  // engineering surprise the legacy engine never surfaced.
+  //   FULL    -- battery shaves the entire monthly punta peak (or close to)
+  //   PARTIAL -- battery covers <90% of monthly peak; customer keeps paying
+  //   NONE    -- battery shaves 0 kW (e.g. non-peak-shaving goal)
+  var coverageRatio = (maxPuntaKw > 0) ? (shavedKw / maxPuntaKw) : 0;
+  var coverageFlag;
+  if (shavedKw <= 0) coverageFlag = 'NONE';
+  else if (coverageRatio >= 0.90) coverageFlag = 'FULL';
+  else coverageFlag = 'PARTIAL';
+
   // Simple payback in years (CAPEX / annual saving). Infinity if no saving.
-  var paybackYears = (annualDemandSavingMxn > 0 && cand.installedCapexMxn > 0)
-    ? cand.installedCapexMxn / annualDemandSavingMxn
+  // Uses TOTAL saving (demand + shift), not demand-only, after BDF-1 fix.
+  var paybackYears = (annualSavingMxn > 0 && cand.installedCapexMxn > 0)
+    ? cand.installedCapexMxn / annualSavingMxn
     : (cand.installedCapexMxn > 0 ? Infinity : null);
+
+  // BDF-3: Threshold check. The candidate "meets the threshold" if its total
+  // annual saving is at or above the user-configured minimum. Threshold of
+  // 0 (default) means no threshold -- every candidate meets by definition.
+  // Per-candidate flag here; result-level "no recommendation crosses" verdict
+  // happens in _pickRecommendation.
+  var minAnnualSaving = _numOr(opts.minAnnualSavingMxn, 0);
+  var meetsThreshold = (minAnnualSaving <= 0) ? true
+                       : (annualSavingMxn >= minAnnualSaving);
 
   return {
     label: cand.label,
     source: cand.source,
     capacityKwh: cand.capacityKwh,
+    powerKw: cand.powerKw || null,    // BDF-4: surface for table display
     usableKwh: usableKwh,
     shaveCapableKw: shaveCapableKw,
     shavedKw: shavedKw,
     monthlyThroughputKwh: monthlyThroughputKwh,
     installedCapexMxn: cand.installedCapexMxn,
     annualDemandSavingMxn: annualDemandSavingMxn,
+    annualEnergyShiftSavingMxn: annualEnergyShiftSavingMxn,
+    annualSavingMxn: annualSavingMxn,
+    netShiftValueMxnPerKwh: netShiftValueMxnPerKwh,
+    coverageRatio: coverageRatio,
+    coverageFlag: coverageFlag,
     paybackYears: paybackYears,
+    // BDF-2 transparency fields: where the battery's energy came from and
+    // what each source was worth per kWh. Writer can show "65% solar, 35% grid"
+    // so the designer knows what's driving the savings number.
+    interconnMode: interconnMode,
+    annualSolarChargedKwh: solarChargedKwh,
+    annualGridChargedKwh:  gridChargedKwh,
+    netShiftFromSolarMxnPerKwh: netShiftFromSolar,
+    netShiftFromGridMxnPerKwh:  netShiftFromGrid,
+    annualShiftFromSolarMxn: annualShiftFromSolarMxn,
+    annualShiftFromGridMxn:  annualShiftFromGridMxn,
+    // BDF-3: threshold check (true = at/above min savings, false = below)
+    meetsThreshold: meetsThreshold,
+    // BDF-4: stacking metadata. stackQty=1 for single units, >1 for stacks.
+    // baseBatteryId/baseCapacityKwh/basePowerKw describe the SINGLE unit
+    // being stacked, useful for writer display and downstream BOM later.
+    stackQty:        cand.stackQty || 1,
+    baseBatteryId:   cand.baseBatteryId || '',
+    baseCapacityKwh: cand.baseCapacityKwh || cand.capacityKwh,
+    basePowerKw:     cand.basePowerKw    || (cand.powerKw || 0),
   };
 }
 

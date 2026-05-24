@@ -2198,9 +2198,17 @@ function setupInputBess() {
       + '-- cannot build dropdown from DB.');
   }
 
-  // Point the validation at the DB's Battery_ID column (col A, from row 2
-  // down). requireValueInRange tracks the range live -- no need to
-  // re-enumerate the values here.
+  // BDF-6: delegate to refreshBessPicker which builds a UNION dropdown
+  // (catalog + recommendation labels) via a hidden helper sheet. The old
+  // catalog-only requireValueInRange path is preserved as a fallback when
+  // the picker module isn't deployed.
+  if (typeof refreshBessPicker === 'function') {
+    refreshBessPicker(ss);
+    SpreadsheetApp.flush();
+    return;
+  }
+
+  // Fallback: old catalog-only dropdown
   var dbIdRange = shDb.getRange('A2:A');
   var rule = SpreadsheetApp.newDataValidation()
     .requireValueInRange(dbIdRange, true)
@@ -2208,6 +2216,237 @@ function setupInputBess() {
     .setHelpText('Seleccione un Battery_ID de ' + SH.BESS_MIRROR + '!A:A')
     .build();
   shBess.getRange(6, 3).setDataValidation(rule);
+  SpreadsheetApp.flush();
+}
+
+
+// ===========================================================================
+// setupInputBessStyling  (BDF-9)
+// ===========================================================================
+// Lipstick pass for INPUT_BESS §1-§4 (rows 1-34). This sheet was hand-built
+// in an early era and doesn't share the polished look of INPUT_PROJECT /
+// INPUT_INSTALL. BDF-9 applies the same design-tokens layer without touching
+// values, formulas, or dropdowns.
+//
+// What this function DOES:
+//   - Apply page canvas (hidden gridlines, column widths)
+//   - Insert logo (top-left) + proper title in row 2
+//   - Apply token fonts/colors/dividers to existing label cells (col B)
+//   - Apply BG_INPUT_CELL background to existing value cells (col C)
+//   - Clear E6 / E7 "Provider:" / "Model:" leftover labels
+//
+// What this function DOES NOT DO:
+//   - Delete or recreate the sheet
+//   - Touch values in C6 (battery id), C10..C14 (XLOOKUP formula cells),
+//     C20 (CAPEX MXN), or any other data cell
+//   - Modify dropdowns / data validations
+//   - Touch §5 (economics, BDF-3) or §6 (install, BDF-7) — those have
+//     their own styling functions
+//
+// Idempotent. Safe to re-run after value edits.
+function setupInputBessStyling() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('INPUT_BESS');
+  if (!sh) {
+    throw new Error('setupInputBessStyling: INPUT_BESS sheet not found.');
+  }
+
+  // Tokens (or fallbacks)
+  var hasTokens = (typeof loadDesignTokens === 'function'
+                && typeof token === 'function'
+                && typeof tokenNum === 'function');
+  if (hasTokens) {
+    try {
+      resetDesignTokenCache_();
+      loadDesignTokens(ss);
+    } catch (e) {
+      hasTokens = false;
+    }
+  }
+  var FF = hasTokens ? token('FONT_FAMILY')       : 'Inter';
+  var FS = hasTokens ? tokenNum('FONT_SIZE_BODY') : 10;
+  var FS_TITLE   = hasTokens ? tokenNum('FONT_SIZE_TITLE')   : 22;
+  var FS_SECTION = hasTokens ? tokenNum('FONT_SIZE_SECTION') : 10;
+  var TXT_PRIMARY    = hasTokens ? token('TEXT_PRIMARY')   : '#111111';
+  var TXT_SECONDARY  = hasTokens ? token('TEXT_SECONDARY') : '#767676';
+  var BG_INPUT_CELL  = hasTokens ? token('BG_INPUT_CELL')  : '#FDFBF6';
+  var DIVIDER_LINE   = hasTokens ? token('DIVIDER_LINE')   : '#E5E3DC';
+  var ROW_H_TITLE    = hasTokens ? tokenNum('ROW_H_TITLE') : 42;
+  var ROW_H_SECTION  = hasTokens ? tokenNum('ROW_H_SECTION') : 28;
+  var ROW_H_BODY     = hasTokens ? tokenNum('ROW_H_BODY')  : 22;
+
+  // ---- Canvas ----------------------------------------------------------
+  sh.setHiddenGridlines(true);
+  sh.setColumnWidth(1, 24);     // A: narrow margin
+  sh.setColumnWidth(2, 220);    // B: labels (was way too wide per image 1)
+  sh.setColumnWidth(3, 280);    // C: values (battery picker labels can be long)
+  sh.setColumnWidth(4, 30);     // D: spacer
+  sh.setColumnWidth(5, 140);    // E: units / hints
+  sh.setColumnWidth(6, 120);    // F: extra
+  sh.setColumnWidth(7, 80);     // G: status
+  sh.setColumnWidth(8, 80);     // H
+
+  // ---- Logo + title (rows 1-3) ----------------------------------------
+  // The OG sheet had tiny "INPUT BESS" in A2. Replace with logo in B2-C2
+  // and a big-font title in D2-F2 (same pattern as INPUT_PROJECT).
+  // We DO NOT delete row 1 — it's empty space matching other sheets.
+  // Row 2: logo (B-C) + title (D-F). Row 3: subtitle.
+  if (typeof _insertArgiaLogo === 'function') {
+    try {
+      _insertArgiaLogo(sh, 2, 2);
+    } catch (e) {
+      // Logo insert can fail if image asset isn't available; non-blocking.
+    }
+  }
+  // Clear the old tiny "INPUT BESS" text in row 2 (was in col B) and the
+  // subtitle row 3 — we replace with proper title in cols D-F.
+  // SAFE: row 2 col B is now covered by logo image; col C similarly.
+  // We write title at col D so it doesn't overlap the logo.
+  sh.getRange(2, 4, 1, 5).breakApart().merge()
+    .setValue('INPUTS DE ALMACENAMIENTO')
+    .setFontFamily(FF)
+    .setFontSize(FS_TITLE)
+    .setFontWeight('bold')
+    .setFontColor(TXT_PRIMARY)
+    .setVerticalAlignment('middle')
+    .setHorizontalAlignment('left');
+  sh.setRowHeight(2, ROW_H_TITLE);
+  // Subtitle row 3 — small + muted (matches docTitle pattern)
+  sh.getRange(3, 4, 1, 5).breakApart().merge()
+    .setValue('Configuración del sistema de almacenamiento (BESS)')
+    .setFontFamily(FF)
+    .setFontSize(FS)
+    .setFontStyle('italic')
+    .setFontColor(TXT_SECONDARY)
+    .setVerticalAlignment('middle')
+    .setHorizontalAlignment('left');
+  sh.setRowHeight(3, ROW_H_BODY);
+
+  // Freeze the title block so it stays visible when scrolling §1-§6.
+  sh.setFrozenRows(3);
+
+  // ---- Clear E6 / E7 leftovers ----------------------------------------
+  // Image 1 showed "Provider:" / "Model:" labels in col E with no values.
+  // These were placeholders for an old display pattern we don't use anymore.
+  // Wipe the entire E6:F7 block so it's clean.
+  sh.getRange(6, 5, 2, 2).clearContent().setBackground(null);
+
+  // ---- BDF-10: clear B18 / B19 (Voltaje DC / AC orphan labels) -------
+  // The OG sheet has labels at rows 18 and 19:
+  //   r18 B = "Voltaje bus DC / batería (V)"
+  //   r19 B = "Voltaje sistema AC (V)"
+  // These were placeholders from an early design pass; no formula or
+  // dropdown ever wired them up. Voltages are now sourced from
+  // INPUT_BESS §6 rows 44/45 (BDF-7) and INPUT_DESIGN, so these are
+  // dead labels causing visual confusion. Clear them to leave blank
+  // spacer rows between §2 specs and the §3 commercial header.
+  // Also clear any input-cell background that BDF-9 may have applied.
+  sh.getRange(18, 2, 2, 6).clearContent();
+  sh.getRange(18, 2, 2, 6).setBackground(null);
+  sh.getRange(18, 2, 2, 6).setBorder(false, false, false, false, false, false);
+
+  // ---- BDF-10: hide column Q -----------------------------------------
+  // Image 2 showed col Q with helper/scratch values (4064, 2032, 0.1,
+  // 0.9, 40000000) — these drive formulas in col C but shouldn't be
+  // visible to the designer. Hiding the column keeps formulas working
+  // while removing the visual noise. Idempotent: hideColumns is a no-op
+  // if the column is already hidden.
+  try {
+    sh.hideColumns(17);
+  } catch (e) {
+    // GAS sometimes throws if column already hidden; non-blocking.
+  }
+
+  // ---- Section header rows --------------------------------------------
+  // The OG sheet has section headers at rows 5, 9, 19, 22 (per the
+  // openpyxl dump). Apply consistent token styling to each.
+  var sectionRows = [
+    [5,  '1. SELECCIÓN DE BATERÍA'],
+    [9,  '2. ESPECIFICACIONES TÉCNICAS'],
+    [19, '3. INFORMACIÓN COMERCIAL'],
+    [22, '4. PEAK SHAVING'],
+  ];
+  sectionRows.forEach(function(pair) {
+    var r = pair[0];
+    var labelExpected = pair[1];
+    // Defensive: only restyle if existing value matches (or is empty)
+    var existing = String(sh.getRange(r, 2).getValue() || '').trim();
+    if (existing && existing.toUpperCase().indexOf(labelExpected.split('.')[0]) === -1) {
+      // Row B doesn't carry the section header we expect. Skip silently.
+      return;
+    }
+    if (!existing) {
+      // Write the label if missing
+      sh.getRange(r, 2).setValue(labelExpected);
+    }
+    sh.getRange(r, 2)
+      .setFontFamily(FF)
+      .setFontSize(FS_SECTION)
+      .setFontWeight('bold')
+      .setFontColor(TXT_PRIMARY)
+      .setVerticalAlignment('middle')
+      .setHorizontalAlignment('left');
+    sh.setRowHeight(r, ROW_H_SECTION);
+    // Bottom divider across B-G
+    sh.getRange(r, 2, 1, 6).setBorder(
+      null, null, true, null, null, null,
+      DIVIDER_LINE, SpreadsheetApp.BorderStyle.SOLID);
+  });
+
+  // ---- BDF-10: row 22 helper text in C22 -------------------------------
+  // The PEAK SHAVING section header has explanatory text in col C
+  // ("Solo aplica si BESS_STRATEGY = PEAK_SHAVING"). Style it as italic
+  // muted text — not an input cell — so the designer doesn't mistake it
+  // for something editable.
+  var c22Val = String(sh.getRange(22, 3).getValue() || '').trim();
+  if (c22Val.length > 0 && c22Val.indexOf('Solo aplica') >= 0) {
+    sh.getRange(22, 3)
+      .setFontFamily(FF)
+      .setFontSize(FS)
+      .setFontStyle('italic')
+      .setFontColor(TXT_SECONDARY)
+      .setBackground(null)              // remove any input-cell background
+      .setVerticalAlignment('middle')
+      .setHorizontalAlignment('left');
+  }
+
+  // ---- Body rows in §1-§4 ---------------------------------------------
+  // Apply consistent styling to data rows. The labels (col B) and values
+  // (col C) retain whatever the sheet currently holds; we just style.
+  // Body rows we know about (from the openpyxl dump):
+  //   6,7 (battery id, strategy)
+  //   10-17 (specs)
+  //   20 (capex)
+  //   23-25 (peak shaving)
+  //   28-30 (monthly demand table headers)
+  // We apply LABEL styling to col B and INPUT-CELL styling to col C.
+  var bodyRows = [6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 20, 23, 24, 25];
+  bodyRows.forEach(function(r) {
+    // Label (col B)
+    sh.getRange(r, 2)
+      .setFontFamily(FF)
+      .setFontSize(FS)
+      .setFontColor(TXT_PRIMARY)
+      .setFontWeight('normal')
+      .setVerticalAlignment('middle')
+      .setHorizontalAlignment('left');
+    // Value cell (col C)
+    sh.getRange(r, 3)
+      .setFontFamily(FF)
+      .setFontSize(FS)
+      .setFontColor(TXT_PRIMARY)
+      .setBackground(BG_INPUT_CELL)
+      .setVerticalAlignment('middle');
+    sh.setRowHeight(r, ROW_H_BODY);
+    // Thin divider line
+    sh.getRange(r, 2, 1, 6).setBorder(
+      null, null, true, null, null, null,
+      DIVIDER_LINE, SpreadsheetApp.BorderStyle.SOLID);
+  });
+
+  // C6 (battery picker) keeps its data validation untouched. C7 (strategy)
+  // similarly. We don't recreate dropdowns here — that's setupInputBess's job.
+
   SpreadsheetApp.flush();
 }
 
@@ -2224,4 +2463,329 @@ function setupInputBess() {
 function setupCfeOutput() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   writeCfeOutput(ss);
+}
+// ===========================================================================
+// setupInputBessEconomicsRows  (BDF-3)
+// ===========================================================================
+// Adds the "5. ECONOMICS GUARDRAILS" section to INPUT_BESS (rows 36-41):
+//   r36 B = "5. ECONOMICS GUARDRAILS"  (section header)
+//   r37 B = "Mín. ahorro anual MXN:"   C37 = 2,000,000  (default threshold)
+//   r38 B = "Override tarifa punta MXN/kWh:"  C38 = (blank)
+//   r39 B = "Override tarifa base MXN/kWh:"   C39 = (blank)
+//   r40 B = "(notes)"   C40 = explainer text
+//   r41 B = (blank spacer)
+//
+// IDEMPOTENT BEHAVIOR
+//   - Always writes labels (col B) -- they're not user-typed content.
+//   - Writes the default threshold (C37 = 2000000) only when C37 is BLANK.
+//     A re-run does NOT overwrite a designer-tuned value.
+//   - Never writes anything to C38 / C39 (override cells) -- those stay blank
+//     by design; designer types only when they want to override auto-derive.
+//
+// CALLED BY
+//   - Manual: select this function in Apps Script IDE, click Run.
+//   - Or via "Tools > Setup Input Sheets" menu (not yet wired -- TBD if
+//     you decide to surface).
+//
+// SAFETY
+//   - Refuses to run if INPUT_BESS doesn't exist.
+//   - Refuses to overwrite row 36 if it already holds NON-MATCHING content
+//     (suggests a different section ended up there in a custom layout).
+//     Run with care and check the sheet visually after.
+// ===========================================================================
+function setupInputBessEconomicsRows() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('INPUT_BESS');
+  if (!sh) {
+    throw new Error('setupInputBessEconomicsRows: INPUT_BESS sheet not found.');
+  }
+
+  // Safety check: if row 36 already has SOMETHING in col B that isn't our
+  // section header, the designer's custom layout is sitting there. Bail.
+  var existingHeader = String(sh.getRange(36, 2).getValue() || '').trim();
+  var expectedHeader = '5. ECONOMICS GUARDRAILS';
+  if (existingHeader && existingHeader !== expectedHeader) {
+    throw new Error('setupInputBessEconomicsRows: row 36 col B already holds '
+      + '"' + existingHeader + '" -- not the expected economics header. '
+      + 'Resolve the layout conflict manually before running this function.');
+  }
+
+  // Section header (always written; idempotent because it's the same string)
+  sh.getRange(36, 2).setValue(expectedHeader).setFontWeight('bold');
+
+  // Threshold row
+  sh.getRange(37, 2).setValue('Mín. ahorro anual MXN:');
+  var currentThresh = sh.getRange(37, 3).getValue();
+  if (currentThresh === '' || currentThresh === null || currentThresh === undefined) {
+    sh.getRange(37, 3).setValue(2000000).setNumberFormat('"$"#,##0');
+  }
+  // If a designer-set value is present, leave it alone but ensure the
+  // number format is applied (cheap, helps readability).
+  sh.getRange(37, 3).setNumberFormat('"$"#,##0');
+
+  // Tariff override rows (labels only; cells stay blank by design)
+  sh.getRange(38, 2).setValue('Override tarifa punta MXN/kWh:');
+  sh.getRange(38, 3).setNumberFormat('#,##0.0000');
+  sh.getRange(39, 2).setValue('Override tarifa base MXN/kWh:');
+  sh.getRange(39, 3).setNumberFormat('#,##0.0000');
+
+  // Notes row
+  sh.getRange(40, 2).setValue('Notas:').setFontStyle('italic');
+  sh.getRange(40, 3).setValue(
+    'Threshold 0 = filtro deshabilitado. Override blanks → motor auto-deriva tarifas desde INPUT_CFE (12 meses facturados).'
+  ).setFontStyle('italic').setWrap(true);
+
+  SpreadsheetApp.flush();
+}
+
+
+// ===========================================================================
+// setupInputBessInstallRows  (BDF-7, updated BDF-7.1)
+// ===========================================================================
+// Adds §6 "Distancias y ubicación física" to INPUT_BESS at rows 42-53.
+// These inputs feed:
+//   - calcBessBosQuantities (cable meters, conduit meters)
+//   - calcBessVoltageDrop   (voltage drop %)
+//   - calcBessNomChecks     (GEC sizing per length)
+//
+// BDF-7.1 NOTE: row 43 (coupling) was removed. Coupling now comes
+// exclusively from INPUT_DESIGN!C17 via bessResult, eliminating the
+// duplicate-source bug. This function defensively clears any stale
+// value in row 43 from earlier BDF-7 R1 setups.
+//
+// Idempotent: safe to call multiple times. Refuses to overwrite row 42 if
+// it already contains non-matching content (suggests custom layout).
+//
+// LAYOUT (rows 42-53):
+//   42: § header
+//   43: (deprecated — see BDF-7.1 note above)
+//   44: Voltaje bus DC (V):         800
+//   45: Voltaje AC sistema (V):     480
+//   46: Distancia batería-tablero (m): 25
+//   47: Distancia tablero-CFE (m):     50
+//   48: Trayectoria del cable:      [INTEMPERIE|CONDUIT_ENTERRADO|BANDEJA_INTERIOR]
+//   49: Baterías por contenedor:    1
+//   50: Ubicación física:           [EXTERIOR|INTERIOR_TECHADO|SALA_ELECTRICA]
+//   51: Sistema de tierra:          [UFER|VARILLA|RED_EXISTENTE]
+//   52: Distancia a barra tierra (m): 15
+//   53: Comisionamiento MXN:        250000
+function setupInputBessInstallRows() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName('INPUT_BESS');
+  if (!sh) {
+    throw new Error('setupInputBessInstallRows: INPUT_BESS sheet not found.');
+  }
+
+  // BDF-8: load design tokens for consistent visual styling. Falls back to
+  // raw fontFamily writes if the token system isn't deployed (shouldn't
+  // happen in production but keeps unit tests / partial-deployment cases
+  // from throwing).
+  var hasTokens = (typeof loadDesignTokens === 'function'
+                && typeof token === 'function'
+                && typeof tokenNum === 'function');
+  if (hasTokens) {
+    try {
+      resetDesignTokenCache_();
+      loadDesignTokens(ss);
+    } catch (e) {
+      hasTokens = false;
+    }
+  }
+  // Token shortcuts (resolved to safe defaults when tokens unavailable)
+  var FF = hasTokens ? token('FONT_FAMILY')       : 'Inter';
+  var FS = hasTokens ? tokenNum('FONT_SIZE_BODY') : 10;
+  var TXT_PRIMARY    = hasTokens ? token('TEXT_PRIMARY')   : '#111111';
+  var TXT_SECONDARY  = hasTokens ? token('TEXT_SECONDARY') : '#767676';
+  var TXT_MUTED      = hasTokens ? token('TEXT_MUTED')     : '#B0B0B0';
+  var BG_INPUT_CELL  = hasTokens ? token('BG_INPUT_CELL')  : '#FDFBF6';
+  var DIVIDER_LINE   = hasTokens ? token('DIVIDER_LINE')   : '#E5E3DC';
+  var ROW_H_BODY     = hasTokens ? tokenNum('ROW_H_BODY')  : 22;
+  var ROW_H_SECTION  = hasTokens ? tokenNum('ROW_H_SECTION') : 28;
+
+  // Safety check
+  var existingHeader = String(sh.getRange(42, 2).getValue() || '').trim();
+  var expectedHeader = '6. DISTANCIAS Y UBICACIÓN FÍSICA';
+  if (existingHeader && existingHeader !== expectedHeader
+      // BDF-8: also tolerate the old plain header if a partial setup ran
+      && existingHeader !== '6. DISTANCIAS Y UBICACION FISICA') {
+    throw new Error('setupInputBessInstallRows: row 42 col B already holds '
+      + '"' + existingHeader + '" -- not the expected install header. '
+      + 'Resolve layout conflict manually before running this function.');
+  }
+
+  // ---- Helper: style a label cell (col B) -------------------------------
+  function styleLabel(row) {
+    sh.getRange(row, 2)
+      .setFontFamily(FF)
+      .setFontSize(FS)
+      .setFontColor(TXT_PRIMARY)
+      .setFontWeight('normal')
+      .setFontStyle('normal')
+      .setVerticalAlignment('middle')
+      .setHorizontalAlignment('left');
+    sh.setRowHeight(row, ROW_H_BODY);
+    // Subtle bottom divider line, matching primBodyRow's convention.
+    sh.getRange(row, 2, 1, 6).setBorder(
+      null, null, true, null, null, null,
+      DIVIDER_LINE, SpreadsheetApp.BorderStyle.SOLID);
+  }
+  // ---- Helper: style a value cell (col C) -------------------------------
+  function styleValue(row, opts) {
+    opts = opts || {};
+    var rng = sh.getRange(row, 3)
+      .setFontFamily(FF)
+      .setFontSize(FS)
+      .setFontColor(TXT_PRIMARY)
+      .setBackground(BG_INPUT_CELL)
+      .setVerticalAlignment('middle')
+      .setHorizontalAlignment('right');
+    if (opts.numberFormat) rng.setNumberFormat(opts.numberFormat);
+  }
+  // ---- Helper: style a unit hint cell (col E) ---------------------------
+  function styleUnit(row, hint) {
+    if (hint == null || hint === '') return;
+    sh.getRange(row, 5).setValue(hint)
+      .setFontFamily(FF)
+      .setFontSize(FS)
+      .setFontColor(TXT_SECONDARY)
+      .setFontStyle('italic')
+      .setVerticalAlignment('middle')
+      .setHorizontalAlignment('left');
+  }
+
+  // ---- Section header row 42 -------------------------------------------
+  // Matches the BDF-1..BDF-3 §1-§5 visual rhythm in INPUT_BESS: bold dark
+  // text on col B, thin bottom border across cols B-G.
+  sh.getRange(42, 2).setValue(expectedHeader)
+    .setFontFamily(FF)
+    .setFontSize(hasTokens ? tokenNum('FONT_SIZE_SECTION') : 10)
+    .setFontWeight(hasTokens ? token('FONT_WEIGHT_EMPHASIS') : 'bold')
+    .setFontColor(TXT_PRIMARY)
+    .setVerticalAlignment('middle')
+    .setHorizontalAlignment('left');
+  sh.setRowHeight(42, ROW_H_SECTION);
+  sh.getRange(42, 2, 1, 6).setBorder(
+    null, null, true, null, null, null,
+    DIVIDER_LINE, SpreadsheetApp.BorderStyle.SOLID);
+
+  // ---- Row 43: REMOVED in BDF-7.1 (coupling moved to INPUT_DESIGN!C17) -
+  // We keep the row visually unobtrusive: muted italic label, cleared value.
+  sh.getRange(43, 2).setValue('(Acoplamiento ahora desde INPUT_DESIGN!C17)')
+    .setFontFamily(FF)
+    .setFontSize(FS)
+    .setFontStyle('italic')
+    .setFontColor(TXT_MUTED)
+    .setVerticalAlignment('middle');
+  sh.getRange(43, 3).clearContent().clearDataValidations()
+    .setBackground(null)
+    .setNote('BDF-7.1: coupling moved to INPUT_DESIGN!C17 (single source of truth). '
+           + 'Any value entered here is ignored by the engine.');
+  sh.setRowHeight(43, ROW_H_BODY);
+
+  // ---- Row 44: DC bus voltage -------------------------------------------
+  sh.getRange(44, 2).setValue('Voltaje bus DC:');
+  if (sh.getRange(44, 3).getValue() === '') sh.getRange(44, 3).setValue(800);
+  styleLabel(44);
+  styleValue(44, { numberFormat: '#,##0' });
+  styleUnit(44, 'V');
+
+  // ---- Row 45: AC voltage ----------------------------------------------
+  sh.getRange(45, 2).setValue('Voltaje AC sistema:');
+  if (sh.getRange(45, 3).getValue() === '') sh.getRange(45, 3).setValue(480);
+  styleLabel(45);
+  styleValue(45, { numberFormat: '#,##0' });
+  styleUnit(45, 'V');
+
+  // ---- Row 46: DC run length -------------------------------------------
+  sh.getRange(46, 2).setValue('Distancia batería ↔ tablero:');
+  if (sh.getRange(46, 3).getValue() === '') sh.getRange(46, 3).setValue(25);
+  styleLabel(46);
+  styleValue(46, { numberFormat: '#,##0' });
+  styleUnit(46, 'm');
+
+  // ---- Row 47: AC run length -------------------------------------------
+  sh.getRange(47, 2).setValue('Distancia tablero ↔ interconexión CFE:');
+  if (sh.getRange(47, 3).getValue() === '') sh.getRange(47, 3).setValue(50);
+  styleLabel(47);
+  styleValue(47, { numberFormat: '#,##0' });
+  styleUnit(47, 'm');
+
+  // ---- Row 48: cable path (dropdown) -----------------------------------
+  sh.getRange(48, 2).setValue('Trayectoria del cable:');
+  var pathRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['INTEMPERIE', 'CONDUIT_ENTERRADO', 'BANDEJA_INTERIOR'], true)
+    .setAllowInvalid(false)
+    .setHelpText('INTEMPERIE = exterior con PVC/RGS; CONDUIT_ENTERRADO = PVC sched 80 enterrado; BANDEJA_INTERIOR = cable tray interior.')
+    .build();
+  sh.getRange(48, 3).setDataValidation(pathRule);
+  if (sh.getRange(48, 3).getValue() === '') {
+    sh.getRange(48, 3).setValue('INTEMPERIE');
+  }
+  styleLabel(48);
+  styleValue(48, {});
+
+  // ---- Row 49: batteries per container ---------------------------------
+  sh.getRange(49, 2).setValue('Baterías por contenedor:');
+  if (sh.getRange(49, 3).getValue() === '') sh.getRange(49, 3).setValue(1);
+  styleLabel(49);
+  styleValue(49, { numberFormat: '#,##0' });
+
+  // ---- Row 50: location (dropdown) -------------------------------------
+  sh.getRange(50, 2).setValue('Ubicación física:');
+  var locRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['EXTERIOR', 'INTERIOR_TECHADO', 'SALA_ELECTRICA'], true)
+    .setAllowInvalid(false)
+    .build();
+  sh.getRange(50, 3).setDataValidation(locRule);
+  if (sh.getRange(50, 3).getValue() === '') {
+    sh.getRange(50, 3).setValue('EXTERIOR');
+  }
+  styleLabel(50);
+  styleValue(50, {});
+
+  // ---- Row 51: grounding system (dropdown) -----------------------------
+  sh.getRange(51, 2).setValue('Sistema de tierra:');
+  var grdRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['UFER', 'VARILLA', 'RED_EXISTENTE'], true)
+    .setAllowInvalid(false)
+    .setHelpText('UFER = electrodo en concreto; VARILLA = barra cobre; RED_EXISTENTE = malla del sitio.')
+    .build();
+  sh.getRange(51, 3).setDataValidation(grdRule);
+  if (sh.getRange(51, 3).getValue() === '') {
+    sh.getRange(51, 3).setValue('VARILLA');
+  }
+  styleLabel(51);
+  styleValue(51, {});
+
+  // ---- Row 52: GEC run length ------------------------------------------
+  sh.getRange(52, 2).setValue('Distancia a electrodo de tierra:');
+  if (sh.getRange(52, 3).getValue() === '') sh.getRange(52, 3).setValue(15);
+  styleLabel(52);
+  styleValue(52, { numberFormat: '#,##0' });
+  styleUnit(52, 'm');
+
+  // ---- Row 53: commissioning MXN ---------------------------------------
+  sh.getRange(53, 2).setValue('Comisionamiento:');
+  if (sh.getRange(53, 3).getValue() === '') sh.getRange(53, 3).setValue(250000);
+  styleLabel(53);
+  styleValue(53, { numberFormat: '"$"#,##0' });
+  styleUnit(53, 'MXN');
+
+  // ---- Notes row 55 -----------------------------------------------------
+  // Italic muted helper text spanning C-G. Sized larger to fit wrap.
+  sh.getRange(55, 2).setValue('Notas:')
+    .setFontFamily(FF).setFontSize(FS).setFontStyle('italic')
+    .setFontColor(TXT_SECONDARY)
+    .setVerticalAlignment('top');
+  sh.getRange(55, 3, 1, 5).breakApart().merge()
+    .setValue('Distancias = trayectoria del cable (no línea recta). '
+            + 'Distancia tablero ↔ CFE solo aplica para AC_COUPLED. '
+            + 'Commissioning = puesta en servicio (lote, MXN).')
+    .setFontFamily(FF).setFontSize(FS).setFontStyle('italic')
+    .setFontColor(TXT_SECONDARY)
+    .setVerticalAlignment('top')
+    .setWrap(true);
+  sh.setRowHeight(55, ROW_H_BODY * 2);
+
+  SpreadsheetApp.flush();
 }

@@ -428,14 +428,22 @@ function _p4r_testJsOracleCrossCheck(t, ss) {
          'BESS O30 capAnnual = ' + bs.getRange(30, 15).getValue());
 
   // Cross-check: run JS oracle per month on the SHEET'S OWN values.
+  // BDF-11: rate derivation changed from C23/C18 to C23/C21 because the
+  // sheet formula was fixed: row 23 Capacidad now = C21 × rate (not C18 ×
+  // rate). The pre-BDF-11 test divided by C18 because that's what the
+  // buggy formula multiplied by — a structural tautology that hid the bug.
+  // After BDF-11 the rate must be back-derived from C21 (demanda
+  // facturable), which IS what CFE charges against. This brings the test
+  // into alignment with the corrected math and the published CFE rates.
   var jsCapAnnual = 0, sheetCapAnnual = 0, mismatch = [];
   for (var m = 0; m < 12; m++) {
     var col = String.fromCharCode(67 + m);   // C..N
 
     var sheetC17 = _p4r_num(cf.getRange(col + '17').getValue());
     var sheetC18 = _p4r_num(cf.getRange(col + '18').getValue());
+    var sheetC21 = _p4r_num(cf.getRange(col + '21').getValue());
     var sheetC23 = _p4r_num(cf.getRange(col + '23').getValue());
-    var capRate  = sheetC18 !== 0 ? sheetC23 / sheetC18 : 0;
+    var capRate  = sheetC21 !== 0 ? sheetC23 / sheetC21 : 0;   // BDF-11: was /sheetC18
 
     // JS input = fixture, but kWMaxAnoMovil and kWPunta from the SHEET
     var jin = {};

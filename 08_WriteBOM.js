@@ -457,14 +457,16 @@ function meterPriceMxn(bosDb) {
 // =============================================================================
 // MAIN WRITE FUNCTION -- FIXED ROWS
 // =============================================================================
-function writeBOM(ss, inp, panel, invBank, dc, ac, lay) {
+function writeBOM(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
   var bom = ss.getSheetByName(SH.BOM);
   if (!bom) bom = ss.insertSheet(SH.BOM);
 
   // Clear values+notes only -- preserves all formatting set by setupBOMTemplate.
   // Starts at row 4 (PROJECT_META) to preserve banner title/subtitle at rows 2-3.
-  bom.getRange(BOM_ROW.PROJECT_META, 1, 90 - BOM_ROW.PROJECT_META + 1, 8).clearContent();
-  bom.getRange(BOM_ROW.PROJECT_META, 1, 90 - BOM_ROW.PROJECT_META + 1, 8).clearNote();
+  // BDF-7: extended clear range to GRAND_TOTAL (row 94) to cover §8 BESS.
+  var clearRows = BOM_ROW.GRAND_TOTAL - BOM_ROW.PROJECT_META + 1;
+  bom.getRange(BOM_ROW.PROJECT_META, 1, clearRows, 8).clearContent();
+  bom.getRange(BOM_ROW.PROJECT_META, 1, clearRows, 8).clearNote();
 
   var bosDb       = loadBosDb(ss);
   var structureDb = loadStructureDb(ss);
@@ -921,10 +923,301 @@ function writeBOM(ss, inp, panel, invBank, dc, ac, lay) {
 
   ws(BOM_ROW.SUBTOTAL_MONITORING, BOM_ROW.MON_DATALOGGER, BOM_ROW.SUBTOTAL_MONITORING - 1, 'SUBTOTAL MONITOREO + PERMISOS');
 
-  //  ROW 77: GRAND TOTAL (fixed row references to section subtotals) 
+  // ============================================================
+  // §8 BESS — BDF-7
+  // ============================================================
+  // Pulls from bessResult.bos (calcBessBosQuantities output).
+  // Map BOS line "code" -> fixed BOM row, then write qty + price + nom.
+  // When bessResult is missing or BoS is blocked, leave §8 mostly empty
+  // with a clear "pendiente" note on the section header.
+  w(BOM_ROW.SEC_BESS, BOM_COL.DESCRIPTION, '8. ALMACENAMIENTO / BESS');
+  styleSectionHeader(BOM_ROW.SEC_BESS);
+
+  // BDF-8: reset row heights across the entire §8 block (rows
+  // BESS_BATTERY_LINE..BESS_COMMISSIONING). When a prior run left taller
+  // rows (description wrap auto-grow), this normalizes them. Populated
+  // rows are reset to 26 inside the loop below.
+  //
+  // BDF-9: also reset background + font weight + font size. The BDF-7 R1
+  // fallback path wrote "Sistema BESS — pendiente" on row 80 with bold +
+  // light-grey background (visually section-header-like). When BDF-7.1
+  // replaced that with real line items, the cosmetic styling persisted.
+  // Reset here so each §8 row starts as a plain item row.
+  //
+  // BDF-11.1: previous resets only normalized background / font weight /
+  // font size. Rows 80-91 had additional cosmetic inconsistencies inherited
+  // from the template: column A alignment, column H font color, vertical
+  // alignment, and font size on some columns. This caused row 80 to look
+  // visibly different from rows 81-91 (row 80 was "right" per user, others
+  // were wrong). Fix: do a FULL formatting normalization on each row,
+  // matching row 80's style across all 8 columns.
+  //
+  // Style per column (matching what row 80 displays):
+  //   A  ITEM       — right-aligned, middle vertical, 10pt, black
+  //   B  DESCRIPTION— left-aligned,  middle vertical, 10pt, black, wrapped
+  //   C  QTY        — right-aligned, middle vertical, 10pt, black
+  //   D  UNIT       — left-aligned,  middle vertical, 10pt, black
+  //   E  UNIT_PRICE — right-aligned, middle vertical, 10pt, black
+  //   F  TOTAL_USD  — right-aligned, middle vertical, 10pt, black
+  //   G  TOTAL_MXN  — right-aligned, middle vertical, 10pt, black
+  //   H  REFERENCE  — left-aligned,  middle vertical, 10pt, GREY (#999999)
+  for (var resetR = BOM_ROW.BESS_BATTERY_LINE;
+           resetR <= BOM_ROW.BESS_COMMISSIONING; resetR++) {
+    bom.setRowHeight(resetR, 22);
+    // Whole row: baseline style
+    bom.getRange(resetR, 1, 1, 8)
+       .setBackground(null)
+       .setFontWeight('normal')
+       .setFontSize(10)
+       .setFontFamily('Inter')
+       .setFontColor('#000000')
+       .setVerticalAlignment('middle')
+       .setWrap(true);
+    // Per-column horizontal alignment
+    bom.getRange(resetR, 1).setHorizontalAlignment('right');   // ITEM (#)
+    bom.getRange(resetR, 2).setHorizontalAlignment('left');    // DESCRIPTION
+    bom.getRange(resetR, 3).setHorizontalAlignment('right');   // QTY
+    bom.getRange(resetR, 4).setHorizontalAlignment('left');    // UNIT
+    bom.getRange(resetR, 5).setHorizontalAlignment('right');   // UNIT_PRICE
+    bom.getRange(resetR, 6).setHorizontalAlignment('right');   // TOTAL_USD
+    bom.getRange(resetR, 7).setHorizontalAlignment('right');   // TOTAL_MXN
+    bom.getRange(resetR, 8).setHorizontalAlignment('left');    // REFERENCE
+    // BDF-11.1: REFERENCE column (H) uses light-grey font, matching the
+    // PV-side rows (e.g. row 80 currently shows "BESS-01" in light grey).
+    bom.getRange(resetR, 8).setFontColor('#999999');
+    // Clear any inherited borders so the section reads as a clean table.
+    bom.getRange(resetR, 1, 1, 8)
+       .setBorder(false, false, false, false, false, false);
+  }
+
+  var hasBessLines = bessResult && bessResult.bos && !bessResult.bos.blocked
+                  && bessResult.bos.lines && bessResult.bos.lines.length > 0;
+  if (!hasBessLines) {
+    // BESS not configured OR BoS calculation blocked. Write a single
+    // explanatory line and leave §8 rows empty.
+    var bessReason = (bessResult && bessResult.bos && bessResult.bos.reason)
+                     ? bessResult.bos.reason
+                     : (bessResult && !bessResult.bessEnabled
+                        ? 'BESS no habilitado en INPUT_PROJECT'
+                        : 'BoS pendiente — completar §6 distancias en INPUT_BESS');
+    w(BOM_ROW.BESS_BATTERY_LINE, BOM_COL.ITEM, itemNo++);
+    w(BOM_ROW.BESS_BATTERY_LINE, BOM_COL.DESCRIPTION,
+      'Sistema BESS — pendiente (' + bessReason + ')');
+    w(BOM_ROW.BESS_BATTERY_LINE, BOM_COL.QTY, '');
+    w(BOM_ROW.BESS_BATTERY_LINE, BOM_COL.UNIT, '');
+    w(BOM_ROW.BESS_BATTERY_LINE, BOM_COL.REFERENCE, 'BDF-7');
+    bom.getRange(BOM_ROW.BESS_BATTERY_LINE, BOM_COL.UNIT_PRICE)
+       .setNote('§8 BESS pendiente. ' + bessReason);
+  } else {
+    // Map each calc-output line.code to the BOM row reserved for it
+    var bessRowByCode = {
+      'BESS-01': BOM_ROW.BESS_BATTERY_LINE,
+      'BESS-02': BOM_ROW.BESS_DC_CABLE,
+      'BESS-03': BOM_ROW.BESS_DC_EGC,
+      'BESS-04': BOM_ROW.BESS_AC_CABLE,
+      'BESS-05': BOM_ROW.BESS_AC_EGC,
+      'BESS-06': BOM_ROW.BESS_DC_CONDUIT,
+      'BESS-07': BOM_ROW.BESS_AC_CONDUIT,
+      'BESS-08': BOM_ROW.BESS_DC_OCPD,
+      'BESS-09': BOM_ROW.BESS_AC_OCPD,
+      'BESS-10': BOM_ROW.BESS_AC_DISCONNECT,
+      'BESS-11': BOM_ROW.BESS_GEC_LINE,
+      'BESS-12': BOM_ROW.BESS_COMMISSIONING,
+    };
+    bessResult.bos.lines.forEach(function(bosLine) {
+      var rowIdx = bessRowByCode[bosLine.code];
+      if (!rowIdx) return;   // unknown code, skip silently
+
+      w(rowIdx, BOM_COL.ITEM, itemNo++);
+      w(rowIdx, BOM_COL.DESCRIPTION, bosLine.description);
+      w(rowIdx, BOM_COL.QTY, bosLine.qty);
+      w(rowIdx, BOM_COL.UNIT, bosLine.unit);
+      w(rowIdx, BOM_COL.REFERENCE, bosLine.nomCite || bosLine.code);
+
+      // BDF-8: visual consistency on §8 rows -----------------------------
+      // The legacy BOM uses fixed-row layout with default row heights set
+      // by the template. BDF-7 R1 description text overflowed the column
+      // and Sheets auto-grew JUST those rows, making §8 look uneven.
+      // Here we set a consistent row height and ensure description wrap
+      // so the section reads cleanly.
+      // BDF-10: dropped from 26 to 22 px to match PV-side row heights
+      // (image showed §8 rows visually taller than §7 monitoring rows).
+      // Descriptions are short post-BDF-8 so 22 fits comfortably.
+      bom.setRowHeight(rowIdx, 22);
+      bom.getRange(rowIdx, BOM_COL.DESCRIPTION).setWrap(true)
+        .setVerticalAlignment('middle');
+      // Engineering detail (parallels × meters × etc) goes into a cell
+      // note rather than overflowing the visible description.
+      if (bosLine.detail) {
+        bom.getRange(rowIdx, BOM_COL.DESCRIPTION).setNote(bosLine.detail);
+      }
+
+      // Price resolution depends on category. Battery line uses
+      // lookupBatteryUnitPrice (header-tolerant DB read).
+      if (bosLine.productCategory === 'BESS_BATTERY' && bosLine.productSpec
+          && bosLine.productSpec.batteryId) {
+        var priceInfo = lookupBatteryUnitPrice(ss, bosLine.productSpec.batteryId);
+        if (priceInfo.priceMxn > 0) {
+          wp(rowIdx, priceInfo.priceMxn, null);
+          if (priceInfo.provenance === 'CAPEX_FALLBACK') {
+            bom.getRange(rowIdx, BOM_COL.UNIT_PRICE).setNote(
+              'Precio derivado de Installed_CAPEX_MXN (fallback). ' +
+              'Considere agregar columna BESS_price_per_unit en 16M_PRODUCTS_BESS ' +
+              'para precio unitario real.');
+          }
+        } else {
+          bom.getRange(rowIdx, BOM_COL.UNIT_PRICE).setNote(
+            'Precio batería pendiente — agregar columna BESS_price_per_unit ' +
+            'en 16M_PRODUCTS_BESS para Battery_ID ' +
+            bosLine.productSpec.batteryId);
+        }
+      } else if (bosLine.productCategory === 'COMMISSIONING') {
+        // Commissioning is a flat fee already in MXN on the productSpec
+        var commPrice = bosLine.productSpec ? bosLine.productSpec.flatPriceMxn : 0;
+        if (commPrice > 0) wp(rowIdx, commPrice, null);
+      } else if (bosLine.productCategory === 'CONDUCTORS'
+              || bosLine.productCategory === 'CONDUIT'
+              || bosLine.productCategory === 'DISTRIBUTION') {
+        // BDF-9: wire real price resolution via existing PV-side helpers
+        // (conductorPriceObj / groundPriceObj / conduitPriceObj /
+        // breakerPriceWithFallback). When no price found, fall back to
+        // the "pendiente" note so designer knows to add the SKU.
+        //
+        // wp(r, priceMxn, priceUsd):
+        //   priceUsd > 0   -> direct USD price (no exchange-rate divide)
+        //   priceMxn > 0   -> formula-divides by $F$<EXCHANGE_RATE>
+        // bosPriceObj returns { price, isUsd, id } — we route accordingly.
+        var priceObj = _resolveBessBosPrice(bosLine, bosDb, ss);
+        if (priceObj && priceObj.price > 0) {
+          if (priceObj.isUsd) {
+            wp(rowIdx, null, priceObj.price);
+          } else {
+            wp(rowIdx, priceObj.price, null);
+          }
+          // Reference column shows the resolved BOS_ID for traceability
+          if (priceObj.id) {
+            w(rowIdx, BOM_COL.REFERENCE,
+              (bosLine.nomCite || bosLine.code) + ' | ' + priceObj.id);
+          }
+          // If breaker fallback was used (next-larger size), surface that
+          // as a cell note alongside the engineering detail.
+          if (priceObj.note) {
+            var existingNote = bosLine.detail ? bosLine.detail + '\n\n' : '';
+            bom.getRange(rowIdx, BOM_COL.UNIT_PRICE)
+               .setNote(existingNote + priceObj.note);
+          }
+        } else {
+          // No SKU found. Append note explaining why so designer can
+          // add the SKU to 14M_PRODUCTS_BOS.
+          var noteExisting = bosLine.detail ? bosLine.detail + '\n\n' : '';
+          bom.getRange(rowIdx, BOM_COL.DESCRIPTION).setNote(
+            noteExisting +
+            'PRECIO: pendiente — sin SKU en 14M_PRODUCTS_BOS para ' +
+            bosLine.productCategory + ' / spec ' +
+            JSON.stringify(bosLine.productSpec || {}));
+        }
+      }
+    });
+  }
+  // §8 subtotal: sum of rows BESS_BATTERY_LINE .. (SUBTOTAL_BESS - 1)
+  ws(BOM_ROW.SUBTOTAL_BESS, BOM_ROW.BESS_BATTERY_LINE,
+     BOM_ROW.SUBTOTAL_BESS - 1, 'SUBTOTAL §8 BESS');
+
+  //  GRAND TOTAL (fixed row references to section subtotals)
   w(BOM_ROW.GRAND_TOTAL, BOM_COL.DESCRIPTION, 'TOTAL MATERIAL + SERVICIOS (USD)');
   styleGrandTotal(BOM_ROW.GRAND_TOTAL);
-  bom.getRange(BOM_ROW.GRAND_TOTAL, BOM_COL.TOTAL_USD).setFormula('=F' + BOM_ROW.SUBTOTAL_PANELS + '+F' + BOM_ROW.SUBTOTAL_INVERTERS + '+F' + BOM_ROW.SUBTOTAL_STRUCTURE + '+F' + BOM_ROW.SUBTOTAL_DC + '+F' + BOM_ROW.SUBTOTAL_AC + '+F' + BOM_ROW.SUBTOTAL_TRANSFORMER + '+F' + BOM_ROW.SUBTOTAL_MONITORING).setNumberFormat('#,##0.00');
+  bom.getRange(BOM_ROW.GRAND_TOTAL, BOM_COL.TOTAL_USD).setFormula(
+    '=F' + BOM_ROW.SUBTOTAL_PANELS + '+F' + BOM_ROW.SUBTOTAL_INVERTERS +
+    '+F' + BOM_ROW.SUBTOTAL_STRUCTURE + '+F' + BOM_ROW.SUBTOTAL_DC +
+    '+F' + BOM_ROW.SUBTOTAL_AC + '+F' + BOM_ROW.SUBTOTAL_TRANSFORMER +
+    '+F' + BOM_ROW.SUBTOTAL_MONITORING + '+F' + BOM_ROW.SUBTOTAL_BESS
+  ).setNumberFormat('#,##0.00');
   bom.getRange(BOM_ROW.GRAND_TOTAL, BOM_COL.TOTAL_MXN).setFormula('=F' + BOM_ROW.GRAND_TOTAL + '*$F$' + BOM_ROW.EXCHANGE_RATE).setNumberFormat('#,##0');
   SpreadsheetApp.flush();
+}
+
+
+// =============================================================================
+// BDF-9: BoS price resolution for BESS §8 lines
+// =============================================================================
+// Given a calc-output line (productCategory + productSpec) and the loaded
+// BoS DB, returns a priceObj { price, isUsd, id } or null.
+//
+// Routes by category:
+//   CONDUCTORS side=DC / AC          -> conductorPriceObj (THHW or PV WIRE)
+//   CONDUCTORS side=DC_EGC / AC_EGC  -> groundPriceObj (BARE COPPER)
+//   CONDUCTORS side=GEC              -> groundPriceObj (BARE COPPER), sized
+//                                       from calcBessNomChecks if available
+//   CONDUIT                          -> conduitPriceObj with selectConduit
+//                                       (NOM 358) to pick size from cuArea
+//   DISTRIBUTION side=DC/AC/DISCONNECT_AC -> breakerPriceWithFallback
+//
+// Returns null when:
+//   - awg/rating is missing from productSpec
+//   - the relevant helper returns null (no SKU in DB)
+//
+// PURE-ish: reads ss only for tbls (conduit table). bosDb passed in.
+function _resolveBessBosPrice(bosLine, bosDb, ss) {
+  var spec = bosLine.productSpec || {};
+  var cat = bosLine.productCategory;
+
+  if (cat === 'CONDUCTORS') {
+    var awgRaw = String(spec.awg || '').trim();
+    if (!awgRaw) return null;
+    // Strip "AWG " prefix if present — helper adds it back internally
+    var awg = awgRaw.replace(/^AWG\s+/i, '');
+
+    if (spec.side === 'DC' || spec.side === 'AC') {
+      // Phase conductors: THHW or PV WIRE
+      return conductorPriceObj(bosDb, awg);
+    }
+    if (spec.side === 'DC_EGC' || spec.side === 'AC_EGC'
+     || spec.side === 'GEC') {
+      // Ground conductors: bare copper
+      return groundPriceObj(bosDb, awg);
+    }
+    return null;
+  }
+
+  if (cat === 'CONDUIT') {
+    // Pick conduit size via NOM 358 fill rule.
+    // Total insulated area = condCount × insAreaMm2 per conductor.
+    var ca = Number(spec.condCuAreaMm2) || 0;
+    var ia = Number(spec.condInsAreaMm2) || 0;
+    var n  = Number(spec.condCount) || 0;
+    if (ia <= 0 || n <= 0) return null;
+    var totalInsArea = ia * n;
+    var tbls;
+    try {
+      tbls = readElecTables(ss);
+    } catch (e) {
+      return null;
+    }
+    // fillRatio: NOM Ch9 default 0.40 for >2 conductors (selectConduit handles default)
+    var sizeIn = selectConduit(totalInsArea, 0.40, tbls);
+    return conduitPriceObj(bosDb, sizeIn);
+  }
+
+  if (cat === 'DISTRIBUTION') {
+    var amps = Number(spec.ratingA) || 0;
+    var poles = Number(spec.poles) || 1;
+    if (amps <= 0) return null;
+    // breakerPriceWithFallback returns {price, id, note} but DROPS isUsd
+    // (a quirk of the existing PV-side helper). We re-look-up isUsd via
+    // breakerILinePriceObj directly when there was an exact match, else
+    // assume MXN as the safe default.
+    var breakerResult = breakerPriceWithFallback(bosDb, amps, poles);
+    if (!breakerResult || !breakerResult.price) return null;
+    // Try to get isUsd from the exact-match price obj
+    var exactObj = breakerILinePriceObj(bosDb, amps, poles);
+    var isUsd = exactObj ? !!exactObj.isUsd : false;
+    return {
+      price: breakerResult.price,
+      isUsd: isUsd,
+      id: breakerResult.id,
+      note: breakerResult.note,
+    };
+  }
+
+  return null;
 }

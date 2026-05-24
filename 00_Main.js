@@ -207,6 +207,12 @@ var MDC_ROW = {
   BESS_CIRC_RUN2:  108,     // reserved: run 2 (AC-coupled only)
   BESS_BUSBAR:     109,     // coupling-aware busbar 120% note
   BESS_NOM_CITE:   110,     // NOM citation row
+  // BDF-7: new check rows
+  BESS_VDROP_DC:   111,     // DC voltage drop (NOM 690 / 250)
+  BESS_VDROP_AC:   112,     // AC voltage drop (only AC_COUPLED)
+  BESS_DISCONNECT: 113,     // AC disconnect verification (NOM 690-13/15)
+  BESS_GEC:        114,     // GEC sizing (NOM 250-66)
+  BESS_BOS_SUMMARY: 115,    // BoS line count + provenance summary
 };
 
 // ---------------------------------------------------------------------------
@@ -295,8 +301,27 @@ var BOM_ROW = {
   // rows 76-77 reserved
   SUBTOTAL_MONITORING:  78,
 
-  // Footer (row 80)
-  GRAND_TOTAL:          80,
+  // §8 BESS (rows 79-91) - BDF-7
+  // 12 line items + subtotal. Engine writes per calcBessBosQuantities output.
+  // Rows that don't apply to a given coupling (DC_COUPLED skips AC lines)
+  // are left blank with no qty/price.
+  SEC_BESS:             79,
+  BESS_BATTERY_LINE:    80,   // BESS-01 battery (per stack)
+  BESS_DC_CABLE:        81,   // BESS-02
+  BESS_DC_EGC:          82,   // BESS-03
+  BESS_AC_CABLE:        83,   // BESS-04 (AC_COUPLED only)
+  BESS_AC_EGC:          84,   // BESS-05 (AC_COUPLED only)
+  BESS_DC_CONDUIT:      85,   // BESS-06
+  BESS_AC_CONDUIT:      86,   // BESS-07 (AC_COUPLED only)
+  BESS_DC_OCPD:         87,   // BESS-08
+  BESS_AC_OCPD:         88,   // BESS-09 (AC_COUPLED only)
+  BESS_AC_DISCONNECT:   89,   // BESS-10 (AC_COUPLED only)
+  BESS_GEC_LINE:        90,   // BESS-11
+  BESS_COMMISSIONING:   91,   // BESS-12
+  SUBTOTAL_BESS:        92,
+
+  // Footer (row 94)
+  GRAND_TOTAL:          94,
 };
 
 // ---------------------------------------------------------------------------
@@ -454,8 +479,16 @@ function onOpen() {
       .addItem('Setup SLIDE_DATA',          'setupSlideDataTab')
       .addItem('Data Validation',           'testKickerData')
       .addSeparator()
-      .addItem('Repair CFE_SIM Totals',     'runRepairCfeSimulationTotals'))
+      .addItem('Repair CFE_SIM Totals',     'runRepairCfeSimulationTotals')
+      .addItem('Repair CFE_SIM Capacidad (BDF-11)', 'runRepairCfeSimulationCapacidad')
+      .addItem('Setup BESS Steady-state (BDF-11.1)', 'runSetupBessSimulationSteady')
+      .addItem('Setup BESS Install §6',     'setupInputBessInstallRows')
+      .addItem('Setup INPUT_BESS Styling',  'setupInputBessStyling'))
     .addSeparator()
+    .addItem('▶ Suggest BESS',                  'onMenuSuggestBess')
+    .addSeparator()
+    .addItem('▶ Run Unit Tests (fast)',         'runUnitTests')
+    .addItem('▶ Run Tests for Current Chunk',   'runCurrentChunkTests')
     .addItem('Run Regression Tests',  'runTests')
     .addSeparator()
     .addItem('Create Offer EN',  'generateKickerEN')
@@ -614,15 +647,93 @@ function runArgiaEngine() {
         '. PV outputs continue; fix INPUT_BESS and re-run.');
     }
 
+    // Step 9.6: BESS BoS quantities + voltage drop + NOM checks (BDF-7) ------
+    // Pure-function chain that turns the BESS step's circuit result + the
+    // INPUT_BESS §6 install context into BOM line items, voltage-drop
+    // verification, and NOM compliance checks. Results attached to
+    // bessResult so downstream writers (MDC §7, BOM §8) can consume them.
+    // Wrapped in try/catch: a calc bug never breaks the rest of the pipeline.
+    if (bessResult.bessEnabled && bessResult.bess && bessResult.circuit) {
+      engineLog(ss, 'Engine', 'INFO', 'Step 9.6: BESS BoS + NOM checks');
+      try {
+        var installCtx = readBessInstallContext(ss);
+        // BDF-7.1: coupling has a single authoritative source —
+        // bessResult.coupling (derived from INPUT_DESIGN!C17). Inject it
+        // here so the calc functions never get a stale or contradictory
+        // value from a removed/old INPUT_BESS!C43 cell.
+        installCtx.coupling = bessResult.coupling;
+        var bosResult = calcBessBosQuantities({
+          bess: bessResult.bess,
+          circuit: bessResult.circuit,
+          installContext: installCtx,
+          nom: nom,
+        });
+        var vdResult = calcBessVoltageDrop({
+          circuit: bessResult.circuit,
+          installContext: installCtx,
+          nom: nom,
+        });
+        var nomChecksResult = calcBessNomChecks({
+          circuit: bessResult.circuit,
+          bos: bosResult,
+          installContext: installCtx,
+          nom: nom,
+        });
+        bessResult.installContext = installCtx;
+        bessResult.bos = bosResult;
+        bessResult.voltageDrop = vdResult;
+        bessResult.nomChecks = nomChecksResult;
+        // Log summary
+        var blockedTag = bosResult.blocked ? ' (blocked: ' + bosResult.reason + ')' : '';
+        engineLog(ss, 'BESS', 'INFO',
+          'BoS: ' + (bosResult.lines ? bosResult.lines.length : 0) + ' lines' + blockedTag);
+        // Surface FAIL-status NOM checks loudly
+        (nomChecksResult.checks || []).forEach(function(c) {
+          if (c.status === 'FAIL') {
+            engineLog(ss, 'BESS', 'MAJOR',
+              'NOM check FAIL: ' + c.title + ' -- ' + c.detail);
+          }
+        });
+        (vdResult.checks || []).forEach(function(c) {
+          if (c.status === 'FAIL') {
+            engineLog(ss, 'BESS', 'MAJOR',
+              'Voltage drop FAIL on ' + c.runName + ': ' +
+              (c.vdropPct * 100).toFixed(2) + '%');
+          }
+        });
+      } catch (bdfErr) {
+        engineLog(ss, 'BESS', 'WARNING',
+          'BDF-7 BoS/voltage/NOM calc skipped: ' + bdfErr.message);
+        bessResult.bos = null;
+        bessResult.voltageDrop = null;
+        bessResult.nomChecks = null;
+      }
+    }
+
     // Step 10: write MDC ----------------------------------------------------
     _setArgiaProgress(10, TOTAL, 'Writing MDC\u2026');
     engineLog(ss, 'Engine', 'INFO', 'Step 10: writing MDC');
     writeMDC(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
 
+    // Step 10-v2: write MDC_v2 in parallel ----------------------------------
+    // Output v2 migration (Chunk 1). The legacy MDC above remains the source
+    // of truth; this v2 path writes to MDC_v2 and is verified side-by-side.
+    // Wrapped in try/catch matching Steps 9.5 / 13.5: a v2 bug never breaks
+    // the legacy pipeline.
+    engineLog(ss, 'Engine', 'INFO', 'Step 10-v2: writing MDC_v2');
+    try {
+      setupMdcTemplate(ss);
+      writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
+    } catch (v2Err) {
+      engineLog(ss, 'V2', 'WARNING',
+        'MDC_v2 skipped: ' + v2Err.message +
+        '. Legacy MDC unaffected.\n' + (v2Err.stack || ''));
+    }
+
     // Step 11: write BOM ----------------------------------------------------
     _setArgiaProgress(11, TOTAL, 'Writing BOM\u2026');
     engineLog(ss, 'Engine', 'INFO', 'Step 11: writing BOM');
-    writeBOM(ss, inp, panel, invBank, dc, ac, lay, nom);
+    writeBOM(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
 
     // Step 12: install cost -------------------------------------------------
     _setArgiaProgress(12, TOTAL, 'Installation cost\u2026');
@@ -646,6 +757,34 @@ function runArgiaEngine() {
         '. Run "Generate Project Card" from menu after fixing.');
     }
 
+    // Step 13.4: Hourly Simulation (BDF-5) -----------------------------------
+    // Produces 8760-hour load/PV/battery dispatch + cost. Result is attached
+    // to engineResult.hourlySimulation. Pure compute — never writes to sheets.
+    // try/catch matches Step 9.5: a sim bug never breaks the rest of the
+    // pipeline. CFE_OUTPUT (Step 13.5) consumes this result for side-by-side
+    // display when available.
+    engineLog(ss, 'Engine', 'INFO', 'Step 13.4: hourly simulation');
+    var hourlySim = null;
+    try {
+      hourlySim = runHourlySimulation(ss);
+      if (hourlySim.blocked) {
+        engineLog(ss, 'HourlySim', 'WARNING',
+          'Hourly simulation blocked: ' + hourlySim.blocked);
+      } else {
+        engineLog(ss, 'HourlySim', 'INFO',
+          'Hourly sim OK: load ' + Math.round(hourlySim.annual.loadKwh) + ' kWh, '
+          + 'total cost MXN ' + Math.round(hourlySim.annual.totalCostMxn));
+        for (var hw = 0; hw < hourlySim.warnings.length; hw++) {
+          engineLog(ss, 'HourlySim', 'WARNING', hourlySim.warnings[hw]);
+        }
+      }
+    } catch (hsErr) {
+      engineLog(ss, 'HourlySim', 'MAJOR',
+        'Hourly simulation failed: ' + hsErr.message
+        + '. Engine continues with monthly-only numbers.');
+      hourlySim = null;
+    }
+
     // Step 13.5: CFE_OUTPUT render -------------------------------------------
     // Reads INPUT_CFE / CFE_SIMULATION / BESS_SIMULATION (already populated
     // by their live formulas) and renders a customer-facing comparison tab.
@@ -653,7 +792,7 @@ function runArgiaEngine() {
     // Step 9.5 pattern: a render bug never breaks the rest of the pipeline.
     engineLog(ss, 'Engine', 'INFO', 'Step 13.5: writing CFE_OUTPUT');
     try {
-      writeCfeOutput(ss);
+      writeCfeOutput(ss, hourlySim);
     } catch (cfeErr) {
       engineLog(ss, 'Engine', 'WARNING',
         'CFE_OUTPUT skipped: ' + cfeErr.message +
