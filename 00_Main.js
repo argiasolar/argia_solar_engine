@@ -739,7 +739,7 @@ function runArgiaEngine() {
     _setArgiaProgress(12, TOTAL, 'Installation cost\u2026');
     engineLog(ss, 'Engine', 'INFO', 'Step 12: installation cost');
     try {
-      runInstallCost(ss, inp, invBank, dc, ac, lay);
+      runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult);
     } catch (installErr) {
       engineLog(ss, 'Engine', 'WARNING',
         'Installation cost skipped: ' + installErr.message +

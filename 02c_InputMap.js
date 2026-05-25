@@ -1249,6 +1249,76 @@ var _MAP_INSTALL = {
 
 
 // ---------------------------------------------------------------------------
+// _MAP_INSTALL_BESS -- BESS-specific install knobs on INPUT_INSTALL.
+// Added 2026-05-25 (chunk bess_install). Consumed by readInstallDrivers()
+// in 13_CalcInstallCost.gs.
+//
+// SCOPE
+//   These four fields are user-facing knobs that the engine needs in
+//   addition to the data it already derives from bessResult (capacityKwh,
+//   stackQty, bos.lines, etc.). Everything else is auto-derived; do not
+//   add new fields here unless the value genuinely cannot be inferred.
+//
+// LAYOUT
+//   Section "07 BESS / ALMACENAMIENTO" rendered as the 7th section in
+//   INPUT_INSTALL. Header lands on row 58, first field on row 60.
+//   Rows 64-80 left intentionally blank for future BESS knobs (e.g.
+//   container model selector, custom commissioning rate, vendor
+//   override). Bump rows only at the bottom -- existing rows are stable.
+//
+// GATING
+//   When the project has no BESS (INPUT_PROJECT.installBattery=NO),
+//   bessResult.bessEnabled is false, and the engine ignores these inputs
+//   regardless of what the user typed.
+// ---------------------------------------------------------------------------
+var _MAP_INSTALL_BESS = {
+
+  // 07 BESS / ALMACENAMIENTO ------------------------------------------------
+  bessBatteriesPerContainer: {
+    sheet: SH.INPUT_INSTALL, row: 60, col: 4,
+    label: 'Baterias por contenedor', type: 'number',
+    default: 16, required: false, unit: 'stacks/contenedor',
+    section: '07 BESS / ALMACENAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'Drives BESS_CONTAINER_QTY = ceil(stackQty / batteriesPerContainer). '
+         + 'Huawei LUNA default 16. Adjust per vendor if container is smaller.'
+  },
+  bessRequiresFireSystem: {
+    sheet: SH.INPUT_INSTALL, row: 61, col: 4,
+    label: 'Sistema contra incendios BESS', type: 'dropdown',
+    default: 'NO', required: false,
+    dropdown: ['YES', 'NO'],
+    section: '07 BESS / ALMACENAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'UPSELL toggle. YES => BESS-I-18 fire suppression line fires '
+         + '(180k MXN/contenedor placeholder).'
+  },
+  bessRequiresSpillContainment: {
+    sheet: SH.INPUT_INSTALL, row: 62, col: 4,
+    label: 'Contencion de derrames BESS', type: 'dropdown',
+    default: 'YES', required: false,
+    dropdown: ['YES', 'NO'],
+    section: '07 BESS / ALMACENAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'YES => BESS-I-19 spill containment line fires. Default YES '
+         + 'because most sites do not already have it.'
+  },
+  bessCommissioningDays: {
+    sheet: SH.INPUT_INSTALL, row: 63, col: 4,
+    label: 'Dias de commissioning fabricante', type: 'number',
+    default: 2, required: false, unit: 'dias',
+    section: '07 BESS / ALMACENAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'Reserved for future use. No DB row consumes this yet. Kept '
+         + 'as a declared knob so the input layout has a place for it.'
+  }
+
+  // Rows 64-80 reserved for future BESS install knobs. Add new keys
+  // here (bottom-append only) and bump the section if you exceed row 80.
+};
+
+
+// ---------------------------------------------------------------------------
 // _MAP_BESS — battery toggle (INPUT_PROJECT) + INPUT_BESS sheet cells.
 // Added 2026-05-19. Consumed by readInputBess() in 01a_ReadInputsBess.gs.
 // Cell coordinates verified against the live INPUT_BESS / INPUT_PROJECT tabs.
@@ -1433,7 +1503,7 @@ var _MAP_BESS = {
 // ---------------------------------------------------------------------------
 var INPUT_MAP = {};
 (function _mergeMaps() {
-  var parts = [_MAP_PROJECT, _MAP_DESIGN, _MAP_INSTALL, _MAP_BESS];
+  var parts = [_MAP_PROJECT, _MAP_DESIGN, _MAP_INSTALL, _MAP_INSTALL_BESS, _MAP_BESS];
   for (var p = 0; p < parts.length; p++) {
     var src = parts[p];
     for (var k in src) {

@@ -90,7 +90,7 @@ var IC_SEC_HDR_ROW  = 14;
 var IC_SEC_START_ROW= 15;
 var IC_SEC_COL = { SECTION: 6, LABOR: 7, EQUIP: 8, OTHER: 9, TOTAL: 10 };
 var IC_SECTIONS = [
-  'AC','DC','RACKING SYSTEM','CONNECTION','SAFETY','GENERAL SITE','EQUIPMENT','INDIRECT'
+  'AC','DC','RACKING SYSTEM','CONNECTION','SAFETY','GENERAL SITE','EQUIPMENT','BESS','INDIRECT'
 ];
 
 // Driver block (col A=key, col B=value, rows 4-33)
@@ -175,8 +175,11 @@ function setupInstallInputsSection(ss) {
 // ---------------------------------------------------------------------------
 // READ INSTALL DRIVERS
 // Combines auto-derived ENGINE values with manual INPUT_DESIGN inputs.
+// bessResult (optional, 7th arg) feeds the BESS driver block. When BESS is
+// disabled or bessResult is absent, every BESS_* driver returns 0 -- so
+// the BESS lib rows produce zero cost and the install total is unchanged.
 // ---------------------------------------------------------------------------
-function readInstallDrivers(ss, inp, invBank, dc, ac, lay) {
+function readInstallDrivers(ss, inp, invBank, dc, ac, lay, bessResult) {
   // Migrated from legacy INPUT_DESIGN col M on 2026-04-24 (Track A Path C2, INSTALL tab).
   // All manual fields now come via readInput() from INPUT_INSTALL.
   // readInput() returns the map's default when cell is blank (never null/NaN),
@@ -254,6 +257,90 @@ function readInstallDrivers(ss, inp, invBank, dc, ac, lay) {
   var structureBrand = structureInfo ? structureInfo.brand : '';
   var structureModel = structureInfo ? structureInfo.model : '';
 
+  // ---- BESS install drivers ------------------------------------------------
+  // bessResult is the output of runBessStep + the BoS pass (Step 9.6 in
+  // 00_Main.js). It carries:
+  //   - bessResult.bessEnabled   : true iff INPUT_PROJECT.installBattery=YES
+  //                                AND a battery spec resolved successfully
+  //   - bessResult.bess          : { capacityKwh, powerKw, stackQty, ... }
+  //   - bessResult.bos.lines[]   : array of { code, qty, unit, ... } from
+  //                                calcBessBosQuantities; each line carries
+  //                                BoS quantities (m of cable, m of conduit,
+  //                                count of OCPD).
+  //   - bessResult.bos.blocked   : true if BoS calc could not run (we then
+  //                                emit zero BESS install drivers — same as
+  //                                "no BESS" — so a half-configured project
+  //                                doesn't bill phantom BESS install costs).
+  //
+  // When ANY of these guards fail, every BESS driver is 0. That is the
+  // mechanism that protects the CULLIGAN regression baseline: CULLIGAN
+  // has no battery, so bessEnabled is false, every BESS_* driver is 0,
+  // every BESS-I-* lib row produces 0 cost, install total is unchanged.
+  var bessEnabled = !!(bessResult && bessResult.bessEnabled
+                       && bessResult.bess && !bessResult.specError);
+  var bess        = bessEnabled ? (bessResult.bess || {}) : {};
+  var bos         = bessEnabled ? (bessResult.bos  || {}) : {};
+  var bosLines    = (bos && !bos.blocked && bos.lines) ? bos.lines : [];
+
+  var bessKwh        = bessEnabled ? (Number(bess.capacityKwh) || 0) : 0;
+  var bessKw         = bessEnabled ? (Number(bess.powerKw)     || 0) : 0;
+  var bessStackQty   = bessEnabled ? (Number(bess.stackQty)    || 0) : 0;
+
+  // BESS_CONTAINER_QTY = ceil(stackQty / batteriesPerContainer). When BESS
+  // is enabled but stackQty is 0 (degenerate), we still emit 0 (no crane
+  // needed). When BESS is enabled and stackQty > 0 we never emit 0
+  // (Math.ceil of any positive value is >= 1).
+  var batteriesPerContainer = parseFloat(readInput(ss, 'bessBatteriesPerContainer'));
+  if (!isFinite(batteriesPerContainer) || batteriesPerContainer <= 0) {
+    batteriesPerContainer = 16;  // safety net; matches the INPUT_MAP default
+  }
+  var bessContainerQty = (bessEnabled && bessStackQty > 0)
+    ? Math.ceil(bessStackQty / batteriesPerContainer)
+    : 0;
+
+  // BESS_HD_CRANE_DAYS = ceil(containerQty / 3). One HD crane day handles
+  // up to 3 container placements (realistic for a competent rigging crew
+  // with mobilization already amortized).
+  var bessHdCraneDays = bessContainerQty > 0
+    ? Math.ceil(bessContainerQty / 3)
+    : 0;
+
+  // Aggregate BoS quantities by code into install drivers.
+  //   BESS-02 -> DC cable meters
+  //   BESS-04 -> AC cable meters (always 0 in DC_COUPLED)
+  //   BESS-06 + BESS-07 -> total conduit meters (DC + AC)
+  //   BESS-08 + BESS-09 + BESS-10 -> total OCPD/disconnect count
+  // Other codes (BESS-01 battery, -03 DC EGC, -05 AC EGC, -11 GEC, -12
+  // commissioning marker) are NOT aggregated into install drivers --
+  // they belong to BOM not install.
+  var bessDcCableM   = 0;
+  var bessAcCableM   = 0;
+  var bessConduitM   = 0;
+  var bessOcpdCount  = 0;
+  for (var bi = 0; bi < bosLines.length; bi++) {
+    var ln = bosLines[bi];
+    if (!ln || !ln.code) continue;
+    var q = Number(ln.qty) || 0;
+    switch (ln.code) {
+      case 'BESS-02': bessDcCableM  += q; break;
+      case 'BESS-04': bessAcCableM  += q; break;
+      case 'BESS-06':
+      case 'BESS-07': bessConduitM  += q; break;
+      case 'BESS-08':
+      case 'BESS-09':
+      case 'BESS-10': bessOcpdCount += q; break;
+    }
+  }
+
+  var bessProjectOne = bessEnabled ? 1 : 0;
+
+  // Upsell toggles. When BESS is disabled or the toggle is NO, qty is 0
+  // -- the BESS-I-18 / BESS-I-19 rows then produce 0 cost.
+  var bessFireToggle        = String(readInput(ss, 'bessRequiresFireSystem')       || 'NO').toUpperCase();
+  var bessSpillToggle       = String(readInput(ss, 'bessRequiresSpillContainment') || 'NO').toUpperCase();
+  var bessFireSystemQty       = (bessEnabled && bessFireToggle  === 'YES') ? bessContainerQty : 0;
+  var bessSpillContainmentQty = (bessEnabled && bessSpillToggle === 'YES') ? bessContainerQty : 0;
+
   var drivers = {
     // Project scale (auto)
     projectDcWp         : (dc.dcKwp || 0) * 1000,
@@ -322,6 +409,20 @@ function readInstallDrivers(ss, inp, invBank, dc, ac, lay) {
     // Subtotals populated during calc (for PERCENT_OF items)
     laborEquipSubtotal  : 0,
     installSubtotal     : 0,
+
+    // -- BESS install drivers (zero when no battery, see comment above) -----
+    bessKwh                 : bessKwh,
+    bessKw                  : bessKw,
+    bessStackQty            : bessStackQty,
+    bessContainerQty        : bessContainerQty,
+    bessHdCraneDays         : bessHdCraneDays,
+    bessDcCableM            : bessDcCableM,
+    bessAcCableM            : bessAcCableM,
+    bessConduitM            : bessConduitM,
+    bessOcpdCount           : bessOcpdCount,
+    bessProjectOne          : bessProjectOne,
+    bessFireSystemQty       : bessFireSystemQty,
+    bessSpillContainmentQty : bessSpillContainmentQty,
   };
 
   return drivers;
@@ -521,6 +622,21 @@ function calcInstallCost(instLib, drivers) {
       // These are resolved after first pass
       'LABOR_EQUIP_SUBTOTAL'  : drivers.laborEquipSubtotal,
       'INSTALL_SUBTOTAL'      : drivers.installSubtotal,
+
+      // BESS install drivers (chunk bess_install). Zero when no battery,
+      // see readInstallDrivers() for the gating mechanism.
+      'BESS_KWH'                   : drivers.bessKwh,
+      'BESS_KW'                    : drivers.bessKw,
+      'BESS_STACK_QTY'             : drivers.bessStackQty,
+      'BESS_CONTAINER_QTY'         : drivers.bessContainerQty,
+      'BESS_HD_CRANE_DAYS'         : drivers.bessHdCraneDays,
+      'BESS_DC_CABLE_M'            : drivers.bessDcCableM,
+      'BESS_AC_CABLE_M'            : drivers.bessAcCableM,
+      'BESS_CONDUIT_M'             : drivers.bessConduitM,
+      'BESS_OCPD_COUNT'            : drivers.bessOcpdCount,
+      'BESS_PROJECT_ONE'           : drivers.bessProjectOne,
+      'BESS_FIRE_SYSTEM_QTY'       : drivers.bessFireSystemQty,
+      'BESS_SPILL_CONTAINMENT_QTY' : drivers.bessSpillContainmentQty,
     };
     return parseFloat(map[key]) || 0;
   }
@@ -1561,11 +1677,14 @@ function writeInstallDriverMap(ss, drivers, result) {
 // MAIN ORCHESTRATOR — called from runArgiaEngine() step 12
 // Also called standalone from menu.
 // ---------------------------------------------------------------------------
-function runInstallCost(ss, inp, invBank, dc, ac, lay) {
+function runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult) {
   // NOTE (Phase 2a, 2026-04-24): setupInstallInputsSection() was removed from
   // the orchestrator. Install inputs now live on INPUT_INSTALL and are set up
   // by setupInputInstall() in 02e_InputSetup.gs. Running the legacy setup here
   // would pollute the new INPUT_DESIGN layout with stray labels and defaults.
+  //
+  // NOTE (chunk bess_install, 2026-05-25): bessResult added as 7th arg.
+  // Optional -- when omitted, BESS drivers are all 0 (same as no battery).
 
   engineLog(ss, 'InstallCost', 'INFO', 'Loading INSTALL_DB mirrors...');
   var instLib = loadInstallLib(ss);
@@ -1580,7 +1699,7 @@ function runInstallCost(ss, inp, invBank, dc, ac, lay) {
     Object.keys(instLib.equipRates).length + ' equipment types');
 
   engineLog(ss, 'InstallCost', 'INFO', 'Reading install drivers...');
-  var drivers = readInstallDrivers(ss, inp, invBank, dc, ac, lay);
+  var drivers = readInstallDrivers(ss, inp, invBank, dc, ac, lay, bessResult);
   engineLog(ss, 'InstallCost', 'INFO',
     'Drivers: ' + drivers.moduleCount + ' modules, crew=' + drivers.crewSize +
     ', type=' + drivers.installationType +
@@ -1629,8 +1748,33 @@ function runInstallCostStandalone() {
     var ac   = calcAC(inp, panel, invBank, nom, tbls, dc);
     var lay  = calcLayout(inp, dc, ac, nom);
 
+    // chunk bess_install: run BESS step + BoS so the install drivers can
+    // pick up BESS quantities the same way the full engine does. Fail-soft:
+    // any error in the BESS chain leaves bessResult undefined, which makes
+    // every BESS install driver 0 (same as no battery).
+    var bessResult;
+    try {
+      bessResult = runBessStep(ss);
+      if (bessResult && bessResult.bessEnabled && bessResult.bess && bessResult.circuit) {
+        var installCtx = readBessInstallContext(ss);
+        installCtx.coupling = bessResult.coupling;
+        bessResult.installContext = installCtx;
+        bessResult.bos = calcBessBosQuantities({
+          bess: bessResult.bess,
+          circuit: bessResult.circuit,
+          installContext: installCtx,
+          nom: nom,
+        });
+      }
+    } catch (bessErr) {
+      engineLog(ss, 'InstallCost', 'WARNING',
+        'BESS step skipped in standalone install: ' + bessErr.message +
+        '. BESS install drivers will be zero.');
+      bessResult = undefined;
+    }
+
     _setArgiaProgress(3, 5, 'Calculating install cost\u2026');
-    var result = runInstallCost(ss, inp, invBank, dc, ac, lay);
+    var result = runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult);
 
     _setArgiaProgress(5, 5, '\u2705 Done!');
     Utilities.sleep(1400);
