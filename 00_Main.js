@@ -339,6 +339,130 @@ var BOM_COL = {
 };
 
 // ---------------------------------------------------------------------------
+// PROJECT_CARD_v2 ROW + COLUMN MAP (Chunk 3, 2026-05-25)
+// ---------------------------------------------------------------------------
+// PC_v2 uses a fixed-row layout (unlike legacy PC which increments row++ as
+// it writes). Fixed rows let the template and writer share addresses so:
+//   - The template paints labels + section headers at known rows.
+//   - The writer fills only values at the same known rows.
+//   - Tests can assert "value X landed at row Y col Z" without simulating
+//     the layout flow.
+//
+// LAYOUT (10 cols, mirrors legacy):
+//   A=margin   B=label-left   C=USD-cost     D=MXN-cost   E=validation
+//   F=spacer   G=label-right  H=USD-sales    I=MXN-sales  J=margin%
+//
+// COST CATEGORIES — 9 rows (legacy had 8; BESS is the new 9th).
+//   PV-only rows show "—" / 0 in the BESS row, but the row stays in layout.
+// ---------------------------------------------------------------------------
+var PC_ROW = {
+  // Banner (row 1) — title, project number, date
+  TITLE:                1,
+
+  // §0 BUSINESS CASE (rows 3-6)
+  SEC_BUSINESS_HEADER:  3,
+  BUSINESS_CUSTOMER:    4,
+  BUSINESS_PROJECT:     5,
+  BUSINESS_LOCATION:    6,
+
+  // §1 PROJECT TEAM (rows 8-11)
+  SEC_TEAM_HEADER:      8,
+  TEAM_BIZ_MANAGER:     9,
+  TEAM_DESIGNER:        10,
+  TEAM_PROJ_MANAGER:    11,
+
+  // §2 SCOPE OF WORK (cols B-E) + ADDITIONAL INFO (cols G-J) — rows 13-22
+  // Both panes share the same row range; scope items in left, info labels right.
+  // 8 row slots: enough for panels + up to 4 inverter banks + structure + BESS
+  // (left), and the 6 info fields (right): power peak, system coverage,
+  // installation type, selling price, cost, storage (BESS-only).
+  SEC_SCOPE_HEADER:     13,
+  SCOPE_ROW_FIRST:      14,
+  SCOPE_ROW_LAST:       21,   // 8 rows total (14..21)
+  // Additional Info fixed addresses (in the right pane, cols G-J):
+  INFO_POWER_PEAK:      14,
+  INFO_COVERAGE:        15,
+  INFO_INSTALL_TYPE:    16,
+  INFO_SELLING_PRICE:   17,
+  INFO_COST:            18,
+  INFO_STORAGE:         19,   // NEW for PC_v2 (BESS-only; "—" when disabled)
+
+  // §3 SCHEDULE (rows 23-26)
+  SEC_SCHEDULE_HEADER:  23,
+  SCHEDULE_R1:          24,
+  SCHEDULE_R2:          25,
+  SCHEDULE_R3:          26,
+
+  // §4 COST COMPARISON (rows 28-40)
+  // Row 28: header band ("COST COMPARISON" + exchange rate)
+  // Row 29: sub-banner: ESTIMATED COSTS | VALIDATION | SALES PRICE | MARGIN
+  // Row 30: column units: USD | MXN | vs range | USD | MXN | %
+  // Rows 31-39: the 9 cost categories
+  // Row 40: TOTAL
+  SEC_COST_HEADER:      28,
+  COST_SUBBANNER:       29,
+  COST_UNITS:           30,
+  COST_PANELS:          31,
+  COST_INVERTERS:       32,
+  COST_STRUCTURE:       33,
+  COST_ELEC_DC:         34,
+  COST_ELEC_AC:         35,
+  COST_MONITORING:      36,
+  COST_PERMITS:         37,
+  COST_INSTALL:         38,
+  COST_BESS:            39,    // NEW for PC_v2
+  COST_TOTAL:           40,
+
+  // §5 PRICE-AFTER-DISCOUNT + GROSS PROFIT (rows 41-43)
+  PRICE_DISCOUNT_ROW:   41,    // "Payment Terms" + "Discount %" cell
+  PRICE_AFTER_DISC:     42,    // "Payment time" + price-after-discount formula
+  PRICE_GROSS_PROFIT:   43,    // "Gross Profit:" + formula
+
+  // §6 DOCUMENTATION (rows 45-50)
+  SEC_DOCS_HEADER:      45,
+  DOCS_R1:              46,
+  DOCS_R2:              47,
+  DOCS_R3:              48,
+  DOCS_R4:              49,
+  DOCS_R5:              50,
+
+  // §7 RISKS (rows 52-57)
+  SEC_RISKS_HEADER:     52,
+  RISKS_PENALTIES:      53,
+  RISKS_WARRANTY:       54,
+  RISKS_INSURANCE:      55,
+  RISKS_FIRE:           56,
+  RISKS_WORKPLACE:      57,
+
+  // §8 COMMENTS (rows 59-60)
+  SEC_COMMENTS_HEADER:  59,
+  COMMENTS_BODY:        60,
+
+  // §9 SIGNATURES (rows 62-69) — 4 signatures × 2 rows each
+  SIG_SUBMITTED_DESIGN: 62,
+  SIG_SUBMITTED_PM:     64,
+  SIG_RECEIVED:         66,
+  SIG_APPROVED:         68,
+  LAST_ROW:             69
+};
+
+// ---------------------------------------------------------------------------
+// PROJECT_CARD_v2 COLUMN MAP (1-based)
+// ---------------------------------------------------------------------------
+var PC_COL = {
+  MARGIN_L:    1,   // A
+  LABEL_L:     2,   // B
+  USD_COST:    3,   // C
+  MXN_COST:    4,   // D
+  VALIDATION:  5,   // E
+  SPACER:      6,   // F
+  LABEL_R:     7,   // G
+  USD_SALES:   8,   // H
+  MXN_SALES:   9,   // I
+  MARGIN_PCT:  10   // J
+};
+
+// ---------------------------------------------------------------------------
 // MASTERLINK FOLDER HELPER
 // Reads H2 (Offer folder) and I2 (Helioscope folder) from 00_MASTERLINK tab.
 // Called by runArgiaEngine, importHelioscopePdf, _runKicker, _loadImages.
@@ -735,6 +859,21 @@ function runArgiaEngine() {
     engineLog(ss, 'Engine', 'INFO', 'Step 11: writing BOM');
     writeBOM(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
 
+    // Step 11-v2: write BOM_v2 in parallel -----------------------------------
+    // Output v2 migration (Chunk 4). Legacy BOM above remains the source of
+    // truth; this v2 path writes to BOM_v2 and is verified side-by-side.
+    // Wrapped in try/catch matching Step 10-v2 (MDC) / Step 13-v2 (PC):
+    // a v2 bug never breaks the legacy pipeline.
+    engineLog(ss, 'Engine', 'INFO', 'Step 11-v2: writing BOM_v2');
+    try {
+      setupBomTemplate(ss);
+      writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
+    } catch (v2BomErr) {
+      engineLog(ss, 'V2', 'WARNING',
+        'BOM_v2 skipped: ' + v2BomErr.message +
+        '. Legacy BOM unaffected.\n' + (v2BomErr.stack || ''));
+    }
+
     // Step 12: install cost -------------------------------------------------
     _setArgiaProgress(12, TOTAL, 'Installation cost\u2026');
     engineLog(ss, 'Engine', 'INFO', 'Step 12: installation cost');
@@ -755,6 +894,21 @@ function runArgiaEngine() {
       engineLog(ss, 'Engine', 'WARNING',
         'Project Card skipped: ' + pcErr.message +
         '. Run "Generate Project Card" from menu after fixing.');
+    }
+
+    // Step 13-v2: write PROJECT_CARD_v2 in parallel ---------------------------
+    // Output v2 migration (Chunk 3). Legacy Project Card above remains the
+    // source of truth; this v2 path writes to PROJECT_CARD_v2 and is verified
+    // side-by-side. Wrapped in try/catch like Step 10-v2: a v2 bug never
+    // breaks the legacy pipeline.
+    engineLog(ss, 'Engine', 'INFO', 'Step 13-v2: writing PROJECT_CARD_v2');
+    try {
+      setupProjectCardTemplate(ss);
+      writeProjectCardV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
+    } catch (v2PcErr) {
+      engineLog(ss, 'V2', 'WARNING',
+        'PROJECT_CARD_v2 skipped: ' + v2PcErr.message +
+        '. Legacy Project Card unaffected.\n' + (v2PcErr.stack || ''));
     }
 
     // Step 13.4: Hourly Simulation (BDF-5) -----------------------------------

@@ -1,0 +1,23 @@
+# Files in this list are NOT pushed to Apps Script by `clasp push`.
+# They live in the repo for development tooling, documentation, and
+# verification artifacts that have no place in a Sheets-bound script.
+
+# Node.js self-test rigs (run locally with `node scripts/<name>.js`)
+scripts/**
+
+# Docs (markdown is not Apps Script source)
+**/*.md
+
+# Git metadata
+.git/**
+.gitignore
+.gitattributes
+
+# OS / editor noise
+.DS_Store
+**/.DS_Store
+.vscode/**
+.idea/**
+
+# Test data files (these may live next to tests as fixtures)
+**/__fixtures__/**

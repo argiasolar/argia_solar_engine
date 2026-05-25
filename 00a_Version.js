@@ -26,6 +26,25 @@
 //   DB_VERSION uses YYYY.MM
 //     Bump when any *_DB or master table changes.
 //
+// 3.2.0 — MINOR bump (2026-05-25). Chunk 4 lands BOM_v2: a parallel v2 sheet
+// (BOM_v2) is now written alongside the legacy BOM. All 8 sections render
+// (panels / inverters / structure / DC / AC / transformer / monitoring / BESS),
+// using namespaced _bomV2_* DB helpers in writers_v2/helpers/BomDbHelpers.js
+// (verbatim port of legacy helpers — no behavioral change). The §8 BESS row
+// reset block from legacy (cosmetic cleanup of layout drift) is gone in v2:
+// template owns all formatting from the start. Legacy BOM remains source of
+// truth until cutover. No legacy recalc.
+//
+// 3.1.0 — MINOR bump (2026-05-25). Chunk 3 lands PROJECT_CARD_v2: a parallel
+// v2 sheet (PROJECT_CARD_v2) is now written alongside the legacy PROJECT_CARD.
+// PV-only runs are visually identical (one new "Almacenamiento (BESS)" row
+// renders an em-dash). BESS runs gain: a 9th cost row, a scope-of-work
+// battery line, a "Storage" info-row showing nominal kWh, and PASS/FAIL
+// validation against a new $/kWh USD envelope (defaults $350-$650, read
+// from costRangeBessMin / costRangeBessMax on INPUT_PROJECT row 61).
+// Legacy PROJECT_CARD is the source of truth until cutover; PC_v2 is a
+// side-by-side verification target. No legacy recalc.
+//
 // 3.0.0 — MAJOR bump (2026-05-24). BDF-11 fixed four CFE Capacidad math
 // bugs validated against 12 real CULLIGAN bills. Existing projects WILL
 // recalculate to different numbers (year-1 Capacidad savings typically
@@ -33,7 +52,7 @@
 // and run "Repair CFE_SIM Capacidad (BDF-11)" + "Setup BESS Steady-state
 // (BDF-11.1)" on each project workbook to migrate.
 //
-var ENGINE_VERSION = '3.0.0';
+var ENGINE_VERSION = '3.2.0';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default

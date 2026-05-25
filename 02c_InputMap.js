@@ -453,6 +453,27 @@ var _MAP_PROJECT = {
     unit: 'USD/kWp', section: '06 RANGOS DE VALIDACIÓN',
     consumedBy: ['projectCard'],
     legacyAddr: 'INPUT_GENERAL!D47', legacyCol: 'C'
+  },
+
+  // Chunk 3 (PROJECT_CARD_v2): BESS cost envelope. Unit is USD/kWh nominal
+  // (not USD/kWp like the PV ranges), since BESS is denominated in kWh of
+  // capacity. Range $350-$650 calibrated from the four BAAS project files
+  // in /mnt/project (Autoplastek BJX/PUE, Draxlmaier, Taigene, Culligan):
+  // observed $381-$579/kWh; we widen by ~10% on each side. Only PC_v2
+  // reads this; legacy PC ignores it. See OUTPUT_V2_MIGRATION_PLAN.md.
+  costRangeBessMin: {
+    sheet: SH.INPUT_PROJECT, row: 61, col: 4,
+    label: 'Almacenamiento BESS — min', type: 'number', default: 350, required: false,
+    unit: 'USD/kWh', section: '06 RANGOS DE VALIDACIÓN',
+    consumedBy: ['projectCard'],
+    legacyAddr: '', legacyCol: ''
+  },
+  costRangeBessMax: {
+    sheet: SH.INPUT_PROJECT, row: 61, col: 5,
+    label: 'Almacenamiento BESS — max', type: 'number', default: 650, required: false,
+    unit: 'USD/kWh', section: '06 RANGOS DE VALIDACIÓN',
+    consumedBy: ['projectCard'],
+    legacyAddr: '', legacyCol: ''
   }
 };
 

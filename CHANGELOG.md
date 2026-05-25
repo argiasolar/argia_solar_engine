@@ -11,6 +11,156 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (MAJOR.MI
 
 ---
 
+## [3.2.0] — 2026-05-25
+
+Chunk 4 of the output-v2 migration. Lands BOM_v2 alongside the legacy
+BOM. **No legacy recalc** — legacy BOM continues writing unchanged; v2
+is parallel and additive.
+
+### Added — Chunk 4 (BOM_v2)
+
+- New file `writers_v2/helpers/BomDbHelpers.js`: namespaced `_bomV2_*`
+  port of every DB-lookup helper from legacy `08_WriteBOM.js`
+  (`loadBosDb`, `loadStructureDb`, `resolveStructure`, `bosPriceObj`,
+  `conductorPriceObj`, `groundPriceObj`, `conduitPriceObj`,
+  `breakerILinePriceObj`, `breakerPriceWithFallback`,
+  `panelboardPriceObj`, `transformerPriceObj`, `mc4PriceObj`,
+  `monitoringPriceObj`, `meterPriceObj`, `ladderTrayPriceObj`, and their
+  `*PriceMxn` thin wrappers). Verbatim port — every function returns
+  byte-identical values to the legacy helper for the same inputs. No
+  shared writer code with legacy per the plan §2.
+- New file `templates/setupBomTemplate.js`: idempotent template that
+  builds the BOM_v2 sheet with banner, project meta row, column header
+  row, exchange-rate row, 8 pre-styled section header bands, 8 pre-styled
+  subtotal rows, and the grand total band. Owns all formatting (column
+  widths, row heights, number formats, alignment, fonts, borders, freeze).
+  Pure setup — never touches data.
+- New file `writers_v2/WriteBomV2.js`: data writer that fills BOM_v2 at
+  the fixed rows defined in `BOM_ROW`. Mirrors legacy `08_WriteBOM.js`
+  section-by-section across all 8 sections (panels / inverters /
+  structure / DC / AC / transformer / monitoring / BESS) plus grand
+  total. Same wp() / ws() helper signatures, same formula shapes, same
+  cell-note text.
+- New §8 BESS handling in BOM_v2 (preserves legacy parity):
+  - PV-only or BoS-blocked → single "Sistema BESS — pendiente"
+    explanatory line at BESS_BATTERY_LINE.
+  - BESS-enabled → maps BESS-01..BESS-12 codes to fixed rows
+    (BESS_BATTERY_LINE through BESS_COMMISSIONING). Price resolution
+    dispatches by productCategory: BESS_BATTERY → `lookupBatteryUnitPrice`
+    (shared infra), COMMISSIONING → `productSpec.flatPriceMxn`,
+    CONDUCTORS/CONDUIT/DISTRIBUTION → `_bomV2_resolveBessBosPrice` in the
+    same file (verbatim port of legacy `_resolveBessBosPrice`).
+- Step 11-v2 wired into `runArgiaEngine` after Step 11. Calls
+  `setupBomTemplate(ss)` then `writeBomV2(...)`, wrapped in its own
+  try/catch matching Step 10-v2 (MDC) and Step 13-v2 (PC) pattern. A v2
+  bug never breaks the legacy pipeline.
+
+### Removed in v2
+
+- The §8 BESS row reset block from legacy `08_WriteBOM.js`
+  (lines 936–991, ~55 lines of layout cleanup). In legacy it was
+  necessary because the template didn't own row heights / backgrounds /
+  alignment on §8 rows, so the writer had to normalize them every run.
+  v2 template applies the right styles from the start, so the reset
+  block isn't needed.
+
+### Tests
+
+- `tests_unit/writers_v2/BomDbHelpersTests.gs` — 8 unit tests for the
+  `_bomV2_*` helpers covering BOS lookup, conductor cascade
+  (THHW → PV WIRE), conduit size→label mapping + DE-pattern matching,
+  breaker fallback (exact → next-size cascade → null+note),
+  panelboard smallest-fit selection, structure resolver's 3 paths
+  (STR_ID tail / brand+model / model-only), and BOS_CURRENCY=USD flag.
+- `tests_unit/templates/BomTemplateTests.gs` — 6 unit tests for the
+  template covering sheet creation, 8 column header values at row 5,
+  column widths, section/subtotal/grand-total row heights, idempotency
+  (clear() count 0→1 across two calls), and `opts.sheetName` override.
+- `tests_unit/writers_v2/WriteBomV2Tests.gs` — 12 unit tests for the
+  writer covering all 8 sections, the "throw when sheet missing" path,
+  trayM>0 swap to ladder-tray rows, customer-supplied vs Argia-supplied
+  transformer variant, PV-only vs BESS-enabled §8 behavior, and the
+  GRAND_TOTAL formula referencing all 8 subtotals.
+- ACTIVE_CHUNK_TAG bumped to `chunk4` so the "Run Tests for Current
+  Chunk" menu item picks up exactly the 26 new tests.
+
+### Parity quirks (called out for cleanup post-cutover)
+
+Two legacy code paths dispatch BOS prices as USD without checking
+`isUsd` — DC PV WIRE cable (line 693 in legacy) and AC main breaker
+(line 790 in legacy). Both happen to work in practice because the BOS
+DB MXN prices are passed-through as numbers and the line totals are
+computed with `=C*E` and `=F*$F$EXCHANGE_RATE`, so the math reconciles.
+v2 mirrors this verbatim for parity. Marked as "legacy parity quirk" in
+the new writer tests so post-cutover cleanup is straightforward.
+
+---
+
+## [3.1.0] — 2026-05-25
+
+Chunk 3 of the output-v2 migration. Lands PROJECT_CARD_v2 alongside the
+legacy PROJECT_CARD. **No legacy recalc** — legacy PC continues writing
+unchanged; v2 is parallel and additive.
+
+### Added — Chunk 3 (PROJECT_CARD_v2)
+
+- New file `templates/setupProjectCardTemplate.js`: idempotent template
+  that builds the PROJECT_CARD_v2 sheet with section bands, fixed-row
+  labels, and the 10-column cost-comparison layout. Pure setup — never
+  touches data.
+- New file `writers_v2/WriteProjectCardV2.js`: data writer that fills
+  PROJECT_CARD_v2 at the fixed rows defined in `PC_ROW`. Reads from legacy
+  BOM and INSTALLATION sheets (BOM_v2 / INSTALLATION_v2 ship later) so
+  numeric parity with legacy PC is preserved.
+- New BESS visibility in PC_v2 (three additions over legacy PC):
+  - **Cost Comparison gains a 9th row** "Almacenamiento (BESS)" pulling
+    USD/MXN from `BOM!SUBTOTAL_BESS` (row 92). PV-only projects render
+    em-dash in the BESS row; the row remains in layout for visual consistency.
+  - **Scope of Work gains a battery line** when bessEnabled, formatted as
+    `<batteryId> — <stackQty> stack(s) (<kWh> kWh nominal)`. Falls back to
+    "Battery storage system" when `batteryId === 'CUSTOM_MANUAL'`.
+  - **Additional Information gains "Storage"** row showing nominal kWh
+    capacity. Shows em-dash when bessEnabled is false.
+- New PC_ROW + PC_COL constants in `00_Main.js` lock the PC_v2 layout so
+  template and writer share row addresses (the architectural change that
+  makes v2 cleanly testable).
+- New `costRangeBessMin` / `costRangeBessMax` entries in `_MAP_PROJECT`
+  (row 61 of INPUT_PROJECT, cols D/E). Unit is **USD/kWh nominal** —
+  defaults **$350–$650**, calibrated from four real BAAS proposals in
+  `/mnt/project`:
+  - Autoplastek Puebla: 645 kWh / $5.42M MXN → $461/kWh USD
+  - Draxlmaier: 10,000 kWh / $69.36M MXN → $381/kWh USD
+  - Taigene León: 1,505 kWh / $10.54M MXN → $385/kWh USD
+  - Culligan: 1,075 kWh / $11.33M MXN → $579/kWh USD
+  Observed range $381–$579; envelope widened ~10% each side.
+- Engine integration as new **Step 13-v2** in `runArgiaEngine()`,
+  wrapped in try/catch matching Step 10-v2 (MDC_v2) — a v2 bug never
+  breaks the legacy pipeline.
+- `ACTIVE_CHUNK_TAG` bumped to `'chunk3'`.
+
+### Tests — Chunk 3
+
+- New file `tests_unit/writers_v2/WriteProjectCardV2Tests.gs`: 10 unit
+  tests covering value writes per row, BESS visibility logic, validation
+  PASS/FAIL boundaries, scope-of-work formatting, and margin derivation.
+- New file `tests_unit/templates/ProjectCardTemplateTests.gs`: 5 tests
+  for template invariants (sheet exists, idempotency, section headers
+  at correct rows, all 9 cost-row labels present including BESS).
+
+### Notes
+
+- PC_v2 selling price `USD/Wp` denominator is **PV `dcKwp`** only, not
+  PV-plus-BESS equivalent. $/Wp is an industry PV metric; the BESS
+  portion shows separately in the cost table.
+- Gross profit formula unchanged from legacy semantics — it operates on
+  the TOTAL row, which now naturally includes BESS subtotal when
+  bessEnabled.
+- No menu entry yet — PC_v2 is generated only as part of the full engine
+  run. A standalone "Generate PC v2" menu entry can land in Chunk 11
+  (cutover) when v2 becomes source of truth.
+
+---
+
 ## [3.0.0] — 2026-05-24
 
 Catch-up release covering chunks BDF-7 through BDF-11.1. This is the first

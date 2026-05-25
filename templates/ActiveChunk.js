@@ -26,7 +26,7 @@
 // The currently-active chunk. Bump this when starting a new chunk.
 // Valid values during migration: 'chunk0' .. 'chunk12', plus 'bdf1' .. 'bdf5'
 // for the BESS Designer Flow track that runs parallel to output migration.
-var ACTIVE_CHUNK_TAG = 'bess_install';
+var ACTIVE_CHUNK_TAG = 'chunk4';
 
 
 /**
