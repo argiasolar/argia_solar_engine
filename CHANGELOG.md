@@ -11,6 +11,142 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (MAJOR.MI
 
 ---
 
+## [3.5.0] — 2026-05-26
+
+Chunk 7 of the output-v2 migration. Lands CFE_OUTPUT_v2 alongside the
+legacy CFE_OUTPUT. **No legacy recalc** — legacy CFE_OUTPUT continues
+rendering unchanged; v2 is parallel and additive.
+
+### Added — Chunk 7 (CFE_OUTPUT_v2)
+
+- New file `templates/setupCfeOutputTemplate.js`: strict template/writer
+  split (matches chunks 4/5 pattern). Owns:
+  - 16-column canvas + hidden gridlines
+  - Banner: logo at (2, 1), title at (2, 3), subtitle at (3, 3) —
+    matches the v2 banner convention from chunks 2-6
+  - Header strip labels (rows 5-8, cols B and H)
+  - KPI strip row height (row 10)
+  - Section 1 (Con PV) header at row 12, month header at row 13,
+    static col-B labels for rows 14-20
+  - Section 2 (Con PV + BESS) header at row 22, month header at row 23,
+    static col-B labels for rows 24-31
+  - Annual footer header at row 33 + cascade label blocks at row 34
+  - Frozen rows = 10 (banner + KPI strip stays visible on scroll)
+  - **Image cleanup on refresh** — calls `sh.getImages().forEach(img.remove)`
+    to prevent the stacked-logo issue observed with chunk 6 RFQs
+- New file `writers_v2/WriteCfeOutputV2.js`: data writer. Entry points:
+  - `writeCfeOutputV2(ss, hourlySim)` — engine entry, called from
+    Step 13.5-v2. When `hourlySim` is provided AND not `.blocked`, the
+    BDF-5 hourly addendum is appended (rows 45-64 by default): hourly
+    engine summary (Sin PV / Con PV+BESS / Ahorro), bill components
+    breakdown (11 line items: Capacidad through Facturación TOTAL),
+    provenance line, and optional warnings line. R1 fallback (energy +
+    demand split with a "rate data missing" note) renders when
+    `hourlySim.annual.fullBill` is absent. Ported verbatim from legacy
+    `_cfeOutWriteHourlySimAddendum` (lines 966-1057 of
+    `06_WriteCfeOutput.js`) — same data sources, labels, colors.
+  - `runUpdateCfeOutputV2()` — menu entry. Passes `null` for hourlySim,
+    so menu-triggered refreshes skip the BDF-5 block.
+- New file `writers_v2/helpers/CfeOutputSourceMap.js`:
+  - `CFE_OUT_SRC_V2` — source cell map (verbatim copy of legacy
+    `CFE_OUT_SRC`; v2 must not import legacy symbols)
+  - `readCfeScalar(ss, key)` / `readCfeMonthly(ss, key)` — read helpers
+  - `CFE_OUT_MONTHS_V2` — Ene..Dic labels
+- 3 test files (34 tests, 292 assertions, all green via Node shim)
+
+### Changed
+
+- `00_Main.js`:
+  - Added menu item "Update CFE_OUTPUT v2" right after legacy "Update
+    CFE_OUTPUT"
+  - Added menu item "Generate RFQs v2" right after legacy "Generate RFQs"
+    (carry-forward from chunk 6, which was never landed in this branch)
+  - Added engine **Step 13.5-v2** immediately after legacy Step 13.5:
+    parallel v2 writer call, same try/catch isolation pattern
+- `templates/ActiveChunk.js`: `ACTIVE_CHUNK_TAG` → `chunk7` (skips
+  through `chunk6` which was never landed)
+- `00a_Version.js`: `ENGINE_VERSION` `3.3.0` → `3.5.0` (jumps through
+  3.4.0 which carries chunk-6 release notes inline)
+
+### Architecture notes
+
+- **Strict template/writer split** chosen over the pragmatic approach.
+  Template = layout only; writer = data only. Matches chunks 4/5.
+- **NO charts.** Legacy chart code was disabled in BDF-11 (the
+  `_cfeOutBuildCharts` function still exists but the call site is
+  commented out — see lines 320-329 of `06_WriteCfeOutput.js`). v2
+  does not migrate the dead chart code.
+- **BDF-5 hourly addendum and bill components block ARE migrated.**
+  Initial chunk-7 design dropped these as designer-facing, but verifying
+  side-by-side against legacy in the live workbook showed they're
+  needed in v2 too. Ported verbatim from
+  `_cfeOutWriteHourlySimAddendum`: same data sources
+  (`hourlySim.annual`, `.baseline`, `.savingsMxn`, `.annual.fullBill`,
+  `.provenance`, `.warnings`), same labels, same colors. Positioning
+  uses `getLastRow()+3` (matches legacy) so the block lands right after
+  whatever was last rendered — Y1SS at row 42 or the footer at row 35.
+- **Engine-wired AND menu** — per user decision. Engine call runs every
+  `runArgiaEngine()`; menu call lets designers update CFE_OUTPUT_v2 on
+  demand without rerunning the full engine.
+- **Sheet positioning** — CFE_OUTPUT_v2 is inserted immediately BEFORE
+  MDC_v2 in the tab order if MDC_v2 exists. Falls back to append if
+  MDC_v2 is missing (e.g. chunk 2 hasn't run on this workbook).
+- v2 reads from `INPUT_CFE`, `CFE_SIMULATION`, `BESS_SIMULATION` — the
+  same upstream sheets legacy reads from. These are not v2-renamed; they
+  are owned by other modules.
+- No legacy CFE_OUTPUT code is touched. `06_WriteCfeOutput.js`,
+  `CFE_OUT_SRC`, `CFE_OUT_ROW`, `_cfeOutReadScalar`, `_cfeOutReadMonthly`,
+  `_cfeOutWriteHeaderStrip`, `_cfeOutWriteKpiStrip`, `_cfeOutWriteSection1`,
+  `_cfeOutWriteSection2`, `_cfeOutWriteFooter`, `_cfeOutWriteYear1SteadySection`,
+  `setupCfeOutput` (menu entry) all remain untouched.
+
+### Verification status
+
+- ✅ All source files: `node --check` clean
+- ✅ 34 unit tests / 292 assertions green via Node shim
+- ⚠️ Visual verification on real spreadsheet: PENDING (run engine, then
+  compare CFE_OUTPUT_v2 side-by-side with legacy CFE_OUTPUT)
+- ⚠️ Y1SS section visual: PENDING (only renders if BESS steady-state
+  setup tool has been run on the workbook)
+- ⚠️ KPI tile 3 rich-text rendering: PENDING (rich text mocked in tests)
+
+---
+
+## [3.4.0] — 2026-05-26
+
+Chunk 6 of the output-v2 migration. Lands RFQs_v2: six parallel v2 RFQ
+sheets generated on demand via a new menu item. **No legacy recalc** —
+legacy RFQs continue working via the existing "Generate RFQs" menu item.
+**Note:** this version entry covers code that may not have been landed
+in the main branch; the chunk 7 release picks up its files.
+
+### Added — Chunk 6 (RFQs_v2)
+
+- Six v2 RFQ sheets: `RFQ_PANELES_v2`, `RFQ_INVERSORES_v2`,
+  `RFQ_ESTRUCTURA_v2`, `RFQ_ELECTRICO_v2` (includes BESS electrical BOS),
+  `RFQ_MONITOREO_v2`, `RFQ_BESS_v2` (NEW — no legacy counterpart).
+- Files: `templates/RfqRegistry.js`, `templates/setupRfqTemplate.js`,
+  `writers_v2/WriteRfqV2.js`, `writers_v2/helpers/RfqBomReader.js`, plus
+  4 test files (36 tests, 248 assertions, all green).
+- Menu item "Generate RFQs v2" calls `runWriteAllRfqsV2`. Not wired into
+  engine — menu-only.
+- BESS row split: battery (row 80) + commissioning (row 91) → RFQ_BESS_v2;
+  electrical BOS (rows 81-90) → RFQ_ELECTRICO_v2.
+
+### Architecture notes
+
+- v2 reads from BOM_v2 (not legacy BOM). RFQ year stamped from
+  `_META!B6` (calculated_at).
+- Banner convention: logo at (2, 1), title at (2, 3). Title-bar dark
+  styling dropped; matches BOM_v2 / MDC_v2 / INSTALLATION_v2.
+- Known limitation: floating-image cleanup not implemented in chunk 6.
+  Re-running "Generate RFQs v2" without first deleting the v2 RFQ sheets
+  stacks logos. Chunk 7 fixes this for CFE_OUTPUT_v2 via
+  `_cfeOutV2_removeImages` and the same pattern should be retrofitted
+  to other v2 templates in a follow-up chunk.
+
+---
+
 ## [3.3.0] — 2026-05-25
 
 Chunk 5 of the output-v2 migration. Lands INSTALLATION_v2 alongside the

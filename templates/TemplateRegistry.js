@@ -51,7 +51,8 @@ var V2_SHEETS = (typeof V2_SHEETS !== 'undefined' && V2_SHEETS) ? V2_SHEETS : {
   RFQ_INVERSORES     : 'RFQ_INVERSORES_v2',
   RFQ_ESTRUCTURA     : 'RFQ_ESTRUCTURA_v2',
   RFQ_ELECTRICO      : 'RFQ_ELECTRICO_v2',
-  RFQ_MONITOREO      : 'RFQ_MONITOREO_v2'
+  RFQ_MONITOREO      : 'RFQ_MONITOREO_v2',
+  RFQ_BESS           : 'RFQ_BESS_v2'         // NEW (Chunk 6)
 };
 
 
@@ -74,7 +75,8 @@ var V2_TEMPLATE_FUNCTIONS = (typeof V2_TEMPLATE_FUNCTIONS !== 'undefined' && V2_
   RFQ_INVERSORES : 'setupRfqTemplate',
   RFQ_ESTRUCTURA : 'setupRfqTemplate',
   RFQ_ELECTRICO  : 'setupRfqTemplate',
-  RFQ_MONITOREO  : 'setupRfqTemplate'
+  RFQ_MONITOREO  : 'setupRfqTemplate',
+  RFQ_BESS       : 'setupRfqTemplate'        // NEW (Chunk 6)
 };
 
 
@@ -94,7 +96,10 @@ var V2_LEGACY_MAP = (typeof V2_LEGACY_MAP !== 'undefined' && V2_LEGACY_MAP) ? V2
   'RFQ_INVERSORES' : 'RFQ_INVERSORES_v2',
   'RFQ_ESTRUCTURA' : 'RFQ_ESTRUCTURA_v2',
   'RFQ_ELECTRICO'  : 'RFQ_ELECTRICO_v2',
-  'RFQ_MONITOREO'  : 'RFQ_MONITOREO_v2'
+  'RFQ_MONITOREO'  : 'RFQ_MONITOREO_v2',
+  // RFQ_BESS has NO legacy counterpart (legacy never had a BESS RFQ).
+  // Listed here so Chunk 12 reset sees it via listV2Sheets().
+  'RFQ_BESS'       : 'RFQ_BESS_v2'           // NEW (Chunk 6) — no legacy
 };
 
 
@@ -152,7 +157,7 @@ function setupAllV2Templates(ss) {
   // Stable iteration order matching the migration order in the plan.
   var ORDER = ['MDC', 'BOM', 'INSTALLATION', 'PROJECT_CARD', 'CFE_OUTPUT',
                'RFQ_PANELES', 'RFQ_INVERSORES', 'RFQ_ESTRUCTURA',
-               'RFQ_ELECTRICO', 'RFQ_MONITOREO'];
+               'RFQ_ELECTRICO', 'RFQ_MONITOREO', 'RFQ_BESS'];
 
   for (var i = 0; i < ORDER.length; i++) {
     var key = ORDER[i];

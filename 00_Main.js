@@ -575,10 +575,12 @@ function onOpen() {
     .addItem('Import Helioscope',         'importHelioscopePdf')
     .addItem('Verify Layout',             'verifyInputs')
     .addItem('Update CFE_OUTPUT',         'setupCfeOutput')
+    .addItem('Update CFE_OUTPUT v2',      'runUpdateCfeOutputV2')
     .addItem('Generate MDC and BOM',      'runArgiaEngine')
     .addItem('Generate Installation',     'runInstallCostStandalone')
     .addItem('Generate Project Card',     'runWriteProjectCard')
     .addItem('Generate RFQs',             'runWriteAllRFQs')
+    .addItem('Generate RFQs v2',          'runWriteAllRfqsV2')
     .addSeparator()
     .addSubMenu(ui.createMenu('Exports')
       .addItem('Export MDC',                         'exportMDC')
@@ -979,6 +981,23 @@ function runArgiaEngine() {
     } catch (cfeErr) {
       engineLog(ss, 'Engine', 'WARNING',
         'CFE_OUTPUT skipped: ' + cfeErr.message +
+        '. Other outputs are unaffected.');
+    }
+
+    // Step 13.5-v2: CFE_OUTPUT_v2 render (Chunk 7) ---------------------------
+    // Parallel v2 writer; legacy continues writing to CFE_OUTPUT. Both
+    // visible during transition for visual comparison. Same source sheets,
+    // same try/catch isolation pattern as legacy 13.5.
+    //
+    // hourlySim is forwarded so v2 can render the same BDF-5 addendum
+    // legacy renders (rows 45-64: hourly summary + bill components +
+    // provenance). If hourlySim is null/blocked the addendum is skipped.
+    engineLog(ss, 'Engine', 'INFO', 'Step 13.5-v2: writing CFE_OUTPUT_v2');
+    try {
+      writeCfeOutputV2(ss, hourlySim);
+    } catch (cfeV2Err) {
+      engineLog(ss, 'Engine', 'WARNING',
+        'CFE_OUTPUT_v2 skipped: ' + cfeV2Err.message +
         '. Other outputs are unaffected.');
     }
 
