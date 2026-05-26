@@ -11,6 +11,111 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (MAJOR.MI
 
 ---
 
+## [3.3.0] — 2026-05-25
+
+Chunk 5 of the output-v2 migration. Lands INSTALLATION_v2 alongside the
+legacy INSTALLATION, plus the v2 audit sheet 95_INSTALL_DRIVER_MAP_v2.
+**No legacy recalc** — legacy INSTALLATION continues writing unchanged;
+v2 is parallel and additive.
+
+### Added — Chunk 5 (INSTALLATION_v2)
+
+- New file `templates/setupInstallationTemplate.js`: **beefy template** that
+  seeds all the structural content the writer doesn't generate.
+  Specifically:
+  - Banner rows 1-3: ARGIA logo at A2, "INSTALACIÓN · MXN" title at C2,
+    Spanish subtitle at C3. Mirrors legacy `addInstallationBanner`.
+  - Row 4 panel headers: "DRIVER / INPUT | VALUE | NOTES" in A4-C4 plus
+    "SUMMARY | =G9" in F4-G4. G4 is a formula mirror of the grand total.
+  - 30 driver-key labels in col A rows 5-34, in legacy order:
+    PROJECT_DC_WP..WORK_HEIGHT_M (engine drivers, rows 5-23),
+    INSTALLATION_TYPE..WEATHER_PROFILE (factor selections, rows 24-31),
+    BLENDED_LABOR_RATE_MXN_MH (row 32),
+    CONTINGENCY_PCT + INSURANCE_PCT_ON_LABOR_EQUIP (rows 33-34).
+  - NOTES helper text in col C rows 5-34, verbatim from legacy screenshot
+    ("Link from engine", "Estimator input", "Dropdown", "Reference only",
+    "Override allowed", etc).
+  - Data-validation dropdowns on rows 24-31 col B. Allowed-values lists
+    sourced from `02c_InputMap.js` (single source of truth). Defaults
+    pre-populated (ROOF, MEDIUM, STANDARD, NO, LOCAL, NO, MEDIUM, DRY).
+  - Percent-format `0.00%` + defaults (0.05 / 0.03) on rows 33-34.
+  - Currency `"$"#,##0` formatting on summary block + section grid.
+  - Cream/grey palette mirroring legacy `restyleInstallationTopZone`.
+  - Frozen rows = 3, hidden gridlines.
+- New file `writers_v2/WriteInstallationV2.js`: data writer with two
+  exports — `writeInstallationV2(ss, result, drivers, _testOpts)` for the
+  main INSTALLATION_v2 sheet, and `writeInstallationDriverMapV2(ss, drivers,
+  result, _testOpts)` for the audit sheet 95_INSTALL_DRIVER_MAP_v2. Mirrors
+  the legacy `writeInstallCost` calculation outputs byte-for-byte. Writer
+  does NOT touch col A or col C in the driver block (template's job).
+  Writer populates col B values for all 30 driver rows including factor
+  selections (sourced from `drivers.factorSelections`) and percent rows.
+  Currency formatting applied to summary, section grid, MH breakdown, and
+  line-item zone.
+- `templates/TemplateRegistry.js`: added `V2_SHEETS.INSTALL_DRIVER_MAP
+  = '95_INSTALL_DRIVER_MAP_v2'` so Reset Outputs (Chunk 12) can find the
+  v2 audit sheet.
+- `00_Main.js`: Step 12 captures `var installResult = runInstallCost(...)`
+  return value. Step 12-v2 added after Step 12, wrapped in `try/catch`.
+  Wires `setupInstallationTemplate(ss)` + `writeInstallationV2(...)` +
+  `writeInstallationDriverMapV2(...)`.
+- `13_CalcInstallCost.js`: tiny additive edit to `runInstallCost` —
+  attaches `result.drivers = drivers` before return. Lets Step 12-v2
+  reuse both without re-running calc layers. Backward-compatible.
+
+### Why "beefy template" instead of "thin shell"
+
+Original chunk 5 plan answered Q4 "writer does ALL formatting" and used a
+thin template that only ensured the sheet existed. First user run revealed
+visual gaps: no banner, no NOTES column, no dropdowns, no currency
+formatting, only 24 of 30 driver-block rows populated. Root cause: the
+legacy INSTALLATION sheet's structure comes from THREE sources —
+`addInstallationBanner` (banner), `restyleInstallationTopZone` (palette +
+formatting), and **manual hand-entry** (col A labels, col C NOTES,
+dropdowns — none of which any code generates). The writer was a verbatim
+port of `writeInstallCost`, which faithfully populates values onto an
+already-existing hand-built structure. v2 has no hand-built structure;
+the template now generates everything legacy assumed pre-existed.
+
+### Parity quirks preserved
+
+- Dropdowns on INSTALLATION_v2 rows 24-31 are display-only mirrors. Engine
+  reads selections from INPUT_INSTALL, not from this sheet. Editing the
+  dropdowns has no effect on the next engine run. Same behavior as legacy.
+- 95_INSTALL_DRIVER_MAP_v2 graceful no-op when sheet missing — matches
+  legacy `if (!sh) return`. Sheet structure not seeded by v2; comes from
+  IMPORTRANGE or manual setup, same as legacy.
+- G4 mirrors G9 via formula `=G9` (auto-updating grand-total banner). The
+  legacy sheet's screenshot showed a stale "$242,159" manual entry there —
+  v2 replaces it with a live formula. If strict-legacy behavior (leave G4
+  blank) is wanted, raise it.
+
+### BESS color forward-compatible addition
+
+- Legacy `SEC_HDR_BG`/`SEC_ITEM_BG`/`SEC_SUB_BG` palettes don't list a
+  BESS entry, so BESS lines render with grey fallback.
+- v2 explicitly adds BESS palette entries with deep purple
+  (`#311B92` / `#EDE7F6` / `#D1C4E9`) for visual distinction from INDIRECT.
+- Flag for visual review before cutover (Chunk 11).
+
+### Tests — Chunk 5
+
+- 12 template tests: sheet creation + idempotency, custom-sheet override,
+  banner content, A4-C4 panel headers, F4-G4 SUMMARY + =G9 formula,
+  30 driver-key labels in col A, NOTES helper text in col C, 8 dropdowns
+  on rows 24-31 with allowed-values from InputMap, dropdown defaults
+  pre-populated, percent rows format + defaults, frozen rows = 3,
+  setHiddenGridlines.
+- 16 writer tests: throws-on-missing-sheet, driver values rows 5-23,
+  factor selections rows 24-31, BLENDED_LABOR_RATE row 32, percent rows
+  33-34 (decimal), summary block, section grid, MH breakdown, line-item
+  zone, zero-cost row styling, grand total, legend, driver-map no-op,
+  driver-map updates, null result handling, writer does NOT write col A
+  labels in driver block.
+- All 28 unit tests pass via `node scripts/chunk5_selftest.js`.
+
+---
+
 ## [3.2.0] — 2026-05-25
 
 Chunk 4 of the output-v2 migration. Lands BOM_v2 alongside the legacy

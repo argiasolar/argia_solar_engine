@@ -41,16 +41,17 @@
 // callers can write V2_SHEETS.MDC the same way they write SH.MDC.
 // -----------------------------------------------------------------------------
 var V2_SHEETS = (typeof V2_SHEETS !== 'undefined' && V2_SHEETS) ? V2_SHEETS : {
-  MDC            : 'MDC_v2',
-  BOM            : 'BOM_v2',
-  INSTALLATION   : 'INSTALLATION_v2',
-  PROJECT_CARD   : 'PROJECT_CARD_v2',
-  CFE_OUTPUT     : 'CFE_OUTPUT_v2',
-  RFQ_PANELES    : 'RFQ_PANELES_v2',
-  RFQ_INVERSORES : 'RFQ_INVERSORES_v2',
-  RFQ_ESTRUCTURA : 'RFQ_ESTRUCTURA_v2',
-  RFQ_ELECTRICO  : 'RFQ_ELECTRICO_v2',
-  RFQ_MONITOREO  : 'RFQ_MONITOREO_v2'
+  MDC                : 'MDC_v2',
+  BOM                : 'BOM_v2',
+  INSTALLATION       : 'INSTALLATION_v2',
+  INSTALL_DRIVER_MAP : '95_INSTALL_DRIVER_MAP_v2',
+  PROJECT_CARD       : 'PROJECT_CARD_v2',
+  CFE_OUTPUT         : 'CFE_OUTPUT_v2',
+  RFQ_PANELES        : 'RFQ_PANELES_v2',
+  RFQ_INVERSORES     : 'RFQ_INVERSORES_v2',
+  RFQ_ESTRUCTURA     : 'RFQ_ESTRUCTURA_v2',
+  RFQ_ELECTRICO      : 'RFQ_ELECTRICO_v2',
+  RFQ_MONITOREO      : 'RFQ_MONITOREO_v2'
 };
 
 

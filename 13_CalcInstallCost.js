@@ -1721,6 +1721,13 @@ function runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult) {
   engineLog(ss, 'InstallCost', 'INFO', 'Writing driver map...');
   writeInstallDriverMap(ss, drivers, result);
 
+  // Chunk 5 (INSTALLATION_v2): attach drivers to the returned result so the
+  // v2 path in 00_Main.js Step 12-v2 can feed both into writeInstallationV2
+  // without re-running the calc layers. Backward-compatible: existing
+  // callers that read result.totals / result.items continue to work
+  // (the property is additive).
+  result.drivers = drivers;
+
   return result;
 }
 

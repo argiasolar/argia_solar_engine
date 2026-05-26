@@ -26,6 +26,20 @@
 //   DB_VERSION uses YYYY.MM
 //     Bump when any *_DB or master table changes.
 //
+// 3.3.0 — MINOR bump (2026-05-25). Chunk 5 lands INSTALLATION_v2: a parallel
+// v2 sheet (INSTALLATION_v2) is now written alongside the legacy INSTALLATION,
+// plus the audit sheet 95_INSTALL_DRIVER_MAP_v2. The v2 writer mirrors legacy
+// writeInstallCost section-by-section across all 9 IC_SECTIONS (AC, DC,
+// RACKING SYSTEM, CONNECTION, SAFETY, GENERAL SITE, EQUIPMENT, BESS, INDIRECT).
+// Calc layers (loadInstallLib, readInstallDrivers, calcInstallCost,
+// applyKwpBenchmarks) are reused unchanged from 13_CalcInstallCost.js — per
+// chunk plan, calc is upstream from writers and not in v2 scope. Tiny
+// additive edit to runInstallCost: attaches .drivers to the returned result
+// so Step 12-v2 can reuse it without re-running the calc. Strict superset of
+// legacy: v2 writer also writes the driver-block key column (col A rows 4-35)
+// that legacy assumes pre-existing. Legacy INSTALLATION remains source of
+// truth until cutover. No legacy recalc.
+//
 // 3.2.0 — MINOR bump (2026-05-25). Chunk 4 lands BOM_v2: a parallel v2 sheet
 // (BOM_v2) is now written alongside the legacy BOM. All 8 sections render
 // (panels / inverters / structure / DC / AC / transformer / monitoring / BESS),
@@ -52,7 +66,7 @@
 // and run "Repair CFE_SIM Capacidad (BDF-11)" + "Setup BESS Steady-state
 // (BDF-11.1)" on each project workbook to migrate.
 //
-var ENGINE_VERSION = '3.2.0';
+var ENGINE_VERSION = '3.3.0';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default

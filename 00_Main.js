@@ -877,12 +877,41 @@ function runArgiaEngine() {
     // Step 12: install cost -------------------------------------------------
     _setArgiaProgress(12, TOTAL, 'Installation cost\u2026');
     engineLog(ss, 'Engine', 'INFO', 'Step 12: installation cost');
+    var installResult = null;
     try {
-      runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult);
+      // Chunk 5: capture the return value so Step 12-v2 can reuse it
+      // without re-running the calc layers. runInstallCost attaches
+      // .drivers to the result object (see 13_CalcInstallCost.js).
+      installResult = runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult);
     } catch (installErr) {
       engineLog(ss, 'Engine', 'WARNING',
         'Installation cost skipped: ' + installErr.message +
         '. Run "Calculate Installation" from menu after fixing.');
+    }
+
+    // Step 12-v2: write INSTALLATION_v2 in parallel ---------------------------
+    // Output v2 migration (Chunk 5). Legacy INSTALLATION above remains the
+    // source of truth; this v2 path writes to INSTALLATION_v2 and is verified
+    // side-by-side. Wrapped in try/catch like other v2 steps: a v2 bug never
+    // breaks the legacy pipeline.
+    //
+    // Reuses the calc layers (loadInstallLib, readInstallDrivers,
+    // calcInstallCost, applyKwpBenchmarks) by piggybacking on Step 12's
+    // result. Skipped if Step 12 threw (installResult is null).
+    if (installResult) {
+      engineLog(ss, 'Engine', 'INFO', 'Step 12-v2: writing INSTALLATION_v2');
+      try {
+        setupInstallationTemplate(ss);
+        writeInstallationV2(ss, installResult, installResult.drivers);
+        writeInstallationDriverMapV2(ss, installResult.drivers, installResult);
+      } catch (v2InstErr) {
+        engineLog(ss, 'V2', 'WARNING',
+          'INSTALLATION_v2 skipped: ' + v2InstErr.message +
+          '. Legacy INSTALLATION unaffected.\n' + (v2InstErr.stack || ''));
+      }
+    } else {
+      engineLog(ss, 'V2', 'INFO',
+        'Step 12-v2: skipped because legacy Step 12 returned no result');
     }
 
     // Step 13: project card -------------------------------------------------
