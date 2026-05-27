@@ -499,6 +499,77 @@ Honest list of what could go wrong. Each item has a mitigation.
 
 > Updated at each chunk boundary. Authoritative resume point.
 
+---
+
+### Current state (2026-05-27, engine v3.7.0) — Tier 1, 2, 3 shipped
+
+The migration plan's "Chunks 0–11" have all been completed and shipped via
+three "tier" commits. The detailed chunk-by-chunk history below is preserved
+for context; this block is the authoritative current state.
+
+**Tier 1 (3.5.0, 2026-05-26):** Engine writes only `_v2` sheets in
+`runArgiaEngine`. Both legacy and v2 writers existed; engine called v2.
+Legacy writers became dead code.
+
+**Tier 2 (3.6.0, 2026-05-26, commit `60d83af`):** Legacy writer files
+deleted (~8100 LOC removed):
+- `06_WriteCfeOutput.js`, `07_WriteMDC.js`, `08_WriteBOM.js`,
+  `14_WriteProjectCard.js`, `15_WriteRFQ.js`, `16_WriteOverview.js` (orphan)
+- Legacy `writeInstallCost` + `writeInstallDriverMap` deleted from
+  `13_CalcInstallCost.js` (~370 lines). Calc layer preserved unchanged.
+- `13_CalcInstallCost.js` switched to `_bomV2_loadStructureDb` /
+  `_bomV2_resolveStructure` in `writers_v2/helpers/BomDbHelpers.js`.
+- Output validator (`09b_OutputValidate.js`) reads v2 sheet names.
+- Five legacy test files deleted (Mdc/Cfe writer tests, e2e pipeline,
+  row constants, resolve structure).
+- `30_ArgiaKicker.js` (1397 lines) and its 4 menu items removed.
+- Menu items "Export Project Card" + 5-item "Export RFQ" submenu
+  removed from `00_Main.js` (functions they pointed at were deleted).
+
+**Tier 3 (3.7.0, 2026-05-27):** PDF exporter cutover.
+- `12_ExportPDF.js` `PDF_EXPORTS` config now targets v2 sheets with
+  verified ranges from a real CULLIGAN export:
+  - `MDC_v2` B1:G115 portrait (was MDC B1:F99 — +col G, +16 BESS rows)
+  - `BOM_v2` A1:H94 portrait (was BOM A1:H77 — +14 BESS rows)
+  - `INSTALLATION_v2` A1:J34 landscape (unchanged customer region)
+  - `PROJECT_CARD_v2` A1:J69 landscape (NEW: PC export restored)
+  - `RFQ_*_v2` (6 sheets) A1:M&lt;lastRow&gt; landscape (NEW: 5 categories
+    + RFQ_BESS, end row resolved at export time)
+- New menu structure: "Export Project Card", "Export RFQ" submenu (6
+  items + Export All RFQs), "Export All" bundles MDC+BOM+Install+PC.
+- 121 unit-test assertions cover the config table and URL builder
+  (`PdfExportConfigTests.gs`, `PdfExportUrlBuilderTests.gs`).
+
+**Post-cutover bugs surfaced and fixed before Tier 3** (per Tomas's
+handoff, captured here for the record):
+1. Logo stacking on the v2 banner (cosmetic) — fixed.
+2. PC_v2 was silently reading from legacy BOM and accidentally working
+   because legacy BOM had the right CULLIGAN data; led to a blank BESS
+   subtotal when BOM_v2 was the only writer. Fixed by switching PC_v2
+   reads to `BOM_v2`.
+3. Standalone `runWriteProjectCardV2` called a nonexistent function
+   (`runBessSuggestion`); should have been `runBessStep(ss)`. Fixed.
+4. TOTAL row validation had a dimensional mismatch: PV rows are `$/kWp`
+   USD but the BESS row is `$/kWh` USD. Validation logic now branches
+   on row type so BESS gets the right range. The CULLIGAN row 39 cell
+   note confirms this is working: `$727/kWh │ range $350–$800/kWh`
+   → PASS. (Note: `INPUT_PROJECT!F61` unit label says "USD/kWp" but
+   should say "USD/kWh" — labeling bug, math is correct. Fix separately.)
+
+**Outstanding items deferred from Tier 3:**
+- INPUT_MAP patch helper (`patchInputProjectMissingRows`) — handoff said
+  "nice to have", not "must do". Skipped for now; revisit if another
+  workbook needs a row 61–style patch.
+- Cleanup Legacy Tabs menu item — handoff said NOT YET. Run engine on
+  2–3 real production projects under v3.7.0 first, then build the
+  confirmation-prompted delete menu and remove the stale legacy tabs.
+- `INPUT_PROJECT!F61` unit label fix (`USD/kWp` → `USD/kWh` on the BESS
+  row). Single cell. Trivial when it gets touched.
+
+---
+
+### Pre-Tier history (preserved for context)
+
 **Current chunk:** BDF-6 (INPUT_BESS picker wiring) complete. Next: return to output migration (Chunk 2: BOM_v2) or another BDF follow-up.
 
 **Track split:**

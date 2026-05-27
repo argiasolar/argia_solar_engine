@@ -467,82 +467,233 @@ function _detectUserData(sh, tabName) {
 
 
 // ---------------------------------------------------------------------------
-// Logo placement — top-left, cols B-C, rows 2-3.
-// Reads the Drive folder ID from 00_MASTER_LINK!K2 and looks for
-// argia_logo_dark.png inside. Silently skips if not found (non-fatal).
+// Logo placement -- in-cell image via CellImage API (Tier 3.2, 2026-05-27).
+//
+// HISTORY:
+//   v1 (legacy): sh.insertImage(blob, col, row) -- floating image. Broken
+//                in PDF exports (renders as black rectangle).
+//   v2 (3.7.1):  =IMAGE("https://drive.google.com/thumbnail?id=...") --
+//                broken because Google's thumbnail endpoint changed in
+//                fall 2025 and now serves nothing to IMAGE() callers
+//                (confirmed by Adobe + others reporting the same break).
+//                The cell appeared blank in Sheets and PDFs.
+//   v3 (this):   SpreadsheetApp.newCellImage() with the blob read directly
+//                from Drive. The image is embedded as cell content using
+//                Apps Script's CellImage API. No dependency on public
+//                URLs, sharing settings, thumbnail servers, or IMAGE()
+//                formula behavior. Renders identically in Sheets and PDF
+//                exports because in-cell images are part of the cell's
+//                value, not an overlay layer.
+//
+// Signature unchanged: _insertArgiaLogo(sh, row, col). All 13 existing
+// call sites continue to work without edit.
+//
+// Caching: the binary blob (small PNG, typically <30 KB) is held in
+// CacheService for 6 hours so repeated template-setup calls in the same
+// session don't re-read the file from Drive. PropertiesService is NOT
+// used (it has a 9 KB value cap; binary > base64 + JSON quoting could
+// exceed it).
+//
+// Public helper: refreshArgiaLogoCache() drops the cache so the next
+// template-setup re-reads from Drive. Wired to ARGIA -> Setup ->
+// Refresh Logo Cache in 00_Main.js.
 // ---------------------------------------------------------------------------
 var LOGO_FILENAME = 'argia_logo_dark.png';
 var LOGO_MASTER_LINK_SHEET = '00_MASTER_LINK';
 var LOGO_MASTER_LINK_CELL  = 'K2';
-var LOGO_HEIGHT_PX = 42;   // Was 50px; 2026-04-24 reduced 15% per user request
-                            // for cleaner banner across all input tabs.
+var LOGO_HEIGHT_PX = 42;            // px target height (legacy value)
+var LOGO_CELL_WIDTH_PX = 160;       // target column width; logo aspect ~3:1
+var LOGO_CACHE_KEY_B64 = '_argia_logo_b64_v3';
+var LOGO_CACHE_KEY_MIME = '_argia_logo_mime_v3';
+var LOGO_CACHE_KEY_FOLDER = '_argia_logo_folder_v3';
+var LOGO_CACHE_TTL_SEC = 6 * 60 * 60;   // 6 hours
 
 function _insertArgiaLogo(sh, row, col) {
   try {
-    // De-dup: remove every floating image already on this sheet before
-    // inserting the new logo. Without this, every template-setup call
-    // stacks a fresh logo on top of the old one. Bug found 2026-05-26
-    // after Tier 2 cutover. CFE_OUTPUT_v2's setup had a private remover
-    // (_cfeOutV2_removeImages) for the same reason since chunk 7; this
-    // generalizes the fix so every caller of _insertArgiaLogo is safe.
+    // NOTE on dedup (removed 2026-05-27, v3.7.4):
+    //   v3 uses the CellImage API (in-cell image, not floating image), so
+    //   this function never creates floating images. The old dedup block
+    //   was a one-time cleanup for workbooks upgrading from v1's
+    //   sh.insertImage approach -- but it ran on every call, and the
+    //   CFE template setup has its own _cfeOutV2_removeImages cleanup
+    //   step. The two were doubling up and breaking CFE's image-cleanup
+    //   unit test (test counted removals; this helper's dedup was
+    //   removing extra images the template author didn't expect).
     //
-    // Wipes all floating images (charts use a separate API and are
-    // untouched). No v2 sheet currently has additional floating images
-    // that need to survive -- if that changes, narrow the remover by
-    // checking img.getAnchorCell().
+    //   Templates that need to clean up old floating images should do
+    //   so themselves (CFE already does). For one-off cleanup of legacy
+    //   workbooks, run the engine's "Reset v2 Templates" path.
+
+    // ---- Clear any prior =IMAGE formula in the target cell --------------
+    // v2 wrote an =IMAGE(...) formula. Clear it so the CellImage API can
+    // own the cell value. Single cell only; we don't touch neighbors.
+    var target = sh.getRange(row, col);
     try {
-      if (typeof sh.getImages === 'function') {
-        var existingImgs = sh.getImages();
-        for (var ei = 0; ei < existingImgs.length; ei++) {
-          try { existingImgs[ei].remove(); } catch (_) { /* keep going */ }
-        }
+      var existingFormula = target.getFormula();
+      if (existingFormula && existingFormula.indexOf('IMAGE(') !== -1) {
+        target.clearContent();
       }
-    } catch (dedupErr) {
-      // Best-effort -- if image enumeration fails for any reason, fall
-      // through to the insert and accept the stacking risk. Better a
-      // visible logo with a duplicate than no logo at all.
-      Logger.log('_insertArgiaLogo: image de-dup skipped: ' + dedupErr.message);
-    }
+    } catch (_) { /* non-fatal */ }
 
-    var ss = sh.getParent();
-    var link = ss.getSheetByName(LOGO_MASTER_LINK_SHEET);
-    if (!link) {
-      Logger.log('_insertArgiaLogo: sheet "' + LOGO_MASTER_LINK_SHEET + '" not found, skipping logo.');
-      return;
-    }
-    var folderId = String(link.getRange(LOGO_MASTER_LINK_CELL).getValue() || '').trim();
-    if (!folderId) {
-      Logger.log('_insertArgiaLogo: ' + LOGO_MASTER_LINK_SHEET + '!' + LOGO_MASTER_LINK_CELL + ' is empty, skipping logo.');
+    // ---- Resolve the logo as a base64 data URI --------------------------
+    var dataUri = _resolveArgiaLogoDataUri_(sh.getParent());
+    if (!dataUri) {
+      // Already logged inside resolver. Leave the cell blank.
       return;
     }
 
-    var folder;
-    try { folder = DriveApp.getFolderById(folderId); }
-    catch (e) {
-      Logger.log('_insertArgiaLogo: folder ID "' + folderId + '" not accessible: ' + e.message);
-      return;
-    }
+    // ---- Build a CellImage and write it into the target cell ------------
+    // CellImage API requires a URL-shaped value, but a "data:image/png;base64,..."
+    // URI counts as a URL and is rendered inline (no fetch). This is the
+    // documented bulletproof pattern.
+    var cellImg = SpreadsheetApp.newCellImage()
+      .setSourceUrl(dataUri)
+      .setAltTextTitle('ARGIA Solar')
+      .build();
+    target.setValue(cellImg);
 
-    var files = folder.getFilesByName(LOGO_FILENAME);
-    if (!files.hasNext()) {
-      Logger.log('_insertArgiaLogo: "' + LOGO_FILENAME + '" not found in folder ' + folderId);
-      return;
-    }
+    // ---- Match row height and column width so the logo isn't cropped ----
+    // Only widen the column if it's narrower than the target; never shrink
+    // (caller may have set a deliberately wider banner column).
+    try {
+      var currentColW = sh.getColumnWidth(col);
+      if (currentColW < LOGO_CELL_WIDTH_PX) {
+        sh.setColumnWidth(col, LOGO_CELL_WIDTH_PX);
+      }
+    } catch (_) { /* non-fatal */ }
 
-    var blob = files.next().getBlob();
-    // Place at row 2, col B (col=2). Apps Script uses 1-based cell coords
-    // for insertImage, with offset in pixels.
-    var img = sh.insertImage(blob, col, row, 0, 0);
+    try {
+      var currentRowH = sh.getRowHeight(row);
+      // +8px padding so the 42px logo doesn't touch the cell edges.
+      var targetRowH = LOGO_HEIGHT_PX + 8;
+      if (currentRowH < targetRowH) {
+        sh.setRowHeight(row, targetRowH);
+      }
+    } catch (_) { /* non-fatal */ }
 
-    // Scale to target height, preserve aspect ratio
-    var currentH = img.getHeight();
-    if (currentH > 0) {
-      var ratio = LOGO_HEIGHT_PX / currentH;
-      img.setHeight(LOGO_HEIGHT_PX);
-      img.setWidth(Math.round(img.getWidth() * ratio));
-    }
+    // Center vertically, align left so the banner title (which sits to
+    // the right of the logo in v2 templates) reads cleanly.
+    target.setVerticalAlignment('middle').setHorizontalAlignment('left');
+
   } catch (e) {
     Logger.log('_insertArgiaLogo: unexpected error, skipping logo. ' + e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _resolveArgiaLogoDataUri_: returns "data:image/png;base64,..." for the
+// logo file, or null if it can't be resolved.
+//
+// Caching strategy:
+//   - The base64 string can be ~30-100 KB for a 160-wide PNG -- too big
+//     for PropertiesService (9 KB cap per value).
+//   - CacheService.getScriptCache() has a 100 KB cap per value and a
+//     6-hour TTL. That fits the typical logo file comfortably.
+//   - If the file is larger than 100 KB or the cache is unavailable,
+//     we fall through to live read every call (still works, just
+//     slower -- ~1-2 DriveApp calls per template setup).
+//   - Cache is keyed by folder ID. If 00_MASTER_LINK!K2 changes
+//     (workbook copied to a new project), the next read goes live.
+// ---------------------------------------------------------------------------
+function _resolveArgiaLogoDataUri_(ss) {
+  // ---- Read folder ID from 00_MASTER_LINK!K2 --------------------------
+  var link = ss.getSheetByName(LOGO_MASTER_LINK_SHEET);
+  if (!link) {
+    Logger.log('_resolveArgiaLogoDataUri_: sheet "' + LOGO_MASTER_LINK_SHEET + '" not found, skipping logo.');
+    return null;
+  }
+  var folderId = String(link.getRange(LOGO_MASTER_LINK_CELL).getValue() || '').trim();
+  if (!folderId) {
+    Logger.log('_resolveArgiaLogoDataUri_: ' + LOGO_MASTER_LINK_SHEET + '!' + LOGO_MASTER_LINK_CELL + ' is empty, skipping logo.');
+    return null;
+  }
+
+  // ---- Cache hit? -----------------------------------------------------
+  var cache;
+  try { cache = CacheService.getScriptCache(); } catch (_) { cache = null; }
+  if (cache) {
+    try {
+      var cachedFolder = cache.get(LOGO_CACHE_KEY_FOLDER);
+      var cachedB64    = cache.get(LOGO_CACHE_KEY_B64);
+      var cachedMime   = cache.get(LOGO_CACHE_KEY_MIME);
+      if (cachedFolder === folderId && cachedB64 && cachedMime) {
+        return 'data:' + cachedMime + ';base64,' + cachedB64;
+      }
+    } catch (_) { /* fall through */ }
+  }
+
+  // ---- Live read from Drive ------------------------------------------
+  var folder;
+  try { folder = DriveApp.getFolderById(folderId); }
+  catch (e) {
+    Logger.log('_resolveArgiaLogoDataUri_: folder ID "' + folderId + '" not accessible: ' + e.message);
+    return null;
+  }
+
+  var files = folder.getFilesByName(LOGO_FILENAME);
+  if (!files.hasNext()) {
+    Logger.log('_resolveArgiaLogoDataUri_: "' + LOGO_FILENAME + '" not found in folder ' + folderId);
+    return null;
+  }
+  var file = files.next();
+  var blob;
+  try { blob = file.getBlob(); }
+  catch (e) {
+    Logger.log('_resolveArgiaLogoDataUri_: getBlob failed: ' + e.message);
+    return null;
+  }
+
+  var mime = blob.getContentType() || 'image/png';
+  var bytes = blob.getBytes();
+  var b64;
+  try { b64 = Utilities.base64Encode(bytes); }
+  catch (e) {
+    Logger.log('_resolveArgiaLogoDataUri_: base64Encode failed: ' + e.message);
+    return null;
+  }
+
+  // ---- Cache the encoded blob (best-effort) --------------------------
+  // CacheService rejects values >100 KB with an exception. If our base64
+  // is over the limit, skip caching -- the function still works, just
+  // slower on subsequent calls.
+  if (cache && b64.length < 95 * 1024) {
+    try {
+      cache.put(LOGO_CACHE_KEY_FOLDER, folderId, LOGO_CACHE_TTL_SEC);
+      cache.put(LOGO_CACHE_KEY_B64,    b64,      LOGO_CACHE_TTL_SEC);
+      cache.put(LOGO_CACHE_KEY_MIME,   mime,     LOGO_CACHE_TTL_SEC);
+    } catch (_) { /* non-fatal */ }
+  } else if (cache) {
+    Logger.log('_resolveArgiaLogoDataUri_: logo too large to cache (' +
+               b64.length + ' bytes base64); will re-read from Drive each call.');
+  }
+
+  return 'data:' + mime + ';base64,' + b64;
+}
+
+// ---------------------------------------------------------------------------
+// PUBLIC: clear the cached logo blob. Use this if the logo file is
+// replaced in Drive and you want the next template-setup run to pick up
+// the new version without waiting for the 6-hour TTL.
+//
+// Wired to ARGIA -> Setup -> Refresh Logo Cache (added in 00_Main.js).
+// ---------------------------------------------------------------------------
+function refreshArgiaLogoCache() {
+  try {
+    var cache = CacheService.getScriptCache();
+    cache.removeAll([LOGO_CACHE_KEY_FOLDER, LOGO_CACHE_KEY_B64, LOGO_CACHE_KEY_MIME]);
+    // Also wipe the v2 PropertiesService keys (cleans up workbooks
+    // upgrading from 3.7.1).
+    try {
+      var props = PropertiesService.getScriptProperties();
+      props.deleteProperty('_argia_logo_url_cache_v1');
+      props.deleteProperty('_argia_logo_url_cache_folder_v1');
+    } catch (_) { /* non-fatal */ }
+    var ui = SpreadsheetApp.getUi();
+    ui.alert('Argia logo cache cleared',
+             'The next template-setup run will re-read the logo from Drive.',
+             ui.ButtonSet.OK);
+  } catch (e) {
+    Logger.log('refreshArgiaLogoCache: ' + e.message);
   }
 }
 

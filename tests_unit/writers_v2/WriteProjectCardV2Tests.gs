@@ -86,7 +86,13 @@ function _makePcMockSpreadsheet(opts) {
       setBorder: function() { return proxy; },
       merge: function() { return proxy; },
       breakApart: function() { return proxy; },
-      setWrap: function() { return proxy; }
+      setWrap: function() { return proxy; },
+      // Added 2026-05-27: writeProjectCardV2 now calls .clearContent() on
+      // ranges before populating them (defensive cleanup added when the
+      // writer started running against templates that may already have
+      // stale content). The mock needs to support it; it's a no-op here
+      // because the mock doesn't track cell state -- only writes.
+      clearContent: function() { return proxy; }
     };
     return proxy;
   }
@@ -147,9 +153,17 @@ function _makePcMockSpreadsheet(opts) {
     _bom: bomSheet,
     _install: installSheet,
     getSheetByName: function(name) {
+      // PC sheet: v2 only.
       if (name === V2_SHEETS.PROJECT_CARD) return pcSheet;
-      if (name === SH.BOM) return bomSheet;
-      if (name === 'INSTALLATION') return installSheet;
+      // BOM: the writer was migrated to read from 'BOM_v2' in Tier 2
+      // (2026-05-26) -- the legacy 'BOM' sheet is no longer refreshed by
+      // the engine after Tier 1. Recognize both names so this mock works
+      // for any caller that still passes through legacy code paths, but
+      // the primary key is 'BOM_v2'.
+      if (name === 'BOM_v2' || name === SH.BOM) return bomSheet;
+      // INSTALLATION: same Tier 2 migration -- writer reads from
+      // 'INSTALLATION_v2'. Cell positions are identical to legacy.
+      if (name === 'INSTALLATION_v2' || name === 'INSTALLATION') return installSheet;
       return null;
     }
   };

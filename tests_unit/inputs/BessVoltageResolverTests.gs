@@ -48,20 +48,27 @@ registerTest({
              'function', typeof resolveBessVoltage);
 
     // === Pure resolution logic =============================================
-    // Contract: DB voltage wins if it's a valid positive number; otherwise
-    // fall back to the manual cell; otherwise 0 (signaling "not supplied").
+    // BDF-7.1 contract: manual voltage cell wins if it's a valid positive
+    // number; DB is the fallback for designers who haven't typed in a
+    // voltage themselves. 0 means "not supplied".
+    //
+    // BDF-7.1 (manual-wins) inverted the previous DB-wins behavior so the
+    // BESS path matches the rest of the engine where INPUT_* overrides
+    // MASTER_DB. Resolver code (01a_ReadInputsBess.js:62-68) reflects the
+    // current contract; this test was previously asserting the old DB-wins
+    // contract and failing -- updated 2026-05-27.
     t.assert('DB 1200 + blank manual -> 1200',
              1200, resolveBessVoltage(1200, ''));
-    t.assert('DB 1200 + manual 600 -> 1200 (DB wins)',
-             1200, resolveBessVoltage(1200, 600));
+    t.assert('DB 1200 + manual 600 -> 600 (manual wins, BDF-7.1)',
+             600,  resolveBessVoltage(1200, 600));
     t.assert('DB 0 + manual 600 -> 600 (manual fallback)',
              600,  resolveBessVoltage(0, 600));
     t.assert('DB 0 + blank manual -> 0 (not supplied)',
              0,    resolveBessVoltage(0, ''));
     t.assert('DB junk + manual 480 -> 480',
              480,  resolveBessVoltage('Loading...', 480));
-    t.assert('DB negative + manual 600 -> 600',
-             600,  resolveBessVoltage(-5, 600));
+    t.assert('DB 1200 + manual negative -> 1200 (negative manual ignored, DB fallback)',
+             1200, resolveBessVoltage(1200, -5));
     t.assert('both junk -> 0',
              0,    resolveBessVoltage('x', 'y'));
   }

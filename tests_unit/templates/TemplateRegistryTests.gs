@@ -2,23 +2,35 @@
 // ARGIA TESTS -- tests_unit/templates/TemplateRegistryTests.gs
 // -----------------------------------------------------------------------------
 // CHUNK 0 — Template framework registry tests.
+// UPDATED 2026-05-27: counts bumped after Chunk 6 (RFQ_BESS added) and the
+// addition of INSTALL_DRIVER_MAP to V2_SHEETS:
+//   V2_SHEETS              : 12 entries (10 + RFQ_BESS + INSTALL_DRIVER_MAP)
+//   V2_TEMPLATE_FUNCTIONS  : 11 entries (RFQ_BESS shares setupRfqTemplate;
+//                                        INSTALL_DRIVER_MAP has no template)
+//   V2_LEGACY_MAP          : 11 entries (INSTALL_DRIVER_MAP excluded -- it's
+//                                        a v2-only audit sheet)
+// Two V2_SHEETS keys are intentionally absent from companion maps and
+// these tests now check those exact exceptions instead of treating them
+// as failures.
 //
 // COVERAGE
 //   Pure invariant checks on V2_SHEETS, V2_TEMPLATE_FUNCTIONS, V2_LEGACY_MAP,
 //   getV2SheetForLegacy(), listV2Sheets(), setupAllV2Templates().
 //
-//   - exactly 10 v2 sheets
+//   - exactly 12 v2 sheets
 //   - every sheet name ends in '_v2' (lowercase)
-//   - every key in V2_SHEETS has a matching entry in V2_TEMPLATE_FUNCTIONS
-//     and V2_LEGACY_MAP
+//   - every key in V2_SHEETS (except INSTALL_DRIVER_MAP) has a matching
+//     entry in V2_TEMPLATE_FUNCTIONS
+//   - every key in V2_SHEETS (except INSTALL_DRIVER_MAP) has a matching
+//     entry in V2_LEGACY_MAP
 //   - no duplicate v2 sheet names
-//   - all 5 RFQ keys map to the same shared setup function
-//   - the legacy ↔ v2 mapping is consistent with V2_SHEETS
+//   - all 6 RFQ keys map to the same shared setup function
+//   - the legacy ↔ v2 mapping is consistent with V2_SHEETS for the
+//     entries that exist in both
 //   - getV2SheetForLegacy('MDC') returns 'MDC_v2'
 //   - getV2SheetForLegacy(nonsense) returns null
-//   - listV2Sheets() returns 10 strings
-//   - setupAllV2Templates() returns a well-formed summary even when no
-//     setup function is defined (the Chunk 0 state)
+//   - listV2Sheets() returns 12 strings
+//   - setupAllV2Templates() returns a well-formed summary
 //
 // CLASSIFICATION
 //   group=unit. Pure data checks. No sheet I/O. No engine dependencies.
@@ -44,7 +56,7 @@ registerTest({
       typeof V2_SHEETS === 'object' && V2_SHEETS !== null);
 
     var sheetKeys = Object.keys(V2_SHEETS);
-    t.assert('V2_SHEETS has exactly 10 entries', 10, sheetKeys.length);
+    t.assert('V2_SHEETS has exactly 12 entries', 12, sheetKeys.length);
 
     // Every sheet name must end with '_v2' lowercase
     var allLowerV2Suffix = true;
@@ -76,26 +88,32 @@ registerTest({
       typeof V2_TEMPLATE_FUNCTIONS === 'object' && V2_TEMPLATE_FUNCTIONS !== null);
 
     var fnKeys = Object.keys(V2_TEMPLATE_FUNCTIONS);
-    t.assert('V2_TEMPLATE_FUNCTIONS has exactly 10 entries (1 per sheet)',
-      10, fnKeys.length);
+    t.assert('V2_TEMPLATE_FUNCTIONS has exactly 11 entries (1 per templated sheet; INSTALL_DRIVER_MAP excluded)',
+      11, fnKeys.length);
 
-    // Every V2_SHEETS key has a matching V2_TEMPLATE_FUNCTIONS entry
+    // Every V2_SHEETS key (except INSTALL_DRIVER_MAP, which is a v2-only
+    // audit sheet with no template) has a matching V2_TEMPLATE_FUNCTIONS
+    // entry.
+    var TEMPLATELESS_V2_SHEETS = { 'INSTALL_DRIVER_MAP': true };
     var allKeysMatch = true;
     var missingKey = '';
     for (var k = 0; k < sheetKeys.length; k++) {
-      if (typeof V2_TEMPLATE_FUNCTIONS[sheetKeys[k]] !== 'string') {
+      var sk = sheetKeys[k];
+      if (TEMPLATELESS_V2_SHEETS[sk]) continue;
+      if (typeof V2_TEMPLATE_FUNCTIONS[sk] !== 'string') {
         allKeysMatch = false;
-        missingKey = sheetKeys[k];
+        missingKey = sk;
         break;
       }
     }
-    t.assertTrue('every V2_SHEETS key has a string function name in V2_TEMPLATE_FUNCTIONS' +
+    t.assertTrue('every templated V2_SHEETS key has a string function name in V2_TEMPLATE_FUNCTIONS' +
                  (missingKey ? ' (missing: ' + missingKey + ')' : ''),
       allKeysMatch);
 
-    // All 5 RFQ keys map to the SAME shared setup function
+    // All 6 RFQ keys (including RFQ_BESS added in Chunk 6) map to the SAME
+    // shared setup function.
     var rfqKeys = ['RFQ_PANELES', 'RFQ_INVERSORES', 'RFQ_ESTRUCTURA',
-                   'RFQ_ELECTRICO', 'RFQ_MONITOREO'];
+                   'RFQ_ELECTRICO', 'RFQ_MONITOREO', 'RFQ_BESS'];
     var rfqFn = V2_TEMPLATE_FUNCTIONS.RFQ_PANELES;
     var allRfqShare = true;
     for (var r = 0; r < rfqKeys.length; r++) {
@@ -104,7 +122,7 @@ registerTest({
         break;
       }
     }
-    t.assertTrue('all 5 RFQ keys map to the same shared setup function',
+    t.assertTrue('all 6 RFQ keys map to the same shared setup function',
       allRfqShare);
     t.assert('the shared RFQ function name', 'setupRfqTemplate', rfqFn);
 
@@ -125,16 +143,18 @@ registerTest({
       typeof V2_LEGACY_MAP === 'object' && V2_LEGACY_MAP !== null);
 
     var legacyKeys = Object.keys(V2_LEGACY_MAP);
-    t.assert('V2_LEGACY_MAP has 10 entries (one legacy name per v2 sheet)',
-      10, legacyKeys.length);
+    t.assert('V2_LEGACY_MAP has 11 entries (10 legacy + RFQ_BESS; INSTALL_DRIVER_MAP excluded)',
+      11, legacyKeys.length);
 
-    // Every value in V2_LEGACY_MAP must equal the corresponding V2_SHEETS value
+    // Every value in V2_LEGACY_MAP must equal the corresponding V2_SHEETS
+    // value -- except INSTALL_DRIVER_MAP which is intentionally absent
+    // from V2_LEGACY_MAP (it's a v2-only audit sheet with no legacy
+    // counterpart).
     var mappingConsistent = true;
     for (var m = 0; m < sheetKeys.length; m++) {
-      var key = sheetKeys[m];
-      // Legacy key for the non-RFQ sheets equals the V2_SHEETS key.
-      // RFQ legacy keys are the same name as the v2 key (e.g. 'RFQ_PANELES').
-      if (V2_LEGACY_MAP[key] !== V2_SHEETS[key]) {
+      var legKey = sheetKeys[m];
+      if (TEMPLATELESS_V2_SHEETS[legKey]) continue;
+      if (V2_LEGACY_MAP[legKey] !== V2_SHEETS[legKey]) {
         mappingConsistent = false;
         break;
       }
@@ -157,10 +177,12 @@ registerTest({
 
     var list = listV2Sheets();
     t.assertTrue('listV2Sheets returns an array', Array.isArray(list));
-    t.assert('listV2Sheets returns 10 names', 10, list.length);
+    t.assert('listV2Sheets returns 12 names', 12, list.length);
     t.assertTrue('listV2Sheets contains MDC_v2', list.indexOf('MDC_v2') !== -1);
     t.assertTrue('listV2Sheets contains RFQ_MONITOREO_v2',
       list.indexOf('RFQ_MONITOREO_v2') !== -1);
+    t.assertTrue('listV2Sheets contains RFQ_BESS_v2 (Chunk 6 addition)',
+      list.indexOf('RFQ_BESS_v2') !== -1);
 
     // === Cross-check against SH constants (00_Main.js) ====================
     // The 5 non-RFQ legacy names should appear in the SH constants object.
@@ -225,7 +247,10 @@ registerTest({
     if (threw) return;
 
     t.assertTrue('summary is an object', typeof summary === 'object' && summary !== null);
-    t.assert('summary.attempted is 10', 10, summary.attempted);
+    // setupAllV2Templates iterates V2_TEMPLATE_FUNCTIONS (11 entries; the
+    // INSTALL_DRIVER_MAP audit sheet is intentionally absent from the
+    // template-function map), so summary.attempted == 11.
+    t.assert('summary.attempted is 11', 11, summary.attempted);
     t.assertTrue('summary.succeeded is an array', Array.isArray(summary.succeeded));
     t.assertTrue('summary.failed is an array', Array.isArray(summary.failed));
     t.assertTrue('summary.skipped is an array', Array.isArray(summary.skipped));

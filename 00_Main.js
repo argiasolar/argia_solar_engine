@@ -612,18 +612,27 @@ function onOpen() {
     .addItem('Generate Project Card',     'runWriteProjectCardV2')
     .addItem('Generate RFQs',             'runWriteAllRfqsV2')
     .addSeparator()
-    // Tier 2 cutover (2026-05-26): removed "Export Project Card" (was wired to
-    // exportProjectCard in 14_WriteProjectCard.js, deleted) and the entire
-    // "Export RFQ" submenu (six items wired to functions in 15_WriteRFQ.js,
-    // deleted). The remaining Export MDC/BOM/Installation items still work
-    // but currently produce stale PDFs (target legacy sheets which the engine
-    // no longer refreshes). Tier 3 rewires them to v2 sheets.
+    // Tier 3 (2026-05-27): all exports point at v2 sheets. Project Card export
+    // restored (was deleted in Tier 2). RFQ exports restored as a submenu
+    // covering all 6 categories (Tier 2 deleted the 5-item legacy submenu;
+    // Tier 3 brings them back with RFQ_BESS added per Chunk 6).
     .addSubMenu(ui.createMenu('Exports')
       .addItem('Export MDC',                         'exportMDC')
       .addItem('Export BOM',                         'exportBOM')
       .addItem('Export Installation',                'exportInstallation')
+      .addItem('Export Project Card',                'exportProjectCard')
       .addSeparator()
-      .addItem('Export All (MDC+BOM+Install)',       'exportAll'))
+      .addSubMenu(ui.createMenu('Export RFQ')
+        .addItem('Export RFQ \u2014 Paneles',        'exportRfqPaneles')
+        .addItem('Export RFQ \u2014 Inversores',     'exportRfqInversores')
+        .addItem('Export RFQ \u2014 Estructura',     'exportRfqEstructura')
+        .addItem('Export RFQ \u2014 Electrico',      'exportRfqElectrico')
+        .addItem('Export RFQ \u2014 Monitoreo',      'exportRfqMonitoreo')
+        .addItem('Export RFQ \u2014 BESS',           'exportRfqBess')
+        .addSeparator()
+        .addItem('Export All RFQs',                  'exportAllRfqs'))
+      .addSeparator()
+      .addItem('Export All (MDC+BOM+Install+PC)',    'exportAll'))
     .addSeparator()
     .addSubMenu(ui.createMenu('Setup')
       .addItem('Setup Install Inputs',      'runSetupInstallInputs')
@@ -634,6 +643,8 @@ function onOpen() {
       .addItem('Setup BESS Steady-state (BDF-11.1)', 'runSetupBessSimulationSteady')
       .addItem('Setup BESS Install §6',     'setupInputBessInstallRows')
       .addItem('Setup INPUT_BESS Styling',  'setupInputBessStyling')
+      .addSeparator()
+      .addItem('Refresh Logo Cache',          'refreshArgiaLogoCache')
       .addSeparator()
       .addItem('Load CULLIGAN Fixture',       'runLoadCulliganFixture')
       .addItem('Restore Inputs from Backup',  'runRestoreInputsFromBackup'))

@@ -26,6 +26,139 @@
 //   DB_VERSION uses YYYY.MM
 //     Bump when any *_DB or master table changes.
 //
+// 3.7.4 — PATCH bump (2026-05-27). Three pre-existing test-debt failures
+// (surfaced after Tier 3.x cleared the bigger issues, none Tier 3-caused):
+//
+//   1. UNIT_INPUTS_BESS_VOLTAGE_RESOLVER. Test asserted DB-wins; product
+//      code is BDF-7.1 manual-wins (documented at 01a_ReadInputsBess.js
+//      lines 51-61, with rationale: "INPUT_* overrides MASTER_DB" matches
+//      the rest of the engine). Test was stale -- updated to assert the
+//      manual-wins contract. Also replaced the now-redundant "negative DB
+//      falls back to manual" assertion with "negative manual falls back
+//      to DB" which exercises the same screen from the other side.
+//
+//   2/3. UNIT_CFE_TPL_IMAGE_CLEANUP_ON_REFRESH (two assertions). The
+//      _insertArgiaLogo v3 (CellImage approach, 3.7.3) inherited a
+//      floating-image dedup block from v1. That dedup ran on every call
+//      and the CFE template's own _cfeOutV2_removeImages was doubling up,
+//      breaking the test's image-removed-count assertion. Removed the
+//      dedup block from _insertArgiaLogo. v3 never creates floating
+//      images, so the only reason for that dedup was cleaning up
+//      workbooks upgrading from v1 -- and now CFE handles it for the
+//      CFE_OUTPUT sheet (the only place where stacked logos were an
+//      observed bug). Other templates that don't have their own image
+//      cleanup may leave stranded floating images visible on workbooks
+//      upgrading from v1; remedy is a one-time manual delete via
+//      Insert -> Image, or wait for a future "Clean Floating Images"
+//      utility if anyone reports the issue.
+//
+// Tests touched:
+//   - tests_unit/inputs/BessVoltageResolverTests.gs    (contract fix)
+//   - 02e_InputSetup.js                                  (drop dedup)
+//
+// No engine / writer / template behavior change beyond the dedup drop.
+//
+// 3.7.3 — PATCH bump (2026-05-27). Logo rewrite #2: switched from
+// =IMAGE() formula to SpreadsheetApp.newCellImage() with a base64
+// data URI built from the file's blob.
+//
+// Why: the v2 approach (=IMAGE with a Drive thumbnail URL) didn't work.
+// Google's thumbnail endpoint changed in fall 2025 and now serves
+// nothing useful to IMAGE() callers -- the cell appeared blank in both
+// Sheets and PDFs (confirmed by user observation; corroborated by
+// recent reports in Adobe forum and others). Earlier "uc?id=" pattern
+// has also been unreliable across the same period.
+//
+// New approach uses Apps Script's CellImage API:
+//   1. DriveApp reads the logo file blob
+//   2. Utilities.base64Encode() converts the bytes
+//   3. SpreadsheetApp.newCellImage().setSourceUrl("data:image/png;base64,...")
+//      embeds the bytes directly in the cell value
+//   4. CacheService (script cache) caches the encoded blob for 6 hours
+//      so repeat template-setup calls don't re-read Drive
+//
+// Advantages:
+//   - No dependency on public URLs, Drive sharing settings, or external
+//     thumbnail servers. The image bytes live inside the cell value.
+//   - In-cell render = part of cell content = PDF-export reliable.
+//   - When Google next changes a Drive URL pattern, this code is
+//     unaffected.
+//
+// Disadvantage:
+//   - Cache is bounded by CacheService's 100 KB value cap. If the logo
+//     is larger than ~70 KB original (i.e. ~95 KB base64), it won't be
+//     cached and Drive is hit once per template-setup call. The current
+//     argia_logo_dark.png is well under this, so it's a non-issue.
+//
+// Signature of _insertArgiaLogo unchanged. All 13 call sites work as-is.
+// refreshArgiaLogoCache now wipes both the v3 CacheService keys and the
+// stale v2 PropertiesService keys (cleans up workbooks upgrading from
+// 3.7.1).
+//
+// 3.7.2 — PATCH bump (2026-05-27). PC orientation flipped from landscape
+// to portrait per user preference. scale=2 (Fit to Width) preserved -- the
+// 69-row content paginates naturally into 2 pages: main content through
+// Gross Profit on p1, docs/risks/comments/signatures + footnotes on p2.
+// One-line config change in PDF_EXPORTS.PROJECT_CARD + matching test
+// assertions. No other changes.
+//
+// 3.7.1 — PATCH bump (2026-05-27). Tier 3.1 fix-up after visual review of
+// the first PDF batch:
+//   1. Trailing-row trim: Google sometimes drops the last row when it
+//      lands near a page boundary. BOM grand total (row 94) and
+//      INSTALLATION TOTAL row (row 34) were missing from PDFs.
+//   2. Trailing-col trim: same quirk on the rightmost column.
+//      INSTALLATION col J "TOTAL" and RFQ col M "Notes" were clipped.
+//   3. PC overflowed to 4 pages with signatures and footnotes on
+//      near-empty trailing pages.
+//   4. PC at scale=4 (Fit to Page) rendered correctly on one landscape
+//      A4 page but used only ~50% of the width -- looked like portrait.
+//      Changed to scale=2 (Fit to Width) which fills the landscape page;
+//      footnotes overflow to page 2 (user's preferred layout: main on
+//      p1, footnotes on p2).
+//   5. Logo rendered as a solid black rectangle on every PDF. Root cause:
+//      Google's PDF-export endpoint has a long-standing bug where
+//      floating images (sh.insertImage) render as black rectangles.
+//      Fix: replaced floating-image insertion in _insertArgiaLogo
+//      (02e_InputSetup.js) with an in-cell =IMAGE() formula. In-cell
+//      images are part of the spreadsheet's cell content and render
+//      reliably in PDF exports. The logo file is auto-shared as "Anyone
+//      with the link can view" on first resolve so IMAGE() can fetch
+//      it; resolved URL cached on PropertiesService keyed by folder ID.
+//      New menu item ARGIA -> Setup -> Refresh Logo Cache (function
+//      refreshArgiaLogoCache) clears the cache if the logo file is
+//      replaced in Drive. Signature of _insertArgiaLogo unchanged; all
+//      13 call sites continue to work without edit.
+// Changes:
+//   - 12_ExportPDF.js: PDF_EXPORTS extended with buffer rows/cols;
+//     `scale` option added; _buildPdfUrl honors scale (drops fitw/fith
+//     when set). PROJECT_CARD scale=2 (Fit to Width). All 6 RFQs
+//     scale=4 (Fit to Page).
+//   - 02e_InputSetup.js: _insertArgiaLogo rewritten for in-cell IMAGE()
+//     formula; new helper _resolveArgiaLogoUrl_ + refreshArgiaLogoCache.
+//   - 00_Main.js: Setup submenu gains "Refresh Logo Cache" item.
+//   - tests_unit/PdfExport*Tests.gs: assertions updated; 139 green.
+//
+// 3.7.0 — MINOR bump (2026-05-27). Tier 3 PDF exporter cutover. 12_ExportPDF.js
+// now points at v2 sheets with verified ranges:
+//   MDC_v2           B1:G115  portrait   (was MDC B1:F99; +16 BESS rows, +col G)
+//   BOM_v2           A1:H94   portrait   (was BOM A1:H77; +14 BESS rows)
+//   INSTALLATION_v2  A1:J34   landscape  (unchanged customer-facing region;
+//                                         line-item zone at row 40+ stays internal)
+//   PROJECT_CARD_v2  A1:J69   landscape  (NEW: PC export was removed in Tier 2)
+//   RFQ_*_v2 (x6)    A1:M<L>  landscape  (NEW: 5 categories + RFQ_BESS, end row
+//                                         resolved at export time via getLastRow)
+// New menu structure under ARGIA -> Exports:
+//   Export MDC / BOM / Installation / Project Card
+//   Export RFQ submenu (Paneles, Inversores, Estructura, Electrico, Monitoreo,
+//   BESS, Export All RFQs)
+//   Export All (MDC+BOM+Install+PC)
+// New public functions: exportProjectCard, exportRfq{Paneles,Inversores,
+// Estructura,Electrico,Monitoreo,Bess}, exportAllRfqs. RFQs that don't exist
+// for a given project (e.g. RFQ_BESS_v2 on a PV-only run) are soft-skipped
+// with a warning in exportAllRfqs rather than failing the batch. No engine /
+// writer / template changes -- export-layer only.
+//
 // 3.6.0 — MINOR bump (2026-05-26). Tier 1 + Tier 2 cutover. Engine now writes
 // ONLY v2 sheets (MDC_v2, BOM_v2, INSTALLATION_v2, PROJECT_CARD_v2,
 // CFE_OUTPUT_v2, RFQ_*_v2). Legacy writer files DELETED:
@@ -121,7 +254,7 @@
 // unchanged. NO charts in v2 (matches the current legacy state — charts
 // were removed in BDF-11).
 //
-var ENGINE_VERSION = '3.6.0';
+var ENGINE_VERSION = '3.7.4';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default
