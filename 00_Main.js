@@ -216,6 +216,38 @@ var MDC_ROW = {
 };
 
 // ---------------------------------------------------------------------------
+// MDC column indices + provenance / issuance constants
+// Moved here from 07_WriteMDC.js by Tier 2 cutover (2026-05-26). The legacy
+// file was deleted; the v2 writer in writers_v2/WriteMdcV2.js references
+// these globals.
+// ---------------------------------------------------------------------------
+var MC = {
+  LABEL      : 2,   // B
+  VALUE      : 3,   // C
+  UNIT       : 4,   // D
+  STATUS     : 5,   // E  -- PASS/FAIL/REVIEW (moved from H to E in Phase 2e)
+  CITATION   : 6,   // F  -- NOM article / table
+  FORMULA    : 7,   // G  -- formula trace
+};
+// PROVENANCE column was dropped from the sheet layout, but the constants
+// are kept so existing row() call sites compile. The 4th argument is
+// silently ignored by the writer.
+var PROV = {
+  STANDARD   : 'STANDARD',
+  INPUT      : 'INPUT',
+  DB         : 'DB',
+  ASSUMPTION : 'ASSUMPTION',
+  AUTO_CALC  : 'AUTO-CALC',
+};
+// Issuance status constants -- rendered in MDC.C72.
+var ISSUE = {
+  PASS       : 'EMITTABLE',
+  OBS        : 'EMITTABLE WITH OBSERVATIONS',
+  BLOCKED    : 'NOT EMITTABLE',
+};
+
+
+// ---------------------------------------------------------------------------
 // BOM ROW MAP (1-based) -- single source of truth for BOM writer + tests.
 // Created 2026-04-25 Phase 2e. Mirrors the pattern used for MDC_ROW above.
 // Updated 2026-04-25 Phase 2e batch 2: shifted all values by +3 to make
@@ -580,28 +612,22 @@ function onOpen() {
     .addItem('Generate Project Card',     'runWriteProjectCardV2')
     .addItem('Generate RFQs',             'runWriteAllRfqsV2')
     .addSeparator()
+    // Tier 2 cutover (2026-05-26): removed "Export Project Card" (was wired to
+    // exportProjectCard in 14_WriteProjectCard.js, deleted) and the entire
+    // "Export RFQ" submenu (six items wired to functions in 15_WriteRFQ.js,
+    // deleted). The remaining Export MDC/BOM/Installation items still work
+    // but currently produce stale PDFs (target legacy sheets which the engine
+    // no longer refreshes). Tier 3 rewires them to v2 sheets.
     .addSubMenu(ui.createMenu('Exports')
       .addItem('Export MDC',                         'exportMDC')
       .addItem('Export BOM',                         'exportBOM')
       .addItem('Export Installation',                'exportInstallation')
-      .addItem('Export Project Card',                'exportProjectCard')
       .addSeparator()
-      .addItem('Export All (MDC+BOM+Install+PC)',    'exportAll'))
-    .addSeparator()
-    .addSubMenu(ui.createMenu('Export RFQ')
-      .addItem('RFQ Paneles',    'exportRfqPaneles')
-      .addItem('RFQ Inversores', 'exportRfqInversores')
-      .addItem('RFQ Estructura', 'exportRfqEstructura')
-      .addItem('RFQ Electrico',  'exportRfqElectrico')
-      .addItem('RFQ Monitoreo',  'exportRfqMonitoreo')
-      .addSeparator()
-      .addItem('Export All RFQs','exportAllRfqs'))
+      .addItem('Export All (MDC+BOM+Install)',       'exportAll'))
     .addSeparator()
     .addSubMenu(ui.createMenu('Setup')
       .addItem('Setup Install Inputs',      'runSetupInstallInputs')
       .addItem('Setup Project Card Inputs', 'runSetupProjectCardInputs')
-      .addItem('Setup SLIDE_DATA',          'setupSlideDataTab')
-      .addItem('Data Validation',           'testKickerData')
       .addSeparator()
       .addItem('Repair CFE_SIM Totals',     'runRepairCfeSimulationTotals')
       .addItem('Repair CFE_SIM Capacidad (BDF-11)', 'runRepairCfeSimulationCapacidad')
@@ -619,9 +645,6 @@ function onOpen() {
     .addItem('Run Regression Tests (regression only)', 'runRegressionTests')
     .addItem('Run Integration Tests (e2e, modifies workbook)', 'runIntegrationTests')
     .addItem('Run ALL Tests (regression + integration + unit)', 'runTests')
-    .addSeparator()
-    .addItem('Create Offer EN',  'generateKickerEN')
-    .addItem('Create Offer ES',  'generateKickerES')
     .addToUi();
 }
 
@@ -1251,14 +1274,24 @@ function runWriteProjectCardV2() {
     var ac      = calcAC(inp, panel, invBank, nom, tbls, dc);
     var lay     = calcLayout(inp, dc, ac, nom);
 
-    _setArgiaProgress(4, TOTAL, 'Sizing BESS (if enabled)\u2026');
+    _setArgiaProgress(4, TOTAL, 'Reading BESS spec (if enabled)\u2026');
+    // Fixed 2026-05-26: was calling nonexistent runBessSuggestion(...) which
+    // threw a ReferenceError caught silently below, forcing bessResult=null
+    // and hiding all BESS info on the Project Card. The actual function is
+    // runBessStep(ss) -- same one used by Step 9.5 of the full engine
+    // pipeline. PC v2 only needs bessResult.bessEnabled + bessResult.bess
+    // (capacityKwh, powerKw), so runBessStep alone is sufficient -- we
+    // don't need the downstream BoS/voltage-drop/NOM additions.
     var bessResult = null;
     try {
-      bessResult = runBessSuggestion(ss, inp, panel, invBank, dc, ac, lay, nom);
+      bessResult = runBessStep(ss);
     } catch (bessErr) {
-      // BESS not enabled or failed -- writeProjectCardV2 handles null bessResult.
-      engineLog(ss, 'ProjectCardV2', 'INFO',
-        'BESS sizing skipped: ' + (bessErr.message || bessErr));
+      // Invalid battery spec -- log loudly. writeProjectCardV2 handles
+      // null bessResult by hiding all BESS lines (template owns the
+      // labels, writer owns the values).
+      engineLog(ss, 'ProjectCardV2', 'WARNING',
+        'BESS read failed: ' + (bessErr.message || bessErr) +
+        '. Project Card will hide BESS lines.');
     }
 
     _setArgiaProgress(5, TOTAL, 'Writing PROJECT_CARD_v2\u2026');

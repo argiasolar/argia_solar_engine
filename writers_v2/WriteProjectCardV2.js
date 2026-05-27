@@ -327,20 +327,36 @@ function writeProjectCardV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResul
     .setFontColor(PC_V2_PALETTE.secFg)
     .setHorizontalAlignment('right');
 
-  // TOTAL validation (uses costRangeTotalMin/Max in USD/kWp)
-  if (dcKwp > 0 && totCU > 0) {
-    var tvr = pcInp.validation['TOTAL'];
-    if (tvr) {
-      var tkv = totCU / dcKwp;
-      var tp = tkv >= tvr.min && tkv <= tvr.max;
-      pc.getRange(PC_ROW.COST_TOTAL, PC_COL.VALIDATION)
-        .setValue(tp ? 'PASS' : 'FAIL')
-        .setBackground(tp ? PC_V2_PALETTE.pass : PC_V2_PALETTE.fail)
-        .setFontColor(tp ? PC_V2_PALETTE.passFg : PC_V2_PALETTE.failFg)
-        .setFontWeight('bold')
-        .setHorizontalAlignment('center');
-    }
-  }
+  // TOTAL validation row -- intentionally LEFT BLANK.
+  //
+  // Removed 2026-05-26 (Tomas decision). Rationale:
+  //   - The 8 per-row validations already cover the cost space, and they're
+  //     each meaningful in their own unit ($/kWp for PV categories, $/kWh
+  //     for BESS).
+  //   - A 9th aggregate $/kWp check on the TOTAL row hits a dimensional
+  //     mismatch as soon as BESS enters the mix (BESS is $/kWh, not $/kWp,
+  //     so no honest $/kWp range can cover both PV-only and BESS projects).
+  //   - In practice this aggregate check hadn't caught anything the per-row
+  //     checks didn't already catch, so its signal-to-noise ratio was low.
+  //   - Margin % on row 40 is a better aggregate guardrail anyway: a wrong
+  //     overall cost shows up immediately as a wrong margin, no $/kWp needed.
+  //
+  // The costRangeTotalMin/Max keys remain in INPUT_MAP / INPUT_PROJECT row 60
+  // for now (no harm in leaving them; readPcInputs still populates
+  // validation.TOTAL, just nothing reads it from the writer side). Remove
+  // them in a future cleanup pass if desired.
+  //
+  // Explicitly clear the cell text + note in case a previous run left a
+  // stale PASS/FAIL there. The TOTAL row is painted navy by the template
+  // (setupProjectCardTemplate.js paints all 9 columns of the TOTAL row),
+  // so we RE-apply the navy background + white font color here instead of
+  // setBackground(null), which would have stripped the styling and left a
+  // visible white gap in the middle of the TOTAL row's navy band.
+  pc.getRange(PC_ROW.COST_TOTAL, PC_COL.VALIDATION)
+    .clearContent()
+    .setBackground(PC_V2_PALETTE.section)
+    .setFontColor(PC_V2_PALETTE.secFg)
+    .setNote('');
 
   // ========================================================================
   // §5b  PRICE / DISCOUNT / GROSS PROFIT (live formulas)
@@ -556,7 +572,11 @@ function _pcv2ReadPcInputs(ss, readInputFn) {
 //   constants, same Monitoring-minus-Permits-Services arithmetic.
 // -----------------------------------------------------------------------------
 function _pcv2ReadBomSubtotals(ss) {
-  var sh = ss.getSheetByName(SH.BOM);
+  // Tier 2 cutover (2026-05-26): switched from SH.BOM (legacy 'BOM') to
+  // 'BOM_v2'. The legacy BOM sheet is no longer refreshed by the engine
+  // after Tier 1, so reading from it produced stale subtotals (and a blank
+  // BESS row, since legacy BOM had no §8 BESS section).
+  var sh = ss.getSheetByName('BOM_v2');
   if (!sh) return null;
   function usd(row) { return parseFloat(sh.getRange(row, 6).getValue()) || 0; }
   function mxn(row) { return parseFloat(sh.getRange(row, 7).getValue()) || 0; }
@@ -588,7 +608,11 @@ function _pcv2ReadBomSubtotals(ss) {
 //   missing. Mirrors the read pattern in _pcv2ReadBomSubtotals.
 // -----------------------------------------------------------------------------
 function _pcv2ReadBessSubtotal(ss) {
-  var sh = ss.getSheetByName(SH.BOM);
+  // Tier 2 cutover (2026-05-26): read from BOM_v2 instead of legacy BOM.
+  // Legacy BOM never had a §8 BESS section, so reading row 92 from it
+  // returned 0 -- which was the root cause of the blank BESS line in
+  // PROJECT_CARD_v2 after Tier 1.
+  var sh = ss.getSheetByName('BOM_v2');
   if (!sh) return { usd: 0, mxn: 0 };
   var usd = parseFloat(sh.getRange(BOM_ROW.SUBTOTAL_BESS, 6).getValue()) || 0;
   var mxn = parseFloat(sh.getRange(BOM_ROW.SUBTOTAL_BESS, 7).getValue()) || 0;
@@ -603,7 +627,10 @@ function _pcv2ReadBessSubtotal(ss) {
 //   summary block scan, then column scan from bottom.
 // -----------------------------------------------------------------------------
 function _pcv2ReadInstallTotal(ss) {
-  var sh = ss.getSheetByName('INSTALLATION') || ss.getSheetByName('INSTALL_COST');
+  // Tier 2 cutover (2026-05-26): switched from legacy 'INSTALLATION' to
+  // 'INSTALLATION_v2'. Cell positions (G9 grand-total MXN, fallback scans)
+  // are identical between the two layouts -- only the source sheet changed.
+  var sh = ss.getSheetByName('INSTALLATION_v2');
   if (!sh) return { usd: 0, mxn: 0 };
 
   var tc = _pcv2ReadExchangeRate(ss);
@@ -639,7 +666,9 @@ function _pcv2ReadInstallTotal(ss) {
 // -----------------------------------------------------------------------------
 function _pcv2ReadExchangeRate(ss) {
   try {
-    var sh = ss.getSheetByName(SH.BOM);
+    // Tier 2 cutover (2026-05-26): read MXN/USD from BOM_v2!F6 instead of
+    // legacy BOM!F6. Both layouts put the exchange rate at the same cell.
+    var sh = ss.getSheetByName('BOM_v2');
     if (!sh) return 18.5;
     var v = parseFloat(sh.getRange(BOM_ROW.EXCHANGE_RATE, BOM_COL.TOTAL_USD).getValue());
     return v > 0 ? v : 18.5;

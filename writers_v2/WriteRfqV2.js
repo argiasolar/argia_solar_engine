@@ -29,7 +29,7 @@
 //
 // DATA FLOW
 //   1. Menu click \u2192 runWriteAllRfqsV2
-//   2. Read inputs (readInputs + readPcInputs_) \u2014 these are SHARED infra,
+//   2. Read inputs (readInputs + _pcv2ReadPcInputs) \u2014 these are SHARED infra,
 //      not legacy RFQ-specific, so v2 uses them.
 //   3. Read engine metadata from _META!B6 (calculated_at timestamp) for the
 //      RFQ year. Falls back to current year if missing.
@@ -44,7 +44,8 @@
 //   L=Incoterms  M=Notes
 //
 // DEPENDENCIES (v2 + shared only \u2014 no legacy RFQ code)
-//   - readInputs, readPcInputs_  -- 01_ReadInputs.gs (shared infra)
+//   - readInputs               -- 01_ReadInputs.gs (shared infra)
+//   - _pcv2ReadPcInputs        -- writers_v2/WriteProjectCardV2.js (shared infra)
 //   - V2_SHEETS                  -- templates/TemplateRegistry.gs
 //   - RFQ_REGISTRY, getRfqByKey  -- templates/RfqRegistry.gs
 //   - setupRfqTemplate, RFQV2_TPL -- templates/setupRfqTemplate.gs
@@ -138,12 +139,13 @@ function _buildRfqContext(ss) {
   // They live in 01_ReadInputs.gs and 14_WriteProjectCard.gs respectively.
   var inp = readInputs(ss);
 
-  // readPcInputs_ pulls projectManager / bizManager / designer if available.
-  // It's defined in 14_WriteProjectCard.gs. If not loaded for some reason,
-  // we fall back to whatever readInputs gave us.
-  if (typeof readPcInputs_ === 'function') {
+  // _pcv2ReadPcInputs pulls projectManager / bizManager / designer if
+  // available. It's defined in writers_v2/WriteProjectCardV2.js. Tier 2
+  // cutover (2026-05-26) switched from the legacy readPcInputs_ (was in
+  // 14_WriteProjectCard.js, deleted).
+  if (typeof _pcv2ReadPcInputs === 'function') {
     try {
-      var pcIn = readPcInputs_(ss);
+      var pcIn = _pcv2ReadPcInputs(ss, null);
       inp.projectManager = pcIn.projectManager || inp.designer || inp.bizManager;
     } catch (e) {
       inp.projectManager = inp.designer || inp.bizManager;

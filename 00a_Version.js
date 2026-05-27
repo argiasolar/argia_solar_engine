@@ -26,6 +26,32 @@
 //   DB_VERSION uses YYYY.MM
 //     Bump when any *_DB or master table changes.
 //
+// 3.6.0 — MINOR bump (2026-05-26). Tier 1 + Tier 2 cutover. Engine now writes
+// ONLY v2 sheets (MDC_v2, BOM_v2, INSTALLATION_v2, PROJECT_CARD_v2,
+// CFE_OUTPUT_v2, RFQ_*_v2). Legacy writer files DELETED:
+//   06_WriteCfeOutput.js, 07_WriteMDC.js, 08_WriteBOM.js,
+//   14_WriteProjectCard.js, 15_WriteRFQ.js, 16_WriteOverview.js (orphan).
+// Legacy writeInstallCost + writeInstallDriverMap deleted from
+// 13_CalcInstallCost.js (~370 lines); calc layer (readInstallDrivers,
+// calcInstallCost, applyKwpBenchmarks, runInstallCost) preserved unchanged.
+// 13_CalcInstallCost.js switched to _bomV2_loadStructureDb / _bomV2_resolveStructure
+// in writers_v2/helpers/BomDbHelpers.js (legacy resolveStructure was in
+// 08_WriteBOM, now deleted). Output validator (09b_OutputValidate.js) reads
+// v2 sheet names instead of legacy. Five legacy test files deleted:
+//   tests_integration/writers/MdcBessSec7Tests.gs
+//   tests_integration/writers/CfeOutputWriterTests.gs
+//   tests_integration/writers/CfeOutputCellMapTests.gs
+//   tests_integration/e2e/Testproj001PipelineTests.gs
+//   tests_unit/writers/MdcRowConstantsTests.gs
+//   tests_unit/writers/ResolveStructureTests.gs
+// Also removed: 30_ArgiaKicker.js (1397 lines, slide-deck generator no
+// longer in use) and its four menu items (Setup SLIDE_DATA, Data Validation,
+// Create Offer EN, Create Offer ES). Sheet names UNCHANGED -- *_v2 suffixes
+// stay in place (no customer workbook migration required). Why MINOR not
+// MAJOR: customer-facing recalc behavior is unchanged; v2 outputs were
+// already being produced side-by-side since 3.5.0. Tier 3 (PDF exporter
+// sheet+range updates) is a follow-up MINOR bump.
+//
 // 3.3.0 — MINOR bump (2026-05-25). Chunk 5 lands INSTALLATION_v2: a parallel
 // v2 sheet (INSTALLATION_v2) is now written alongside the legacy INSTALLATION,
 // plus the audit sheet 95_INSTALL_DRIVER_MAP_v2. The v2 writer mirrors legacy
@@ -95,7 +121,7 @@
 // unchanged. NO charts in v2 (matches the current legacy state — charts
 // were removed in BDF-11).
 //
-var ENGINE_VERSION = '3.5.0';
+var ENGINE_VERSION = '3.6.0';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default

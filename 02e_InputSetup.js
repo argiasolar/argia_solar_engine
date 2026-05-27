@@ -479,6 +479,31 @@ var LOGO_HEIGHT_PX = 42;   // Was 50px; 2026-04-24 reduced 15% per user request
 
 function _insertArgiaLogo(sh, row, col) {
   try {
+    // De-dup: remove every floating image already on this sheet before
+    // inserting the new logo. Without this, every template-setup call
+    // stacks a fresh logo on top of the old one. Bug found 2026-05-26
+    // after Tier 2 cutover. CFE_OUTPUT_v2's setup had a private remover
+    // (_cfeOutV2_removeImages) for the same reason since chunk 7; this
+    // generalizes the fix so every caller of _insertArgiaLogo is safe.
+    //
+    // Wipes all floating images (charts use a separate API and are
+    // untouched). No v2 sheet currently has additional floating images
+    // that need to survive -- if that changes, narrow the remover by
+    // checking img.getAnchorCell().
+    try {
+      if (typeof sh.getImages === 'function') {
+        var existingImgs = sh.getImages();
+        for (var ei = 0; ei < existingImgs.length; ei++) {
+          try { existingImgs[ei].remove(); } catch (_) { /* keep going */ }
+        }
+      }
+    } catch (dedupErr) {
+      // Best-effort -- if image enumeration fails for any reason, fall
+      // through to the insert and accept the stacking risk. Better a
+      // visible logo with a duplicate than no logo at all.
+      Logger.log('_insertArgiaLogo: image de-dup skipped: ' + dedupErr.message);
+    }
+
     var ss = sh.getParent();
     var link = ss.getSheetByName(LOGO_MASTER_LINK_SHEET);
     if (!link) {
@@ -2451,19 +2476,12 @@ function setupInputBessStyling() {
 }
 
 // ===========================================================================
-// setupCfeOutput  (Increment 4b-2.5d)
+// setupCfeOutput  (REMOVED 2026-05-26 by Tier 2 cutover)
 // ===========================================================================
-// Thin IDE-facing wrapper around writeCfeOutput(ss). Lets you regenerate the
-// CFE_OUTPUT tab on demand without running the full engine pipeline.
-//
-// To run: select setupCfeOutput in the Apps Script IDE, click Run.
-//
-// Idempotent. The underlying writeCfeOutput wipes and recreates the tab on
-// every call -- manual annotations in CFE_OUTPUT do NOT survive.
-function setupCfeOutput() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  writeCfeOutput(ss);
-}
+// Was a thin IDE-facing wrapper around the legacy writeCfeOutput(ss). After
+// 06_WriteCfeOutput.js was deleted, this wrapper became a dangling reference.
+// The v2 equivalent is runUpdateCfeOutputV2 in writers_v2/WriteCfeOutputV2.js
+// -- wired to the "Update CFE_OUTPUT" menu item since Tier 1.
 // ===========================================================================
 // setupInputBessEconomicsRows  (BDF-3)
 // ===========================================================================
