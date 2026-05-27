@@ -94,13 +94,19 @@ registerTest({
                0, b2.acVoltageV);
 
       // ===================================================================
-      // CASE 3: catalog battery -> DB voltage overrides manual cell
-      // KNOWN-FRAGILE per legacy comments: INPUT_BESS!C6 has a data-
-      // validation dropdown allowlist that may be out of sync with the
-      // live product DB. If the dropdown rejects 'HW_LUNA_200KWH', log
-      // an INFO row and skip the case rather than emit a misleading fail.
-      // (DB-wins logic itself is proven by the pure resolveBessVoltage
-      // unit tests in Pass 6.)
+      // CASE 3: catalog battery + manual cell -> manual cell wins (BDF-7.1)
+      //
+      // Before BDF-7.1 (2026): DB voltage overrode the manual cell. The
+      // rationale was "catalog products carry an authoritative voltage,
+      // prefer it." BDF-7.1 inverted this so INPUT_* always overrides
+      // MASTER_DB, matching the rest of the engine. See
+      // 01a_ReadInputsBess.js lines 51-61 for the full rationale, and
+      // UNIT_INPUTS_BESS_VOLTAGE_RESOLVER for the pure-unit coverage.
+      //
+      // This case still runs in the live sheet because it covers the
+      // round-trip through readInputBess (cell-read + lookupBatteryVoltage
+      // + resolveBessVoltage + object build) -- the unit test only covers
+      // resolveBessVoltage in isolation.
       // ===================================================================
       var hw = lookupBattery(ctx.ss, 'HW_LUNA_200KWH');
       if (hw) {
@@ -113,22 +119,22 @@ registerTest({
           t.info('CASE3 SKIPPED',
                  'INPUT_BESS!C6 data-validation dropdown rejected '
                  + '"HW_LUNA_200KWH" -- the dropdown allowlist is out of '
-                 + 'sync with 16M_PRODUCTS_BESS. CASE 3 (DB-overrides-'
-                 + 'manual) not exercised in live sheet; covered instead '
-                 + 'by UNIT_INPUTS_BESS_VOLTAGE_RESOLVER. Fix: resync C6 '
-                 + 'dropdown values with Battery_IDs from the product DB.');
+                 + 'sync with 16M_PRODUCTS_BESS. Manual-wins logic is '
+                 + 'covered by UNIT_INPUTS_BESS_VOLTAGE_RESOLVER. Fix: '
+                 + 'resync C6 dropdown values with Battery_IDs from the '
+                 + 'product DB.');
         }
         if (c6CanTakeRealId) {
-          setInputValue('bessDcBusVoltageV', 600, ctx.ss);  // WRONG on purpose
+          setInputValue('bessDcBusVoltageV', 600, ctx.ss);
           SpreadsheetApp.flush();
           var b3 = readInputBess(ctx.ss);
-          t.assert('CASE3: catalog battery -> dcBusVoltageV from DB (1200), '
-                   + 'not the wrong manual 600',
-                   1200, b3.dcBusVoltageV);
+          t.assert('CASE3: catalog battery + manual=600 -> dcBusVoltageV=600 '
+                   + '(manual cell wins per BDF-7.1, even though catalog has 1200)',
+                   600, b3.dcBusVoltageV);
         }
       } else {
         t.info('CASE3 NOTE',
-               'HW_LUNA_200KWH not in live DB -- catalog-override case skipped.');
+               'HW_LUNA_200KWH not in live DB -- catalog-with-manual case skipped.');
       }
 
     } finally {

@@ -1,31 +1,29 @@
 // =============================================================================
-// ARGIA ENGINE v7 -- File: 13_CalcInstallCost.gs
+// ARGIA ENGINE -- File: 13_CalcInstallCost.gs
 // Installation cost calculation driven by INSTALL_DB library.
 //
 // FLOW:
-//   setupInstallInputsSection(ss)          -- one-time: adds rows to INPUT_DESIGN
+//   setupInstallInputsSection(ss)             -- one-time: adds rows to INPUT_DESIGN
 //   readInstallDrivers(ss,inp,invBank,dc,ac,lay) -> drivers{}
-//   loadInstallLib(ss)                     -> lib{}
-//   calcInstallCost(lib, drivers)          -> result{}
-//   writeInstallCost(ss, result, drivers)  -> INSTALLATION tab
-//   writeInstallDriverMap(ss, drivers, result) -> 95_INSTALL_DRIVER_MAP tab
+//   loadInstallLib(ss)                        -> lib{}
+//   calcInstallCost(lib, drivers)             -> result{}
+//   writeInstallationV2(ss, result, drivers)  -> INSTALLATION_v2 +
+//                                                95_INSTALL_DRIVER_MAP_v2
 //
 // ENTRY POINTS:
-//   runInstallCostStandalone()  -- menu item (runs alone, reads from current sheets)
-//   called from runArgiaEngine() step 12 (receives already-computed objects)
+//   runInstallCostStandalone() -- menu item (computes only; engine step 12
+//                                 in runArgiaEngine() handles the v2 writes)
 // =============================================================================
 
 // ---------------------------------------------------------------------------
-// SHEET NAME CONSTANTS (install-specific)
+// SHEET NAME CONSTANTS (install-specific library tables; not the output
+// tabs -- those live in V2_SHEETS via templates/TemplateRegistry.js).
 // ---------------------------------------------------------------------------
 var SH_IC = {
-  COST        : 'INSTALLATION',
-  DRIVER_MAP  : '95_INSTALL_DRIVER_MAP',
   LIB         : '90M_INSTALL_LIB',
   FACTORS     : '91M_INSTALL_FACTORS',
   ROLE_RATES  : '92M_INSTALL_ROLE_RATES',
   EQUIP_RATES : '93M_INSTALL_EQUIP_RATES',
-  BENCHMARKS  : '94M_INSTALL_BENCHMARKS',
 };
 
 // ---------------------------------------------------------------------------
@@ -1353,14 +1351,14 @@ function runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult) {
   // Apply kWp productivity benchmarks if set in INPUT_DESIGN rows 80-83
   result = applyKwpBenchmarks(ss, result, drivers);
 
-  // Tier 1 cutover (2026-05-26): legacy writeInstallCost + writeInstallDriverMap
-  // calls REMOVED. The functions still exist in this file (used by no one
-  // after Tier 1; will be deleted in Tier 2). runInstallCost now ONLY computes
-  // the result and returns it -- the engine's Step 12-v2 calls
-  // writeInstallationV2 + writeInstallationDriverMapV2 to render the sheets.
+  // Tier 2 cutover (2026-05-26): legacy writeInstallCost +
+  // writeInstallDriverMap functions were deleted from this file (~370
+  // lines). runInstallCost now ONLY computes the result and returns it;
+  // the engine's Step 12 (runArgiaEngine) calls writeInstallationV2 to
+  // render both INSTALLATION_v2 and 95_INSTALL_DRIVER_MAP_v2.
 
-  // Attach drivers to the returned result so writeInstallationV2 in Step 12-v2
-  // can feed both into the v2 writer without re-running the calc layers.
+  // Attach drivers to the returned result so writeInstallationV2 can
+  // feed both into the v2 writer without re-running the calc layers.
   result.drivers = drivers;
 
   return result;

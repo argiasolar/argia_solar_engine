@@ -501,11 +501,28 @@ Honest list of what could go wrong. Each item has a mitigation.
 
 ---
 
-### Current state (2026-05-27, engine v3.7.0) — Tier 1, 2, 3 shipped
+### Current state (2026-05-27, engine v3.7.5) — MIGRATION COMPLETE
 
-The migration plan's "Chunks 0–11" have all been completed and shipped via
-three "tier" commits. The detailed chunk-by-chunk history below is preserved
-for context; this block is the authoritative current state.
+The output-v2 migration is **DONE**. The engine is v2-only:
+- All output sheets are `*_v2`. No `runArgia*` code path writes to a
+  legacy tab.
+- Legacy writer files have been deleted (~8100 LOC, Tier 2).
+- Legacy template-builder code (`setupMDCTemplate`, `setupBOMTemplate`,
+  `addInstallationBanner`, `restyleInstallationTopZone`, plus their
+  `previewMDC` / `previewBOM` wrappers, ~818 LOC) has been deleted from
+  `02e_InputSetup.js` (Tier 4 / 3.7.5).
+- Legacy entries removed from `SH` constants object (`SH.MDC`, `SH.BOM`,
+  `SH.INSTALL_COST`, `SH.CFE_OUTPUT`, `SH.INSTALL_DRIVER_MAP`) and from
+  `SH_IC` in `13_CalcInstallCost.js` (`COST`, `DRIVER_MAP`,
+  `BENCHMARKS`). Stale `OPTIONAL_SHEETS` startup-check entries cleaned.
+- New cleanup utility `ARGIA → Setup → Delete Legacy Tabs` removes the
+  10 stale legacy tabs from the active workbook with safety gates
+  (v2 counterpart must exist and be populated) and an audit-trail log.
+
+PDF exports, logo rendering, and writer behavior are unchanged in
+this tier — pure dead-code removal plus the new cleanup menu item.
+
+#### Tier-by-tier history
 
 **Tier 1 (3.5.0, 2026-05-26):** Engine writes only `_v2` sheets in
 `runArgiaEngine`. Both legacy and v2 writers existed; engine called v2.
@@ -514,57 +531,59 @@ Legacy writers became dead code.
 **Tier 2 (3.6.0, 2026-05-26, commit `60d83af`):** Legacy writer files
 deleted (~8100 LOC removed):
 - `06_WriteCfeOutput.js`, `07_WriteMDC.js`, `08_WriteBOM.js`,
-  `14_WriteProjectCard.js`, `15_WriteRFQ.js`, `16_WriteOverview.js` (orphan)
+  `14_WriteProjectCard.js`, `15_WriteRFQ.js`, `16_WriteOverview.js`
 - Legacy `writeInstallCost` + `writeInstallDriverMap` deleted from
   `13_CalcInstallCost.js` (~370 lines). Calc layer preserved unchanged.
-- `13_CalcInstallCost.js` switched to `_bomV2_loadStructureDb` /
-  `_bomV2_resolveStructure` in `writers_v2/helpers/BomDbHelpers.js`.
 - Output validator (`09b_OutputValidate.js`) reads v2 sheet names.
-- Five legacy test files deleted (Mdc/Cfe writer tests, e2e pipeline,
-  row constants, resolve structure).
+- Five legacy test files deleted.
 - `30_ArgiaKicker.js` (1397 lines) and its 4 menu items removed.
-- Menu items "Export Project Card" + 5-item "Export RFQ" submenu
-  removed from `00_Main.js` (functions they pointed at were deleted).
 
 **Tier 3 (3.7.0, 2026-05-27):** PDF exporter cutover.
 - `12_ExportPDF.js` `PDF_EXPORTS` config now targets v2 sheets with
-  verified ranges from a real CULLIGAN export:
-  - `MDC_v2` B1:G115 portrait (was MDC B1:F99 — +col G, +16 BESS rows)
-  - `BOM_v2` A1:H94 portrait (was BOM A1:H77 — +14 BESS rows)
-  - `INSTALLATION_v2` A1:J34 landscape (unchanged customer region)
-  - `PROJECT_CARD_v2` A1:J69 landscape (NEW: PC export restored)
-  - `RFQ_*_v2` (6 sheets) A1:M&lt;lastRow&gt; landscape (NEW: 5 categories
-    + RFQ_BESS, end row resolved at export time)
-- New menu structure: "Export Project Card", "Export RFQ" submenu (6
-  items + Export All RFQs), "Export All" bundles MDC+BOM+Install+PC.
-- 121 unit-test assertions cover the config table and URL builder
-  (`PdfExportConfigTests.gs`, `PdfExportUrlBuilderTests.gs`).
+  verified ranges from a real CULLIGAN export.
+- 139 unit-test assertions cover the config table and URL builder.
 
-**Post-cutover bugs surfaced and fixed before Tier 3** (per Tomas's
-handoff, captured here for the record):
-1. Logo stacking on the v2 banner (cosmetic) — fixed.
-2. PC_v2 was silently reading from legacy BOM and accidentally working
-   because legacy BOM had the right CULLIGAN data; led to a blank BESS
-   subtotal when BOM_v2 was the only writer. Fixed by switching PC_v2
-   reads to `BOM_v2`.
-3. Standalone `runWriteProjectCardV2` called a nonexistent function
-   (`runBessSuggestion`); should have been `runBessStep(ss)`. Fixed.
-4. TOTAL row validation had a dimensional mismatch: PV rows are `$/kWp`
-   USD but the BESS row is `$/kWh` USD. Validation logic now branches
-   on row type so BESS gets the right range. The CULLIGAN row 39 cell
-   note confirms this is working: `$727/kWh │ range $350–$800/kWh`
-   → PASS. (Note: `INPUT_PROJECT!F61` unit label says "USD/kWp" but
-   should say "USD/kWh" — labeling bug, math is correct. Fix separately.)
+**Tier 3.x patches (3.7.1 → 3.7.4):**
+- 3.7.1: Range buffers to dodge Google's PDF-export trim quirks.
+- 3.7.2: PC orientation portrait + scale=2 (was landscape).
+- 3.7.3: Logo rewritten to use `SpreadsheetApp.newCellImage()` with
+  base64 data URI — bulletproof against Drive URL pattern changes
+  that broke earlier `=IMAGE()` formula approach.
+- 3.7.4: Three pre-existing test debts cleared (BESS voltage resolver
+  contract updated to BDF-7.1 manual-wins; logo dedup removed; mock
+  proxy `clearContent` added). All 21 historical failures resolved.
 
-**Outstanding items deferred from Tier 3:**
-- INPUT_MAP patch helper (`patchInputProjectMissingRows`) — handoff said
-  "nice to have", not "must do". Skipped for now; revisit if another
-  workbook needs a row 61–style patch.
-- Cleanup Legacy Tabs menu item — handoff said NOT YET. Run engine on
-  2–3 real production projects under v3.7.0 first, then build the
-  confirmation-prompted delete menu and remove the stale legacy tabs.
-- `INPUT_PROJECT!F61` unit label fix (`USD/kWp` → `USD/kWh` on the BESS
-  row). Single cell. Trivial when it gets touched.
+**Tier 4 (3.7.5, 2026-05-27):** v2-only cleanup (this milestone).
+- 818 LOC of orphaned legacy template-builders removed from
+  `02e_InputSetup.js`.
+- Legacy `SH` constants pruned in `00_Main.js`.
+- `SH_IC` pruned in `13_CalcInstallCost.js`; stale header comments
+  updated.
+- `OPTIONAL_SHEETS` startup-check list cleaned.
+- Test files updated to drop legacy fallbacks.
+- New `Delete Legacy Tabs` menu utility.
+
+**Post-cutover bugs surfaced and fixed before/during Tier 3** (captured
+here for the record):
+1. Logo stacking on the v2 banner (cosmetic) — fixed in Tier 3.
+2. PC_v2 was reading from legacy BOM and silently working because the
+   data happened to be there; blank BESS subtotal once BOM_v2 was the
+   only writer. Fixed by switching reads to `BOM_v2` (Tier 3).
+3. Logo rendered as black rectangle in PDFs (Google's PDF export bug
+   with floating images) — fixed via CellImage API (Tier 3.3).
+4. TOTAL row validation had a dimensional mismatch: PV rows are
+   `$/kWp` USD but the BESS row is `$/kWh` USD. Validation logic now
+   branches on row type so BESS gets the right range (Tier 3).
+
+**Items deferred to a future session:**
+- `INPUT_PROJECT!F61` unit label fix (`USD/kWp` → `USD/kWh` on the
+  BESS row). Single cell. Trivial when it gets touched.
+- INPUT_MAP patch helper (`patchInputProjectMissingRows`) — was "nice
+  to have"; revisit if another workbook needs a row 61–style patch.
+- Workbooks upgrading from v1 floating-image logo may have stranded
+  black-rectangle floating images on non-CFE sheets. Remedy is
+  manual delete via Insert → Image, or a future "Clean Floating
+  Images" utility if anyone reports the issue.
 
 ---
 

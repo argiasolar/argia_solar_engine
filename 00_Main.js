@@ -20,32 +20,37 @@
 // =============================================================================
 
 // ---------------------------------------------------------------------------
-// SHEET NAME CONSTANTS -- must match exact tab names in Google Sheet
+// SHEET NAME CONSTANTS -- must match exact tab names in Google Sheet.
+//
+// Output sheets (MDC, BOM, INSTALLATION, CFE_OUTPUT, PROJECT_CARD, RFQ_*)
+// are NOT in this object -- the engine writes only the v2 tabs (MDC_v2,
+// BOM_v2, ...) which are listed in V2_SHEETS in templates/TemplateRegistry.js.
+// Legacy entries (SH.MDC, SH.BOM, SH.INSTALL_COST, SH.CFE_OUTPUT) were
+// removed 2026-05-27 (v3.7.5) when the codebase went v2-only.
 // ---------------------------------------------------------------------------
 var SH = {
+  // Input sheets
   INPUT_GENERAL  : 'INPUT_GENERAL',
   INPUT_DESIGN   : 'INPUT_DESIGN',
   INPUT_PROJECT  : 'INPUT_PROJECT',
   INPUT_INSTALL  : 'INPUT_INSTALL',
   INPUT_CFE      : 'INPUT_CFE',
   INPUT_BESS     : 'INPUT_BESS',
+  // Simulation worksheets
   CFE_SIM        : 'CFE_SIMULATION',
   BESS_SIM       : 'BESS_SIMULATION',
-  CFE_OUTPUT     : 'CFE_OUTPUT',
+  // Master-data mirrors / lookup tables
   PANELS_MIRROR  : '11M_PRODUCTS_PANELS',
   INV_MIRROR     : '12M_PRODUCTS_INVERTERS',
   BESS_MIRROR    : '16M_PRODUCTS_BESS',
   ELEC_TABLES    : '15M_ELEC_TABLES',
-  MDC            : 'MDC',
-  BOM            : 'BOM',
-  LOGS           : 'LOGS',
-  // Installation cost sheets
-  INSTALL_COST       : 'INSTALLATION',
-  INSTALL_DRIVER_MAP : '95_INSTALL_DRIVER_MAP',
+  // Installation library tables
   INSTALL_LIB        : '90M_INSTALL_LIB',
   INSTALL_FACTORS    : '91M_INSTALL_FACTORS',
   INSTALL_ROLE_RATES : '92M_INSTALL_ROLE_RATES',
   INSTALL_EQUIP_RATES: '93M_INSTALL_EQUIP_RATES',
+  // Audit / logging
+  LOGS           : 'LOGS',
 };
 
 // ---------------------------------------------------------------------------
@@ -603,19 +608,28 @@ function onOpen() {
   var ui = SpreadsheetApp.getUi();
 
   // ── ARGIA menu ───────────────────────────────────────────────
+  // Layout reorganized 2026-05-27 (v3.7.7):
+  //   - Top: generate-workflow items (the ~daily-use buttons).
+  //   - Exports submenu: unchanged.
+  //   - Setup submenu: all dev/ops utilities including the test runners
+  //     (regression / integration / unit / all). Tests run rarely and
+  //     don't belong at top level.
+  //
+  // Removed in this cleanup:
+  //   - "Setup Project Card Inputs" (function runSetupProjectCardInputs
+  //     was never defined; menu item would have thrown).
+  //   - "Run Tests for Current Chunk" (chunk-tracking was a migration
+  //     scaffolding tool; migration is complete).
   ui.createMenu('ARGIA')
     .addItem('Import Helioscope',         'importHelioscopePdf')
     .addItem('Verify Layout',             'verifyInputs')
-    .addItem('Update CFE_OUTPUT',         'runUpdateCfeOutputV2')
+    .addItem('Suggest BESS',              'onMenuSuggestBess')
+    .addItem('Update CFE Output',         'runUpdateCfeOutputV2')
     .addItem('Generate MDC and BOM',      'runArgiaEngine')
     .addItem('Generate Installation',     'runInstallCostStandalone')
     .addItem('Generate Project Card',     'runWriteProjectCardV2')
     .addItem('Generate RFQs',             'runWriteAllRfqsV2')
     .addSeparator()
-    // Tier 3 (2026-05-27): all exports point at v2 sheets. Project Card export
-    // restored (was deleted in Tier 2). RFQ exports restored as a submenu
-    // covering all 6 categories (Tier 2 deleted the 5-item legacy submenu;
-    // Tier 3 brings them back with RFQ_BESS added per Chunk 6).
     .addSubMenu(ui.createMenu('Exports')
       .addItem('Export MDC',                         'exportMDC')
       .addItem('Export BOM',                         'exportBOM')
@@ -635,27 +649,29 @@ function onOpen() {
       .addItem('Export All (MDC+BOM+Install+PC)',    'exportAll'))
     .addSeparator()
     .addSubMenu(ui.createMenu('Setup')
-      .addItem('Setup Install Inputs',      'runSetupInstallInputs')
-      .addItem('Setup Project Card Inputs', 'runSetupProjectCardInputs')
+      // ── Test runners ────────────────────────────────────────
+      .addItem('Run Unit Tests (fast)',                   'runUnitTests')
+      .addItem('Run Regression Tests',                    'runRegressionTests')
+      .addItem('Run Integration Tests (modifies workbook)', 'runIntegrationTests')
+      .addItem('Run ALL Tests',                           'runTests')
       .addSeparator()
-      .addItem('Repair CFE_SIM Totals',     'runRepairCfeSimulationTotals')
-      .addItem('Repair CFE_SIM Capacidad (BDF-11)', 'runRepairCfeSimulationCapacidad')
+      // ── One-shot template / inputs setup ────────────────────
+      .addItem('Setup Install Inputs',          'runSetupInstallInputs')
+      .addItem('Setup BESS Install \u00a76',    'setupInputBessInstallRows')
       .addItem('Setup BESS Steady-state (BDF-11.1)', 'runSetupBessSimulationSteady')
-      .addItem('Setup BESS Install §6',     'setupInputBessInstallRows')
-      .addItem('Setup INPUT_BESS Styling',  'setupInputBessStyling')
+      .addItem('Setup INPUT_BESS Styling',      'setupInputBessStyling')
       .addSeparator()
-      .addItem('Refresh Logo Cache',          'refreshArgiaLogoCache')
+      // ── Repairs for legacy / drifted workbooks ───────────────
+      .addItem('Repair CFE_SIM Totals',                  'runRepairCfeSimulationTotals')
+      .addItem('Repair CFE_SIM Capacidad (BDF-11)',      'runRepairCfeSimulationCapacidad')
       .addSeparator()
-      .addItem('Load CULLIGAN Fixture',       'runLoadCulliganFixture')
-      .addItem('Restore Inputs from Backup',  'runRestoreInputsFromBackup'))
-    .addSeparator()
-    .addItem('▶ Suggest BESS',                  'onMenuSuggestBess')
-    .addSeparator()
-    .addItem('▶ Run Unit Tests (fast)',         'runUnitTests')
-    .addItem('▶ Run Tests for Current Chunk',   'runCurrentChunkTests')
-    .addItem('Run Regression Tests (regression only)', 'runRegressionTests')
-    .addItem('Run Integration Tests (e2e, modifies workbook)', 'runIntegrationTests')
-    .addItem('Run ALL Tests (regression + integration + unit)', 'runTests')
+      // ── Workbook-level utilities ────────────────────────────
+      .addItem('Refresh Logo Cache',            'refreshArgiaLogoCache')
+      .addItem('Delete Legacy Tabs',            'runDeleteLegacyTabs')
+      .addSeparator()
+      // ── Test-data fixtures ──────────────────────────────────
+      .addItem('Load CULLIGAN Fixture',         'runLoadCulliganFixture')
+      .addItem('Restore Inputs from Backup',    'runRestoreInputsFromBackup'))
     .addToUi();
 }
 
@@ -696,18 +712,18 @@ function runArgiaEngine() {
     // Step 1: sheet check ---------------------------------------------------
     _setArgiaProgress(1, TOTAL, 'Checking sheets\u2026');
     engineLog(ss, 'Engine', 'INFO', 'Step 1: checking sheets');
-    // Install sheets are optional -- they only need IMPORTRANGE to be set up.
-    // Core engine (MDC/BOM) runs even if install mirrors are missing.
-    // INPUT_GENERAL is RETIRED (v2.0.2+) -- the SH constant lingers for legacy
-    // references in unmigrated writers/exporters, but the sheet is no longer
-    // required at startup. Removing the SH constant fully is deferred cleanup.
-    var OPTIONAL_SHEETS = ['INSTALLATION','95_INSTALL_DRIVER_MAP',
-      '90M_INSTALL_LIB','91M_INSTALL_FACTORS','92M_INSTALL_ROLE_RATES','93M_INSTALL_EQUIP_RATES',
+    // Install master-data sheets are optional -- they only need IMPORTRANGE
+    // to be set up. Core engine (MDC_v2 / BOM_v2) runs even if install
+    // mirrors are missing.
+    // INPUT_GENERAL is RETIRED (v2.0.2+) -- the SH constant lingers for
+    // back-compat but the sheet is no longer required at startup.
+    var OPTIONAL_SHEETS = ['90M_INSTALL_LIB', '91M_INSTALL_FACTORS',
+      '92M_INSTALL_ROLE_RATES', '93M_INSTALL_EQUIP_RATES',
       'INPUT_GENERAL'];
     var missing = [];
     Object.keys(SH).forEach(function(key) {
       var name = SH[key];
-      if (name === 'LOGS' || name === 'BOM') return;
+      if (name === 'LOGS') return;
       if (OPTIONAL_SHEETS.indexOf(name) !== -1) return;
       if (ss.getSheetByName(name) === null) missing.push(name);
     });
@@ -1241,6 +1257,202 @@ function runRestoreInputsFromBackup() {
            'INPUT sheets restored from backup.\n' +
            'Backup sheets have been deleted.',
            ui.ButtonSet.OK);
+}
+
+
+// ===========================================================================
+// DELETE LEGACY TABS  (Cleanup, v3.7.5 / 2026-05-27)
+// ---------------------------------------------------------------------------
+// Removes legacy output tabs from the active workbook. The engine has been
+// writing only the _v2 tabs since Tier 1 (3.5.0); the legacy tabs are
+// orphaned data carried for a transition period. This utility deletes
+// them once the user has confirmed no team workflow depends on them.
+//
+// LEGACY TABS this targets (10 total):
+//   MDC, BOM, INSTALLATION, CFE_OUTPUT, PROJECT_CARD,
+//   RFQ_PANELES, RFQ_INVERSORES, RFQ_ESTRUCTURA, RFQ_ELECTRICO,
+//   RFQ_MONITOREO, 95_INSTALL_DRIVER_MAP.
+//
+// SAFETY GATES (all enforced before deleting):
+//   1. The v2 counterpart MUST exist in the workbook.
+//   2. The v2 counterpart MUST have data (getLastRow() > 5 -- past header).
+//   3. The user must confirm a prompt that lists exactly which tabs will
+//      be deleted and which will be skipped + why.
+//   4. Each deletion is logged via engineLog so the LOGS tab has an
+//      audit trail.
+//
+// REVERSIBILITY: Google Sheets keeps deleted tabs in File -> Version
+// history for ~30 days; recovery via that path is documented in the
+// confirmation prompt.
+// ===========================================================================
+function runDeleteLegacyTabs() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  // Canonical legacy -> v2 mapping. Mirrors V2_LEGACY_MAP plus the
+  // INSTALL_DRIVER_MAP entry, which is in V2_SHEETS but intentionally
+  // absent from V2_LEGACY_MAP (so it gets its own line here).
+  var TARGETS = [
+    { legacy: 'MDC',                    v2: 'MDC_v2' },
+    { legacy: 'BOM',                    v2: 'BOM_v2' },
+    { legacy: 'INSTALLATION',           v2: 'INSTALLATION_v2' },
+    { legacy: 'PROJECT_CARD',           v2: 'PROJECT_CARD_v2' },
+    { legacy: 'CFE_OUTPUT',             v2: 'CFE_OUTPUT_v2' },
+    { legacy: 'RFQ_PANELES',            v2: 'RFQ_PANELES_v2' },
+    { legacy: 'RFQ_INVERSORES',         v2: 'RFQ_INVERSORES_v2' },
+    { legacy: 'RFQ_ESTRUCTURA',         v2: 'RFQ_ESTRUCTURA_v2' },
+    { legacy: 'RFQ_ELECTRICO',          v2: 'RFQ_ELECTRICO_v2' },
+    { legacy: 'RFQ_MONITOREO',          v2: 'RFQ_MONITOREO_v2' },
+    { legacy: '95_INSTALL_DRIVER_MAP',  v2: '95_INSTALL_DRIVER_MAP_v2' }
+  ];
+
+  // ---- Classify each target ----------------------------------------------
+  // willDelete: legacy present + v2 present + v2 populated
+  // skipNoV2:   legacy present but v2 missing (safety -> skip)
+  // skipV2Empty: legacy present, v2 present but empty (safety -> skip)
+  // notPresent: legacy already gone (nothing to do)
+  var willDelete  = [];
+  var skipNoV2    = [];
+  var skipV2Empty = [];
+  var notPresent  = [];
+
+  TARGETS.forEach(function(t) {
+    var legacyShe = ss.getSheetByName(t.legacy);
+    if (!legacyShe) {
+      notPresent.push(t.legacy);
+      try { engineLog(ss, 'Cleanup', 'INFO',
+                      'classify ' + t.legacy + ': NOT_PRESENT (already gone)'); }
+      catch (_) {}
+      return;
+    }
+    var v2She = ss.getSheetByName(t.v2);
+    if (!v2She) {
+      skipNoV2.push(t);
+      try { engineLog(ss, 'Cleanup', 'INFO',
+                      'classify ' + t.legacy + ': SKIP_NO_V2 (' + t.v2 + ' missing)'); }
+      catch (_) {}
+      return;
+    }
+    // v2 must have something beyond a banner -- last row > 5 is the heuristic
+    // (banner usually fills rows 1-3, header row 4, sometimes blank 5).
+    // Record the actual lastRow so the dialog can show exactly why a tab
+    // ended up in skipV2Empty.
+    var lastRow = 0;
+    try { lastRow = v2She.getLastRow(); } catch (_) {}
+    if (lastRow <= 5) {
+      t._v2LastRow = lastRow;  // attach for diagnostic in dialog
+      skipV2Empty.push(t);
+      try { engineLog(ss, 'Cleanup', 'INFO',
+                      'classify ' + t.legacy + ': SKIP_V2_EMPTY (' +
+                      t.v2 + '.lastRow=' + lastRow + ', threshold>5)'); }
+      catch (_) {}
+      return;
+    }
+    willDelete.push(t);
+    try { engineLog(ss, 'Cleanup', 'INFO',
+                    'classify ' + t.legacy + ': WILL_DELETE (' +
+                    t.v2 + '.lastRow=' + lastRow + ')'); }
+    catch (_) {}
+  });
+
+  // ---- Nothing to do? ----------------------------------------------------
+  if (willDelete.length === 0 && skipNoV2.length === 0 && skipV2Empty.length === 0) {
+    ui.alert('Already v2-only',
+             'No legacy tabs found in this workbook. Nothing to delete.',
+             ui.ButtonSet.OK);
+    return;
+  }
+
+  // ---- Build confirmation message ----------------------------------------
+  var msg = 'This will permanently delete the following legacy tabs from\n' +
+            'this workbook:\n\n';
+
+  if (willDelete.length > 0) {
+    msg += 'WILL DELETE (' + willDelete.length + '):\n';
+    willDelete.forEach(function(t) {
+      msg += '  - ' + t.legacy + '  (v2 counterpart ' + t.v2 + ' is populated)\n';
+    });
+    msg += '\n';
+  }
+
+  if (skipNoV2.length > 0) {
+    msg += 'WILL SKIP -- v2 counterpart missing (' + skipNoV2.length + '):\n';
+    skipNoV2.forEach(function(t) {
+      msg += '  - ' + t.legacy + '  (no ' + t.v2 + ' in this workbook)\n';
+    });
+    msg += '  Run "Generate MDC and BOM" first to create the v2 tabs,\n' +
+           '  then re-run this cleanup.\n\n';
+  }
+
+  if (skipV2Empty.length > 0) {
+    msg += 'WILL SKIP -- v2 counterpart empty (' + skipV2Empty.length + '):\n';
+    skipV2Empty.forEach(function(t) {
+      msg += '  - ' + t.legacy + '  (' + t.v2 +
+             ' lastRow=' + (t._v2LastRow == null ? '?' : t._v2LastRow) +
+             ', threshold is >5)\n';
+    });
+    msg += '  Run the engine first so the v2 tabs get populated.\n\n';
+  }
+
+  if (notPresent.length > 0) {
+    msg += 'ALREADY GONE (' + notPresent.length + '):\n';
+    msg += '  ' + notPresent.join(', ') + '\n\n';
+  }
+
+  if (willDelete.length === 0) {
+    msg += 'Nothing to delete in this run.';
+    ui.alert('Delete Legacy Tabs -- nothing to do',
+             msg,
+             ui.ButtonSet.OK);
+    return;
+  }
+
+  msg += 'RECOVERY: deleted tabs can be restored from File -> Version\n' +
+         'history (Google Sheets keeps versions for ~30 days).\n\n' +
+         'Proceed with deletion?';
+
+  var resp = ui.alert('Delete Legacy Tabs', msg, ui.ButtonSet.OK_CANCEL);
+  if (resp !== ui.Button.OK) {
+    ui.alert('Cancelled', 'No tabs deleted.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // ---- Delete + log ------------------------------------------------------
+  var deleted = [];
+  var errors  = [];
+  willDelete.forEach(function(t) {
+    try {
+      var sh = ss.getSheetByName(t.legacy);
+      if (sh) {
+        ss.deleteSheet(sh);
+        deleted.push(t.legacy);
+        try { engineLog(ss, 'Cleanup', 'INFO',
+                        'Deleted legacy tab: ' + t.legacy +
+                        ' (v2 counterpart ' + t.v2 + ' verified populated)'); }
+        catch (_) {}
+      }
+    } catch (e) {
+      errors.push({ name: t.legacy, message: e.message });
+      try { engineLog(ss, 'Cleanup', 'ERROR',
+                      'Could not delete ' + t.legacy + ': ' + e.message); }
+      catch (_) {}
+    }
+  });
+
+  // ---- Result message ----------------------------------------------------
+  var result = 'Deleted ' + deleted.length + ' legacy tab(s):\n  ' +
+               deleted.join('\n  ');
+  if (errors.length > 0) {
+    result += '\n\nErrors (' + errors.length + '):\n';
+    errors.forEach(function(e) {
+      result += '  - ' + e.name + ': ' + e.message + '\n';
+    });
+  }
+  if (skipNoV2.length + skipV2Empty.length > 0) {
+    result += '\n\nSkipped (' + (skipNoV2.length + skipV2Empty.length) +
+              '): see prior dialog for reasons.';
+  }
+  ui.alert('Cleanup complete', result, ui.ButtonSet.OK);
 }
 
 

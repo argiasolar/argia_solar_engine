@@ -22,8 +22,18 @@ registerTest({
     // Reader returns an object (never null)
     t.assertTrue('readBessInstallContext returns object',
                  typeof ctx1 === 'object' && ctx1 !== null);
-    // Required keys present
-    t.assertTrue('has coupling key',     'coupling'     in ctx1);
+    // Required keys present.
+    //
+    // BDF-7.1 (2026): `coupling` is intentionally absent from this
+    // object. The authoritative source is INPUT_DESIGN!C17 surfaced
+    // through bessResult.coupling, which the orchestrator (00_Main Step
+    // 9.6) injects into ctx before passing to downstream calcs. Keeping
+    // a `coupling` field here would re-introduce the duplicate-source
+    // bug class BDF-7.1 closed (INPUT_DESIGN said DC_COUPLED while
+    // INPUT_BESS!C43 default said AC_COUPLED). See 01a_ReadInputsBess.js
+    // lines 201-232 for the full rationale.
+    t.assertTrue('coupling key intentionally ABSENT (BDF-7.1)',
+                 !('coupling' in ctx1));
     t.assertTrue('has dcBusV key',       'dcBusV'       in ctx1);
     t.assertTrue('has acV key',          'acV'          in ctx1);
     t.assertTrue('has dcRunM key',       'dcRunM'       in ctx1);
@@ -56,7 +66,6 @@ registerTest({
     }
     // Save current state of row 42 to avoid clobbering designer data
     var origR42 = sh.getRange(42, 2).getValue();
-    var origR43 = sh.getRange(43, 3).getValue();
     try {
       // Run setup; if §6 didn't exist, this populates it. If it did,
       // setup leaves user values alone.
@@ -65,10 +74,10 @@ registerTest({
       t.assert('§6 header label set',
                '6. DISTANCIAS Y UBICACIÓN FÍSICA',
                String(sh.getRange(42, 2).getValue() || '').trim());
-      // Verify coupling dropdown exists by reading data validation
-      var coupVal = sh.getRange(43, 3).getValue();
-      t.assertTrue('Coupling has a value',
-                   coupVal === 'DC_COUPLED' || coupVal === 'AC_COUPLED');
+      // BDF-7.1: row 43 is no longer written by setupInputBessInstallRows
+      // (coupling was moved to INPUT_DESIGN!C17 as the single authoritative
+      // source). The test no longer checks row 43; any stale value left
+      // over from pre-BDF-7.1 workbooks is silently ignored by the reader.
       // Verify DC bus voltage default
       var dcV = Number(sh.getRange(44, 3).getValue());
       t.assertTrue('DC bus voltage > 0', dcV > 0);

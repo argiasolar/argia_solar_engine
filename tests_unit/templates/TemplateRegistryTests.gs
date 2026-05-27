@@ -184,22 +184,22 @@ registerTest({
     t.assertTrue('listV2Sheets contains RFQ_BESS_v2 (Chunk 6 addition)',
       list.indexOf('RFQ_BESS_v2') !== -1);
 
-    // === Cross-check against SH constants (00_Main.js) ====================
-    // The 5 non-RFQ legacy names should appear in the SH constants object.
-    // (RFQ names are hardcoded in 15_WriteRFQ.js and not in SH today, which
-    // is exactly why V2_LEGACY_MAP exists — it's the canonical reference.)
-    if (typeof SH === 'object' && SH !== null) {
-      t.assert('SH.MDC matches V2_LEGACY_MAP source key for MDC_v2',
-        'MDC', findLegacyKeyForV2_(V2_LEGACY_MAP, 'MDC_v2'));
-      t.assert('SH.BOM matches V2_LEGACY_MAP source key for BOM_v2',
-        'BOM', findLegacyKeyForV2_(V2_LEGACY_MAP, 'BOM_v2'));
-      t.assert('SH.INSTALL_COST equals "INSTALLATION" (matches legacy key in V2_LEGACY_MAP)',
-        'INSTALLATION', SH.INSTALL_COST);
-      t.assert('SH.CFE_OUTPUT equals "CFE_OUTPUT"',
-        'CFE_OUTPUT', SH.CFE_OUTPUT);
-    } else {
-      t.info('SH constants not visible from this context — cross-check skipped', '');
-    }
+    // === V2_LEGACY_MAP key labels match the historical legacy sheet names ===
+    // Before v3.7.5, this section cross-checked V2_LEGACY_MAP against the
+    // SH constants object. SH no longer carries the legacy output-sheet
+    // entries (removed when the codebase went v2-only), so the test now
+    // asserts the legacy strings directly. These strings are also the
+    // user-visible tab names that will be deleted by the "Delete Legacy
+    // Tabs" cleanup utility -- worth pinning here so a rename of any
+    // legacy name elsewhere can't silently drift the cleanup target.
+    t.assert('V2_LEGACY_MAP key for MDC_v2 is "MDC"',
+      'MDC', findLegacyKeyForV2_(V2_LEGACY_MAP, 'MDC_v2'));
+    t.assert('V2_LEGACY_MAP key for BOM_v2 is "BOM"',
+      'BOM', findLegacyKeyForV2_(V2_LEGACY_MAP, 'BOM_v2'));
+    t.assert('V2_LEGACY_MAP key for INSTALLATION_v2 is "INSTALLATION"',
+      'INSTALLATION', findLegacyKeyForV2_(V2_LEGACY_MAP, 'INSTALLATION_v2'));
+    t.assert('V2_LEGACY_MAP key for CFE_OUTPUT_v2 is "CFE_OUTPUT"',
+      'CFE_OUTPUT', findLegacyKeyForV2_(V2_LEGACY_MAP, 'CFE_OUTPUT_v2'));
   }
 });
 

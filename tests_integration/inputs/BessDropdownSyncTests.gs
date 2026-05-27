@@ -124,16 +124,27 @@ registerTest({
     var targetSheetName = targetRange.getSheet().getName();
     var targetA1 = targetRange.getA1Notation();
 
-    t.assert('C6 dropdown reads from ' + SH.BESS_MIRROR,
-             SH.BESS_MIRROR, targetSheetName);
+    // BDF-6 (2026): C6 no longer points directly at 16M_PRODUCTS_BESS.
+    // It points at a hidden helper sheet '_BESS_PICKER_OPTIONS' (col A,
+    // rows 1..N) that refreshBessPicker() rebuilds as the UNION of
+    // catalog Battery_IDs + recommendation labels. This lets a designer
+    // pick a stacked recommendation (whose label doesn't match any
+    // catalog Battery_ID) from the same dropdown.
+    //
+    // Source of truth: 21_BessPickerWiring.js lines 263-301.
+    t.assert('C6 dropdown reads from _BESS_PICKER_OPTIONS (BDF-6 helper)',
+             '_BESS_PICKER_OPTIONS', targetSheetName);
 
-    // Battery_ID is column A; range should start at A2 (skip header) and
-    // ideally extend to the bottom. Acceptable forms: 'A2:A', 'A2:A11', etc.
-    t.assertTrue('C6 dropdown range starts at column A (Battery_ID), got '
+    // Helper sheet has no header row -- data starts at A1. Acceptable
+    // forms: 'A1:A', 'A1:A11', 'A:A', etc.
+    t.assertTrue('C6 dropdown range starts at column A from row 1, got '
                  + targetA1,
-                 /^A2(:A\d*)?$/.test(targetA1));
+                 /^A1?(:A\d*)?$/.test(targetA1) || targetA1 === 'A:A');
 
-    // === Cross-check: dropdown values reflect real DB =================
+    // === Cross-check: helper sheet content covers the live DB =========
+    // The helper is rebuilt from getAllBatteryProducts() + recommendations
+    // every time setupInputBess() or runBessSuggestion() is called, so
+    // every catalog Battery_ID should appear in the helper.
     var products = getAllBatteryProducts(ctx.ss);
     var ids = products.map(function (p) {
       return String(p['Battery_ID'] || '').trim();

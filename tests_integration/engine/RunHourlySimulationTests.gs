@@ -185,7 +185,10 @@ registerTest({
         },
       };
       sh.getRange(5, 2).setValue('Placeholder');
-      _cfeOutWriteHourlySimAddendum(sh, fakeHourly);
+      // Function was renamed in Tier 2 cutover: legacy
+      // _cfeOutWriteHourlySimAddendum -> v2 _cfeOutV2_fillHourlyAddendum.
+      // Same behavior, ported verbatim per the v2 file's header comment.
+      _cfeOutV2_fillHourlyAddendum(sh, fakeHourly);
       var lastRow = sh.getLastRow();
 
       // Check addendum header rendered

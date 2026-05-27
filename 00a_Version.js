@@ -26,6 +26,119 @@
 //   DB_VERSION uses YYYY.MM
 //     Bump when any *_DB or master table changes.
 //
+// 3.7.7 — PATCH bump (2026-05-27). ARGIA menu reorganization.
+//
+// Top level is now action-oriented and minimal:
+//   Import Helioscope, Verify Layout, Suggest BESS, Update CFE Output,
+//   Generate MDC and BOM, Generate Installation, Generate Project Card,
+//   Generate RFQs, Exports, Setup.
+//
+// Setup submenu groups everything else (one section per purpose):
+//   - Test runners: Unit, Regression, Integration, ALL
+//   - One-shot template/inputs setup
+//   - Repairs for drifted workbooks
+//   - Workbook utilities (logo cache, delete legacy tabs)
+//   - Test-data fixtures (CULLIGAN + Restore)
+//
+// Removed:
+//   - "Setup Project Card Inputs" menu item -- function
+//     runSetupProjectCardInputs was never defined anywhere; clicking
+//     the item would have thrown "Script function not found".
+//   - "Run Tests for Current Chunk" menu item -- chunk-tracking was a
+//     migration scaffolding tool; migration is complete, the chunk-tag
+//     stayed frozen at "chunk7", and the single menu item it served
+//     was the only consumer.
+//   - templates/ActiveChunk.js file deleted (defined ACTIVE_CHUNK_TAG
+//     and runCurrentChunkTests; both dead with the menu item gone).
+//     runTestsByTag stays in test/TestRunner.gs -- it's generic
+//     infrastructure that future tag-based queries can still use.
+//
+// Renamed for cleaner reading: "Update CFE_OUTPUT" -> "Update CFE Output".
+// No function rename; just the menu label.
+//
+// 3.7.6 — PATCH bump (2026-05-27). Six pre-existing integration-test
+// stale-contract failures cleared. No product code change.
+//
+// All six tests asserted contracts that had been intentionally updated
+// in earlier BDFs (the codebase moved on, the tests didn't). Aligned
+// each test with the documented current contract:
+//
+//   1. INT_BDF7_READ_INSTALL_CONTEXT -- asserted 'coupling' key in
+//      readBessInstallContext return. BDF-7.1 removed coupling from
+//      this object (orchestrator now injects it from INPUT_DESIGN!C17,
+//      the single authoritative source). Test inverted to assert
+//      'coupling intentionally ABSENT'.
+//   2. INT_BDF7_SETUP_INSTALL_ROWS -- asserted row 43 holds a coupling
+//      value after setupInputBessInstallRows. BDF-7.1 stopped writing
+//      row 43. Coupling check removed; other §6 checks preserved.
+//   3. INT_BDF5_CFE_OUTPUT_ADDENDUM -- called _cfeOutWriteHourlySimAddendum
+//      (legacy name). Function was renamed _cfeOutV2_fillHourlyAddendum
+//      in the Tier 2 cutover (verbatim port, same behavior).
+//   4. INT_INPUTS_BESS_C6_DROPDOWN_SYNC -- asserted C6 reads from
+//      16M_PRODUCTS_BESS!A2:A directly. BDF-6 switched the dropdown
+//      source to a hidden union helper sheet _BESS_PICKER_OPTIONS so a
+//      designer can pick stacked recommendation labels alongside
+//      catalog Battery_IDs.
+//   5. INT_INPUTS_BESS_VOLTAGE_LIVE_CELL CASE3 -- live-cell mirror of
+//      the unit test we fixed in 3.7.4. Asserted DB-wins; BDF-7.1 is
+//      manual-wins (INPUT_* overrides MASTER_DB, consistent with the
+//      rest of the engine). Inverted.
+//   6. INT_TEMPLATES_LOAD_ORDER_PROBE -- asserted orchestrator attempts
+//      10 sheets. Chunk 6 added RFQ_BESS, making it 11. Bumped count
+//      AND added a Chunk-0 / post-templates branch so the assertion
+//      adapts to whichever state the codebase is in (post-templates =
+//      no longer "skipped all").
+//
+// Two regression failures NOT addressed here (not stale tests):
+//   - REG_BESS_SIM_FORMULAS "Toggle YES -> D15 non-zero": tests live
+//     spreadsheet formula chain. D15 depends on populated INPUT_BESS
+//     state. Likely cause: workbook is not currently holding a
+//     CULLIGAN run (the test that catches this -- REG_CULLIGAN_BASELINE
+//     -- correctly self-skipped with that exact diagnosis).
+//   - REG_CULLIGAN_BASELINE_V2 MDC_v2.C7: self-detected missing
+//     fixture. Re-run "Load CULLIGAN Fixture" + "Generate MDC and BOM"
+//     then re-run the regression suite.
+//
+// 3.7.5 — PATCH bump (2026-05-27). Tier 4: v2-only cleanup. Migration
+// COMPLETE — codebase no longer carries any legacy output-sheet code.
+//
+// Removed:
+//   - 818 LOC of orphaned legacy template-builder functions from
+//     02e_InputSetup.js (setupMDCTemplate, setupBOMTemplate, previewMDC,
+//     previewBOM, addInstallationBanner, restyleInstallationTopZone).
+//     Nothing called these since Tier 1 (3.5.0); the v2 equivalents live
+//     in templates/setupMdcTemplate.js, templates/setupBomTemplate.js,
+//     templates/setupInstallationTemplate.js.
+//   - Legacy entries from SH constants (00_Main.js): SH.MDC, SH.BOM,
+//     SH.INSTALL_COST, SH.CFE_OUTPUT, SH.INSTALL_DRIVER_MAP. SH now
+//     contains only input sheets, mirrors, library tables, and LOGS.
+//   - Legacy entries from SH_IC (13_CalcInstallCost.js): COST,
+//     DRIVER_MAP, BENCHMARKS. SH_IC now contains only the library
+//     tables it actually reads.
+//   - Stale legacy entries from OPTIONAL_SHEETS in 00_Main.js startup
+//     check (INSTALLATION, 95_INSTALL_DRIVER_MAP, BOM special-case).
+//
+// Added:
+//   - ARGIA -> Setup -> Delete Legacy Tabs menu item. Removes the 10
+//     legacy output tabs from the active workbook (MDC, BOM,
+//     INSTALLATION, CFE_OUTPUT, PROJECT_CARD, RFQ_PANELES,
+//     RFQ_INVERSORES, RFQ_ESTRUCTURA, RFQ_ELECTRICO, RFQ_MONITOREO,
+//     95_INSTALL_DRIVER_MAP). Safety gates: v2 counterpart must exist
+//     AND have data past row 5; user confirms the exact list before
+//     deletion; each deletion logged via engineLog. Reversible via
+//     File -> Version history for ~30 days.
+//
+// Updated:
+//   - Stale "writeInstallCost will be deleted in Tier 2" comment in
+//     13_CalcInstallCost.js -> reflects Tier 2 completion.
+//   - File header in 13_CalcInstallCost.js updated to v2-only FLOW.
+//   - Test mocks in TemplateRegistryTests.gs and WriteProjectCardV2-
+//     Tests.gs no longer reference removed SH symbols.
+//   - OUTPUT_V2_MIGRATION_PLAN.md status block updated to "MIGRATION
+//     COMPLETE".
+//
+// No engine / writer / template behavior change. Pure cleanup.
+//
 // 3.7.4 — PATCH bump (2026-05-27). Three pre-existing test-debt failures
 // (surfaced after Tier 3.x cleared the bigger issues, none Tier 3-caused):
 //
@@ -254,7 +367,7 @@
 // unchanged. NO charts in v2 (matches the current legacy state — charts
 // were removed in BDF-11).
 //
-var ENGINE_VERSION = '3.7.4';
+var ENGINE_VERSION = '3.7.7';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default

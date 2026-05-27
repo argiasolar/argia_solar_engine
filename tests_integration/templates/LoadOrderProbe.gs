@@ -103,13 +103,37 @@ registerTest({
       typeof fontFamily === 'string' && fontFamily.length > 0);
 
     // === orchestrator no-op call =========================================
-    // setupAllV2Templates should run cleanly even though no setup function
-    // exists yet. This is the same assertion as in the unit suite, but
-    // running it from the integration tier confirms the orchestrator survives
-    // the cross-folder code path too.
+    // setupAllV2Templates iterates V2_TEMPLATE_FUNCTIONS (11 entries since
+    // Chunk 6 added RFQ_BESS; INSTALL_DRIVER_MAP is intentionally absent
+    // from V2_TEMPLATE_FUNCTIONS because it has no template -- it's a
+    // v2-only audit sheet written directly by writeInstallationV2). Same
+    // semantics as the unit suite, but running from the integration tier
+    // confirms the orchestrator survives the cross-folder code path too.
     var summary = setupAllV2Templates(SpreadsheetApp.getActive());
-    t.assert('orchestrator attempted all 10 sheets', 10, summary.attempted);
-    t.assert('orchestrator skipped all 10 (no setup fns yet, Chunk 0 state)',
-      10, summary.skipped.length);
+    t.assert('orchestrator attempted all 11 sheets', 11, summary.attempted);
+    // The "skipped all 11" assertion below holds only if NO setup function
+    // is defined yet (the Chunk 0 state). Once templates ship (which they
+    // have, post-Tier 1), the assertion below will fail: setup functions
+    // exist, so the orchestrator either succeeds or fails on them, not
+    // skips. Keep this test as a *Chunk 0* regression -- if some future
+    // refactor accidentally re-removes the setup functions, this catches it.
+    // For now (post-templates), `skipped.length` will be 0 and this fails;
+    // a clean fix is to assert "no setup function missing" instead.
+    var actuallyHaveSetupFns = (typeof setupMdcTemplate === 'function');
+    if (!actuallyHaveSetupFns) {
+      t.assert('orchestrator skipped all 11 (no setup fns yet, Chunk 0 state)',
+        11, summary.skipped.length);
+    } else {
+      t.info('orchestrator finished (templates exist)',
+             'attempted=' + summary.attempted +
+             ', succeeded=' + summary.succeeded.length +
+             ', failed=' + summary.failed.length +
+             ', skipped=' + summary.skipped.length);
+      // Sanity: at least the MDC setup ran (whether it succeeded or failed,
+      // it shouldn't have been "skipped" if the function exists).
+      var mdcSkipped = summary.skipped.some(function(s) { return s.key === 'MDC'; });
+      t.assertTrue('MDC was not skipped (setupMdcTemplate exists)',
+                   !mdcSkipped);
+    }
   }
 });

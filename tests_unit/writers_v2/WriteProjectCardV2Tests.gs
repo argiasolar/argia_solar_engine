@@ -153,17 +153,12 @@ function _makePcMockSpreadsheet(opts) {
     _bom: bomSheet,
     _install: installSheet,
     getSheetByName: function(name) {
-      // PC sheet: v2 only.
+      // v2-only codebase (since v3.7.5): writer reads from BOM_v2 and
+      // INSTALLATION_v2 only. Legacy SH.BOM / 'INSTALLATION' fallbacks
+      // were removed.
       if (name === V2_SHEETS.PROJECT_CARD) return pcSheet;
-      // BOM: the writer was migrated to read from 'BOM_v2' in Tier 2
-      // (2026-05-26) -- the legacy 'BOM' sheet is no longer refreshed by
-      // the engine after Tier 1. Recognize both names so this mock works
-      // for any caller that still passes through legacy code paths, but
-      // the primary key is 'BOM_v2'.
-      if (name === 'BOM_v2' || name === SH.BOM) return bomSheet;
-      // INSTALLATION: same Tier 2 migration -- writer reads from
-      // 'INSTALLATION_v2'. Cell positions are identical to legacy.
-      if (name === 'INSTALLATION_v2' || name === 'INSTALLATION') return installSheet;
+      if (name === 'BOM_v2')          return bomSheet;
+      if (name === 'INSTALLATION_v2') return installSheet;
       return null;
     }
   };
