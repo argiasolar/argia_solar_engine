@@ -1,38 +1,60 @@
 // =============================================================================
 // ARGIA TESTS -- tests_regression/v2/CulliganBaselineV2Tests.gs
 // -----------------------------------------------------------------------------
-// CHUNK 1 — v2 regression baseline (MDC_v2 only, for now).
+// v2 regression baseline -- locks the headline numbers from a real CULLIGAN
+// engine run against every v2 output sheet shipped by chunks 1..7.
 //
 // PURPOSE
-//   Mirrors REG_CULLIGAN_BASELINE but reads from MDC_v2 instead of MDC. As
-//   each subsequent chunk migrates a writer (BOM_v2 in Chunk 2, PROJECT_CARD_v2
-//   in Chunk 3, INSTALLATION_v2 in Chunk 4, etc.) we ADD blocks to this test.
-//   At cutover (Chunk 11) this test becomes the new REG_CULLIGAN_BASELINE.
+//   The legacy baseline (tests_regression/baseline/CulliganBaselineTests.gs)
+//   locks values on the legacy MDC / BOM / INSTALLATION / PROJECT_CARD sheets.
+//   This test mirrors that pattern for the v2 sheets so the cutover PR
+//   (plan Chunk 11) can delete the legacy file and rename this one without
+//   losing assertion coverage.
 //
 // SCOPE (read-only, same as legacy)
-//   This test does NOT write fixture inputs and does NOT run the engine. It
-//   asserts on whatever is currently in MDC_v2. The caller is responsible for
-//   running `runArgiaEngine()` against CULLIGAN inputs IMMEDIATELY BEFORE
-//   invoking this test.
+//   Asserts on whatever is currently in the v2 sheets. Caller is responsible
+//   for:
+//     1. Running runArgiaEngine() against CULLIGAN inputs (writes MDC_v2,
+//        BOM_v2, INSTALLATION_v2, PROJECT_CARD_v2, CFE_OUTPUT_v2).
+//     2. Running "Generate RFQs v2" from the ARGIA menu (writes the six
+//        RFQ_*_v2 sheets).
+//   If the workbook holds a different project or RFQs are stale, the
+//   identity asserts at the start of each block will catch it and the block
+//   will short-circuit with a readable failure.
 //
 // LOCK SOURCE
-//   Same baseline run as legacy: engine v2.3.5, DB 2026.05, real CULLIGAN
-//   inputs. The MDC_v2 sheet is written by writeMdcV2() inside the same
-//   engine pass that writes the legacy MDC; the cells locked here should be
-//   identical to the legacy MDC's locks for the same rows.
+//   Workbook ARGIA_ENGINE__39_.xlsx, _META.calculated_at = 2026-05-26T18:53Z,
+//   engine v3.5.0, DB 2026.05. Real CULLIGAN inputs (1350 panels, 5 inverters,
+//   864 kWdc, 700 kWac, PPA_ROOF business case, MONTERREY, BESS enabled with
+//   9 x HW_LUNA_241_2S1 stacks, PEAK_SHAVING strategy, DC_COUPLED).
 //
-// NOT-YET-COVERED (will land in future chunks)
-//   - BOM_v2 totals (Chunk 2)
-//   - PROJECT_CARD_v2 totals (Chunk 3)
-//   - INSTALLATION_v2 totals (Chunk 4)
-//   These are intentionally OMITTED here, not stubbed as TODOs, because a
-//   failing assertion against a sheet that doesn't exist yet would be noise.
+//   Lock values were read directly from the v2 sheets of this workbook, not
+//   copied from the legacy baseline. Several v2 totals differ from legacy
+//   locks because (a) BESS line items now flow through BOM/PC/INSTALLATION
+//   and (b) the legacy baseline drifted from engine v2.3.5 to v3.5.0 without
+//   being re-locked.
 //
-// CHUNK TAG
-//   'chunk1' so the per-chunk runner picks it up while we're on Chunk 1.
-//   When Chunk 2 lands, retain 'chunk1' (still locks MDC_v2) and ALSO add a
-//   second registerTest below for BOM_v2 with tag 'chunk2'. The Chunk 11
-//   cutover then consolidates everything.
+// SUPERSEDES
+//   The MDC_v2-only version of this file (pre-cutover-prep). All blocks
+//   previously "not yet covered" are now covered: BOM_v2, INSTALLATION_v2,
+//   PROJECT_CARD_v2, CFE_OUTPUT_v2, RFQ_*_v2.
+//
+// CUTOVER NOTES (for Chunk 11 PR)
+//   - The PARITY blocks (Block 5 in each sheet section) compare v2 against
+//     the legacy sheet. After cutover the legacy sheets are gone and these
+//     blocks become noise -- DELETE them in the cutover PR. They're called
+//     out inline with a "REMOVE AT CUTOVER" comment so the diff is easy.
+//   - At cutover the v2 sheet names lose the "_v2" suffix. Search-and-
+//     replace MDC_v2 -> MDC etc. and rename this file to
+//     tests_regression/baseline/CulliganBaselineTests.gs, replacing the
+//     legacy one in the same commit.
+//   - The engine version assert is currently set to "3.5.0". Bump to the
+//     cutover release version (likely "4.0.0" per the cleanup plan's
+//     MAJOR-bump policy for sheet renames).
+//
+// TAGS
+//   'chunk1' kept for backward compat with the per-chunk runner.
+//   'cutover-ready' makes this discoverable in the Chunk 11 prep.
 // =============================================================================
 
 
@@ -41,70 +63,68 @@ registerTest({
   group   : 'regression',
   module  : 'regression/v2/culligan',
   scenarios: [],
-  tags    : ['regression', 'baseline', 'culligan', 'v2', 'read-only', 'chunk1'],
+  tags    : ['regression', 'baseline', 'culligan', 'v2',
+             'read-only', 'chunk1', 'cutover-ready'],
   source  : 'tests_regression/v2/CulliganBaselineV2Tests.gs',
   fn: function (t, ctx) {
-    t.suite('REG regression/v2/culligan: CULLIGAN reference numbers on MDC_v2');
+    t.suite('REG regression/v2/culligan: CULLIGAN reference numbers (all v2 sheets)');
 
     var ss = ctx.ss;
     if (!ss) { t.info('skipped', 'no spreadsheet context'); return; }
 
     t.info('caveat',
-      'Read-only assertion against MDC_v2. Run "Generate MDC and BOM" against ' +
-      'CULLIGAN inputs IMMEDIATELY before running this test. The same engine ' +
-      'pass that updates MDC also writes MDC_v2 (Step 10-v2). Failures on the ' +
-      'project-name assertion indicate the workbook holds a different run.');
+      'Read-only test. Before running:\n' +
+      '  1. Run "Generate MDC and BOM" against CULLIGAN inputs (engine pass).\n' +
+      '  2. Run "Generate RFQs v2" from the ARGIA menu.\n' +
+      'The first identity assertion in each block confirms the workbook ' +
+      'holds CULLIGAN and short-circuits the block on mismatch so failures ' +
+      'are interpretable.');
 
-    // -- Required sheets ---------------------------------------------------
+    // Tolerances -- same scheme as legacy baseline, plus a few new ones.
+    var TOL_RATIO = 0.001;   // dimensionless 3-decimal lock
+    var TOL_CUR   = 0.05;    // amps, 2-decimal lock
+    var TOL_PCT   = 0.0005;  // voltage drops, 4-decimal lock
+    var TOL_USD   = 1.0;     // BOM / PC totals to nearest USD
+    var TOL_MXN   = 50.0;    // MXN locks to nearest 50 pesos (FX rounding)
+    var TOL_MXN_BIG = 1000.0; // annual CFE bills are ~$10M MXN, scale tolerance
+    var TOL_KWH   = 100.0;   // annual kWh in the millions, ±100 is tight
+
+    // ====================================================================
+    // BLOCK A: MDC_v2 -- engineering decisions
+    // ====================================================================
+    t.suite('A. MDC_v2 -- engineering decisions');
+
     if (!ss.getSheetByName('MDC_v2')) {
       t.fail('required sheet missing',
-             'MDC_v2 -- aborting v2 baseline check. The v2 sheet is created ' +
-             'by setupMdcTemplate() during Step 10-v2 of runArgiaEngine. If ' +
-             'the engine ran but the sheet is missing, the v2 try/catch ' +
+             'MDC_v2 -- created by setupMdcTemplate() during Step 10-v2. ' +
+             'If the engine ran but the sheet is missing, the v2 try/catch ' +
              'swallowed an error -- check the engine log.');
       return;
     }
-    if (!ss.getSheetByName('_META')) {
-      t.fail('required sheet missing', '_META');
-      return;
-    }
-
     var mdc = ss.getSheetByName('MDC_v2');
 
-    // =====================================================================
-    // BLOCK 1: IDENTITY (must match before any number is meaningful)
-    // =====================================================================
+    // -- A1: identity (must match before any number is meaningful) --
     var mdcProj = String(mdc.getRange('C7').getValue() || '').trim();
     if (mdcProj !== 'CULLIGAN') {
       t.fail('MDC_v2.C7 project name (CULLIGAN required)',
              'got "' + mdcProj + '" -- this workbook is NOT holding a ' +
              'CULLIGAN run. Re-run "Generate MDC and BOM" against CULLIGAN ' +
-             'inputs, then re-run this test. Subsequent asserts skipped.');
+             'inputs, then re-run this test. All blocks skipped.');
       return;
     }
     t.assert('MDC_v2.C7 project name', 'CULLIGAN', mdcProj);
     t.assert('MDC_v2.C8 client name',  'CULLIGAN TEST',
              String(mdc.getRange('C8').getValue() || '').trim());
 
-    // =====================================================================
-    // BLOCK 2: SCALE (panel count, inverter count, kW)
-    // =====================================================================
-    t.assert('MDC_v2.C11 module count',     1350, mdc.getRange('C11').getValue());
-    t.assert('MDC_v2.C12 inverter count',      5, mdc.getRange('C12').getValue());
+    // -- A2: scale --
+    t.assert('MDC_v2.C11 module count',   1350, mdc.getRange('C11').getValue());
+    t.assert('MDC_v2.C12 inverter count',    5, mdc.getRange('C12').getValue());
 
-    // =====================================================================
-    // BLOCK 3: MDC ENGINEERING DECISIONS
-    // Mirrors REG_CULLIGAN_BASELINE block 3, same tolerances.
-    // =====================================================================
-    var TOL_RATIO = 0.001;
-    var TOL_CUR   = 0.05;
-    var TOL_PCT   = 0.0005;
-
+    // -- A3: DC sizing --
     t.assertNear('MDC_v2.C17 DC/AC ratio',
                  1.234, mdc.getRange('C17').getValue(), TOL_RATIO);
     t.assertNear('MDC_v2.C22 design current (A)',
                  23.64, mdc.getRange('C22').getValue(), TOL_CUR);
-
     t.assertContains('MDC_v2.C26 DC conductor includes 10 AWG',
                      String(mdc.getRange('C26').getValue()), '10 AWG');
     t.assertContains('MDC_v2.C28 DC OCPD includes 25',
@@ -114,65 +134,461 @@ registerTest({
 
     var vocColdRaw = String(mdc.getRange('C35').getValue() || '');
     var vmpHotRaw  = String(mdc.getRange('C36').getValue() || '');
-    t.assertContains('MDC_v2.C35 Voc cold ≈ 1031.9 V', vocColdRaw, '1031.9');
-    t.assertContains('MDC_v2.C36 Vmp hot ≈ 752.8 V',   vmpHotRaw,  '752.8');
+    t.assertContains('MDC_v2.C35 Voc cold = 1031.9 V', vocColdRaw, '1031.9');
+    t.assertContains('MDC_v2.C36 Vmp hot = 752.8 V',   vmpHotRaw,  '752.8');
 
-    var acMainRaw   = String(mdc.getRange('C56').getValue() || '');
-    var breakerRaw  = String(mdc.getRange('C57').getValue() || '');
-    var transRaw    = String(mdc.getRange('C66').getValue() || '');
-    t.assertContains('MDC_v2.C56 AC main current ≈ 842 A', acMainRaw,  '842');
+    // -- A4: AC sizing --
+    var acMainRaw  = String(mdc.getRange('C56').getValue() || '');
+    var breakerRaw = String(mdc.getRange('C57').getValue() || '');
+    var transRaw   = String(mdc.getRange('C66').getValue() || '');
+    t.assertContains('MDC_v2.C56 AC main current = 842 A', acMainRaw,  '842');
     t.assertContains('MDC_v2.C57 main breaker = 1250 A',   breakerRaw, '1250');
     t.assertContains('MDC_v2.C66 transformer = 1000 kVA',  transRaw,   '1000');
 
+    // -- A5: emission status & layout --
     t.assert('MDC_v2.C72 emission status',
              'EMITTABLE WITH OBSERVATIONS',
              String(mdc.getRange('C72').getValue() || '').trim());
+    t.assertContains('MDC_v2.C88 array area = 3564 m2',
+                     String(mdc.getRange('C88').getValue() || ''), '3564');
+    t.assertContains('MDC_v2.C91 DC cable total = 12600 m',
+                     String(mdc.getRange('C91').getValue() || ''), '12600');
 
-    var areaRaw    = String(mdc.getRange('C88').getValue() || '');
-    var dcCableRaw = String(mdc.getRange('C91').getValue() || '');
-    t.assertContains('MDC_v2.C88 array area = 3564 m2',     areaRaw,    '3564');
-    t.assertContains('MDC_v2.C91 DC cable total = 12600 m', dcCableRaw, '12600');
+    // -- A6: BESS section (§7) -- new in v2, never covered by legacy baseline --
+    t.assertContains('MDC_v2.B100 BESS section header',
+                     String(mdc.getRange('B100').getValue() || ''),
+                     'ALMACENAMIENTO');
+    t.assertContains('MDC_v2.C101 BESS product / strategy = HW_LUNA + PEAK_SHAVING',
+                     String(mdc.getRange('C101').getValue() || ''),
+                     'HW_LUNA_241_2S1');
+    t.assertContains('MDC_v2.C101 BESS strategy = PEAK_SHAVING',
+                     String(mdc.getRange('C101').getValue() || ''),
+                     'PEAK_SHAVING');
+    t.assertContains('MDC_v2.C102 BESS nominal capacity = 2169 kWh',
+                     String(mdc.getRange('C102').getValue() || ''), '2169');
+    t.assertContains('MDC_v2.C103 BESS nominal power = 972 kW',
+                     String(mdc.getRange('C103').getValue() || ''), '972');
+    t.assertContains('MDC_v2.C105 BESS topology = DC_COUPLED',
+                     String(mdc.getRange('C105').getValue() || ''),
+                     'DC_COUPLED');
+    t.assertContains('MDC_v2.C107 BESS circuit run-1 sized',
+                     String(mdc.getRange('C107').getValue() || ''),
+                     'OCPD 1300');
 
-    // =====================================================================
-    // BLOCK 4: PARITY CHECK (v2 should match legacy MDC cell-for-cell on
-    // the headline numbers). This is the differentiator vs the legacy
-    // baseline -- if v2 ever drifts from legacy during the migration, this
-    // assertion catches it BEFORE it lands in front of a customer.
-    // =====================================================================
-    var legacy = ss.getSheetByName('MDC');
-    if (legacy) {
-      var checkParity = function(cell, label) {
+    // -- A7: PARITY vs legacy MDC -- REMOVE AT CUTOVER (Chunk 11) --
+    var legacyMdc = ss.getSheetByName('MDC');
+    if (legacyMdc) {
+      var checkMdcParity = function (cell, label) {
         var v2  = mdc.getRange(cell).getValue();
-        var leg = legacy.getRange(cell).getValue();
-        // Use loose string equality for cells with units ("10 AWG" vs 10), tight
-        // numeric equality otherwise.
+        var leg = legacyMdc.getRange(cell).getValue();
         var v2s  = String(v2  === null ? '' : v2);
         var legs = String(leg === null ? '' : leg);
-        t.assert('PARITY ' + cell + ' (' + label + ')', legs, v2s);
+        t.assert('PARITY MDC.' + cell + ' (' + label + ')', legs, v2s);
       };
-      checkParity('C7',  'project');
-      checkParity('C8',  'client');
-      checkParity('C11', 'module count');
-      checkParity('C12', 'inverter count');
-      checkParity('C26', 'DC conductor');
-      checkParity('C57', 'main breaker');
-      checkParity('C66', 'transformer');
-      checkParity('C72', 'emission status');
+      checkMdcParity('C7',  'project');
+      checkMdcParity('C8',  'client');
+      checkMdcParity('C11', 'module count');
+      checkMdcParity('C12', 'inverter count');
+      checkMdcParity('C26', 'DC conductor');
+      checkMdcParity('C57', 'main breaker');
+      checkMdcParity('C66', 'transformer');
+      checkMdcParity('C72', 'emission status');
     } else {
-      t.info('parity skipped', 'legacy MDC sheet not present');
+      t.info('MDC parity skipped', 'legacy MDC sheet not present');
     }
 
-    // =====================================================================
-    // BLOCK 5: ENGINE VERSION
-    // =====================================================================
-    var meta = ss.getSheetByName('_META');
-    var engineVer = String(meta.getRange('B4').getValue() || '');
-    if (engineVer !== '2.3.5') {
-      t.info('engine version drift',
-        'Baseline was locked at engine v2.3.5. Current engine v' + engineVer +
-        '. If asserts above pass, the baseline carries forward cleanly.');
+    // ====================================================================
+    // BLOCK B: BOM_v2 -- material costs (PV + BESS combined)
+    // ====================================================================
+    t.suite('B. BOM_v2 -- material costs incl. BESS');
+
+    if (!ss.getSheetByName('BOM_v2')) {
+      t.fail('required sheet missing', 'BOM_v2');
     } else {
-      t.assert('engine version matches v2 baseline', '2.3.5', engineVer);
+      var bom = ss.getSheetByName('BOM_v2');
+
+      // -- B1: identity (banner cell carries project name) --
+      var bomTitle = String(bom.getRange('A4').getValue() || '');
+      t.assertContains('BOM_v2.A4 banner carries CULLIGAN', bomTitle, 'CULLIGAN');
+      t.assertContains('BOM_v2.A4 banner carries 1350 mod', bomTitle, '1350');
+      t.assertContains('BOM_v2.A4 banner carries 864.00 kWp', bomTitle, '864.00 kWp');
+
+      // -- B2: section subtotals (col F = USD) --
+      t.assertNear('BOM_v2.F13 SUBTOTAL panels USD',
+                   128736.00,  bom.getRange('F13').getValue(), TOL_USD);
+      t.assertNear('BOM_v2.F20 SUBTOTAL inverters USD',
+                   31200.00,   bom.getRange('F20').getValue(), TOL_USD);
+      t.assertNear('BOM_v2.F25 SUBTOTAL structure USD',
+                   24300.00,   bom.getRange('F25').getValue(), TOL_USD);
+      t.assertNear('BOM_v2.F35 SUBTOTAL DC USD',
+                   58377.77,   bom.getRange('F35').getValue(), TOL_USD);
+      t.assertNear('BOM_v2.F63 SUBTOTAL AC USD',
+                   78315.41,   bom.getRange('F63').getValue(), TOL_USD);
+      t.assertNear('BOM_v2.F68 SUBTOTAL transformer USD',
+                   0.00,       bom.getRange('F68').getValue(), TOL_USD);
+      t.assertNear('BOM_v2.F78 SUBTOTAL monitoring+permits USD',
+                   6724.32,    bom.getRange('F78').getValue(), TOL_USD);
+
+      // -- B3: BESS section subtotal (§8, new in v2) --
+      t.assertContains('BOM_v2.B79 BESS section header',
+                       String(bom.getRange('B79').getValue() || ''),
+                       'ALMACEN');
+      t.assertNear('BOM_v2.F92 SUBTOTAL BESS USD',
+                   1577160.94, bom.getRange('F92').getValue(), TOL_USD);
+      t.assertNear('BOM_v2.G92 SUBTOTAL BESS MXN',
+                   29177477.0, bom.getRange('G92').getValue(), TOL_MXN);
+
+      // -- B4: grand total (row 94 in v2 because BESS section pushed it down) --
+      t.assertNear('BOM_v2.F94 GRAND TOTAL USD',
+                   1904814.44, bom.getRange('F94').getValue(), TOL_USD);
+      t.assertNear('BOM_v2.G94 GRAND TOTAL MXN',
+                   35239067.0, bom.getRange('G94').getValue(), TOL_MXN);
+
+      // -- B5: PARITY vs legacy BOM -- REMOVE AT CUTOVER (Chunk 11) --
+      // Section subtotals only -- grand totals are on different rows because
+      // v2 has a BESS section that legacy doesn't.
+      var legacyBom = ss.getSheetByName('BOM');
+      if (legacyBom) {
+        var checkBomParity = function (cell, label) {
+          var v2  = bom.getRange(cell).getValue();
+          var leg = legacyBom.getRange(cell).getValue();
+          if (typeof v2 === 'number' && typeof leg === 'number') {
+            t.assertNear('PARITY BOM.' + cell + ' (' + label + ')',
+                         leg, v2, TOL_USD);
+          } else {
+            t.assert('PARITY BOM.' + cell + ' (' + label + ')',
+                     String(leg == null ? '' : leg),
+                     String(v2 == null ? '' : v2));
+          }
+        };
+        checkBomParity('F13', 'panels subtotal');
+        checkBomParity('F20', 'inverters subtotal');
+        checkBomParity('F25', 'structure subtotal');
+        checkBomParity('F35', 'DC subtotal');
+        checkBomParity('F63', 'AC subtotal');
+        checkBomParity('F78', 'monitoring subtotal');
+      } else {
+        t.info('BOM parity skipped', 'legacy BOM sheet not present');
+      }
+    }
+
+    // ====================================================================
+    // BLOCK C: INSTALLATION_v2 -- labor / equipment costs
+    // ====================================================================
+    t.suite('C. INSTALLATION_v2 -- labor / equipment');
+
+    if (!ss.getSheetByName('INSTALLATION_v2')) {
+      t.fail('required sheet missing', 'INSTALLATION_v2');
+    } else {
+      var inst = ss.getSheetByName('INSTALLATION_v2');
+
+      // -- C1: scale (must agree with MDC) --
+      t.assertNear('INSTALL_v2.B6 DC kWp',     864, inst.getRange('B6').getValue(), 0.5);
+      t.assertNear('INSTALL_v2.B7 AC kW',      700, inst.getRange('B7').getValue(), 0.5);
+      t.assert('INSTALL_v2.B8 module count', 1350, inst.getRange('B8').getValue());
+      t.assert('INSTALL_v2.B9 inverter count',  5, inst.getRange('B9').getValue());
+
+      // -- C2: totals (G column = MXN) --
+      t.assertNear('INSTALL_v2.G5 TOTAL LABOR MXN',
+                   99431.48,  inst.getRange('G5').getValue(), TOL_MXN);
+      t.assertNear('INSTALL_v2.G6 TOTAL EQUIP MXN',
+                   166880.00, inst.getRange('G6').getValue(), TOL_MXN);
+      t.assertNear('INSTALL_v2.G7 TOTAL OTHER MXN',
+                   476694.12, inst.getRange('G7').getValue(), TOL_MXN);
+      t.assertNear('INSTALL_v2.G9 GRAND TOTAL MXN',
+                   743005.60, inst.getRange('G9').getValue(), TOL_MXN);
+      t.assertNear('INSTALL_v2.G10 MXN per kWp',
+                   860.0,     inst.getRange('G10').getValue(), 1.0);
+
+      // -- C3: PARITY vs legacy INSTALLATION -- REMOVE AT CUTOVER (Chunk 11) --
+      var legacyInst = ss.getSheetByName('INSTALLATION');
+      if (legacyInst) {
+        var checkInstParity = function (cell, label) {
+          var v2  = inst.getRange(cell).getValue();
+          var leg = legacyInst.getRange(cell).getValue();
+          t.assertNear('PARITY INSTALL.' + cell + ' (' + label + ')',
+                       leg, v2, TOL_MXN);
+        };
+        checkInstParity('G5',  'labor total');
+        checkInstParity('G6',  'equip total');
+        checkInstParity('G7',  'other total');
+        checkInstParity('G9',  'grand total');
+        checkInstParity('G10', 'MXN per kWp');
+      } else {
+        t.info('INSTALLATION parity skipped', 'legacy INSTALLATION sheet not present');
+      }
+    }
+
+    // ====================================================================
+    // BLOCK D: PROJECT_CARD_v2 -- the salesperson deliverable
+    // ====================================================================
+    // PC_v2 uses a different row layout from legacy PC -- the cell map below
+    // matches the PC_V2_ROW constants in 00_Main.js (rows 19, 39, 40, etc.)
+    // NOT the legacy PC cell map. This is intentional, not a bug.
+    // ====================================================================
+    t.suite('D. PROJECT_CARD_v2 -- sales deliverable');
+
+    if (!ss.getSheetByName('PROJECT_CARD_v2')) {
+      t.fail('required sheet missing', 'PROJECT_CARD_v2');
+    } else {
+      var pc = ss.getSheetByName('PROJECT_CARD_v2');
+
+      // -- D1: identity --
+      t.assert('PC_v2.C4 customer', 'CULLIGAN TEST',
+               String(pc.getRange('C4').getValue() || '').trim());
+      t.assert('PC_v2.C5 project',  'CULLIGAN',
+               String(pc.getRange('C5').getValue() || '').trim());
+
+      // -- D2: cost breakdown col C = USD, col D = MXN (rows 31-39) --
+      t.assertNear('PC_v2.C31 panels USD',
+                   128736.0,  pc.getRange('C31').getValue(), TOL_USD);
+      t.assertNear('PC_v2.C32 inverters USD',
+                   31200.0,   pc.getRange('C32').getValue(), TOL_USD);
+      t.assertNear('PC_v2.C33 structure USD',
+                   24300.0,   pc.getRange('C33').getValue(), TOL_USD);
+      t.assertNear('PC_v2.C34 DC USD',
+                   58378.0,   pc.getRange('C34').getValue(), TOL_USD);
+      t.assertNear('PC_v2.C35 AC USD',
+                   78315.0,   pc.getRange('C35').getValue(), TOL_USD);
+      t.assertNear('PC_v2.C36 monitoring USD',
+                   724.0,     pc.getRange('C36').getValue(), TOL_USD);
+      t.assertNear('PC_v2.C37 permits USD',
+                   6000.0,    pc.getRange('C37').getValue(), TOL_USD);
+      t.assertNear('PC_v2.C38 installation USD',
+                   40162.0,   pc.getRange('C38').getValue(), TOL_USD);
+      t.assertNear('PC_v2.C39 BESS USD',
+                   1577161.0, pc.getRange('C39').getValue(), TOL_USD);
+
+      // -- D3: TOTAL (row 40) --
+      t.assertNear('PC_v2.C40 TOTAL cost USD',
+                   1944977.0, pc.getRange('C40').getValue(), TOL_USD);
+      t.assertNear('PC_v2.D40 TOTAL cost MXN',
+                   35982073.0, pc.getRange('D40').getValue(), TOL_MXN);
+
+      // -- D4: sell side -- USD/Wp string and gross profit --
+      var sellRaw = String(pc.getRange('H17').getValue() || '');
+      t.assertContains('PC_v2.H17 sell USD/Wp = 2.648',
+                       sellRaw, '2.648');
+      t.assertNear('PC_v2.H40 sell total USD',
+                   2288208.0, pc.getRange('H40').getValue(), TOL_USD);
+      t.assertNear('PC_v2.H43 gross profit USD',
+                   343231.0,  pc.getRange('H43').getValue(), TOL_USD);
+
+      // -- D5: PARITY vs legacy PROJECT_CARD -- REMOVE AT CUTOVER (Chunk 11) --
+      // PC_v2 has a different row layout from legacy PC, so we can't do
+      // cell-for-cell parity. We compare semantic values: the legacy total
+      // (legacy C36) should match the v2 total (v2 C40) up to BESS adds
+      // (legacy doesn't include BESS in its total -- this is one of the
+      // bugs v2 fixes, so a strict equality will FAIL here, which is
+      // EXPECTED and CORRECT).
+      var legacyPc = ss.getSheetByName('PROJECT_CARD');
+      if (legacyPc) {
+        var legTotal = legacyPc.getRange('C36').getValue();
+        var v2Total  = pc.getRange('C40').getValue();
+        var v2Bess   = pc.getRange('C39').getValue();
+        if (typeof legTotal === 'number' && typeof v2Total === 'number'
+            && typeof v2Bess === 'number') {
+          t.assertNear('PARITY PC USD (legacy total + BESS = v2 total)',
+                       legTotal + v2Bess, v2Total, TOL_USD);
+        } else {
+          t.info('PC parity skipped',
+                 'one of legacy.C36 / v2.C40 / v2.C39 is not a number');
+        }
+      } else {
+        t.info('PROJECT_CARD parity skipped', 'legacy PC sheet not present');
+      }
+    }
+
+    // ====================================================================
+    // BLOCK E: CFE_OUTPUT_v2 -- annual savings deliverable
+    // ====================================================================
+    // CFE_OUTPUT_v2 layout (from setupCfeOutputTemplate / writeCfeOutputV2):
+    //   Row 5-8   : header strip (tariff, service #, BESS strategy, etc.)
+    //   Row 10    : KPI strip (3 formatted-string cells: Sin PV / Con PV /
+    //               Con PV+BESS year-1 + year-2+)
+    //   Row 12    : Section 1 title "1.  RECIBO CON PV"
+    //   Row 13    : Ene..Dic month header
+    //   Row 14-20 : Section 1 data (consumption, solar, exports, demand,
+    //               billing, total, savings)
+    //   Row 22    : Section 2 title "2.  RECIBO CON PV + BESS"
+    //   Row 23    : Ene..Dic month header
+    //   Row 24-31 : Section 2 data (Dmax, shaving, BESS savings, final bill)
+    //   Row 33-34 : Annual cascade summary
+    //
+    // We lock monthly column-sums (annuals) rather than individual months --
+    // monthly numbers shift slightly with sim re-runs but annual totals are
+    // stable and customer-visible.
+    // ====================================================================
+    t.suite('E. CFE_OUTPUT_v2 -- annual energy/cost numbers');
+
+    if (!ss.getSheetByName('CFE_OUTPUT_v2')) {
+      t.fail('required sheet missing', 'CFE_OUTPUT_v2');
+    } else {
+      var cfe = ss.getSheetByName('CFE_OUTPUT_v2');
+
+      // -- E1: identity (tariff + service number) --
+      t.assert('CFE_v2.C5 tariff code', 'GDMTH',
+               String(cfe.getRange('C5').getValue() || '').trim());
+      t.assertNear('CFE_v2.C6 service number',
+                   414240911417, cfe.getRange('C6').getValue(), 0);
+      t.assert('CFE_v2.C8 BESS strategy', 'PEAK_SHAVING',
+               String(cfe.getRange('C8').getValue() || '').trim());
+
+      // -- E2: KPI banner strings (row 10, formatted) --
+      var kpiSinPV   = String(cfe.getRange('B10').getValue() || '');
+      var kpiConPV   = String(cfe.getRange('G10').getValue() || '');
+      var kpiConBess = String(cfe.getRange('L10').getValue() || '');
+      t.assertContains('CFE_v2.B10 annual sin PV = $13,569,664',
+                       kpiSinPV, '13,569,664');
+      t.assertContains('CFE_v2.G10 annual con PV = $11,279,234',
+                       kpiConPV, '11,279,234');
+      t.assertContains('CFE_v2.L10 con PV+BESS year-1 = $10,471,312',
+                       kpiConBess, '10,471,312');
+      t.assertContains('CFE_v2.L10 con PV+BESS year-2+ = $7,721,664',
+                       kpiConBess, '7,721,664');
+
+      // -- E3: annual rollups (col-sums Ene..Dic = C..N for each row) --
+      var sumRow = function (row) {
+        var cols = ['C','D','E','F','G','H','I','J','K','L','M','N'];
+        var s = 0;
+        for (var i = 0; i < cols.length; i++) {
+          var v = cfe.getRange(cols[i] + row).getValue();
+          if (typeof v === 'number') s += v;
+        }
+        return s;
+      };
+
+      t.assertNear('CFE_v2 annual consumption (row 14 sum) ~ 4,475,443 kWh',
+                   4475443, sumRow(14), TOL_KWH);
+      t.assertNear('CFE_v2 annual solar generation (row 15 sum) ~ 1,321,367 kWh',
+                   1321367, sumRow(15), TOL_KWH);
+      t.assertNear('CFE_v2 annual bill with PV (row 19 sum) ~ $11,279,234',
+                   11279234, sumRow(19), TOL_MXN_BIG);
+      t.assertNear('CFE_v2 annual PV savings (row 20 sum) ~ $2,035,756',
+                   2035756,  sumRow(20), TOL_MXN_BIG);
+      t.assertNear('CFE_v2 annual BESS savings (row 30 sum) ~ $807,922',
+                   807922,   sumRow(30), TOL_MXN_BIG);
+      t.assertNear('CFE_v2 annual final bill with BESS (row 31 sum) ~ $10,471,312',
+                   10471312, sumRow(31), TOL_MXN_BIG);
+
+      // -- E4: section anchors (template structure, not data) --
+      t.assertContains('CFE_v2.B12 section 1 header',
+                       String(cfe.getRange('B12').getValue() || ''),
+                       'RECIBO CON PV');
+      t.assertContains('CFE_v2.B22 section 2 header',
+                       String(cfe.getRange('B22').getValue() || ''),
+                       'RECIBO CON PV + BESS');
+      t.assert('CFE_v2.C13 first month label', 'Ene',
+               String(cfe.getRange('C13').getValue() || '').trim());
+      t.assert('CFE_v2.N13 last month label',  'Dic',
+               String(cfe.getRange('N13').getValue() || '').trim());
+
+      // -- E5: PARITY vs legacy CFE_OUTPUT -- REMOVE AT CUTOVER (Chunk 11) --
+      // Skipped intentionally: legacy CFE_OUTPUT row layout changed across
+      // engine versions and a positional diff would be brittle. The annual
+      // numbers locked above are the source-of-truth check.
+      t.info('CFE parity skipped',
+             'Annual rollups locked above; row-level parity not asserted ' +
+             '(legacy layout drift). REMOVE this info at cutover.');
+    }
+
+    // ====================================================================
+    // BLOCK F: RFQ_*_v2 -- structural locks (item list shape, not prices)
+    // ====================================================================
+    // RFQs are written by the "Generate RFQs v2" menu item, NOT by the engine
+    // run. If they're missing here, it usually means the menu wasn't clicked
+    // after the engine run -- skip with INFO rather than failing.
+    //
+    // What we lock: item count, first/last item identity, presence of
+    // SUBTOTAL row. We do NOT lock prices because suppliers fill those.
+    // ====================================================================
+    t.suite('F. RFQ_*_v2 -- item-list structure');
+
+    var rfqExpectations = [
+      // [sheet, expectedItemCount, firstItemRow, firstItemQty,
+      //  firstItemDescContains, subtotalRow, subtotalLabelContains]
+      ['RFQ_PANELES_v2',    1, 11,  1350, 'LONGI',
+       12, 'PANELES'],
+      ['RFQ_INVERSORES_v2', 2, 11,     1, 'SUN2000-100KTL',
+       13, 'INVERSORES'],
+      ['RFQ_ESTRUCTURA_v2', 2, 11,  1350, 'S-5',
+       13, 'ESTRUCTURA'],
+      ['RFQ_ELECTRICO_v2', 24, 11, 12600, '10 AWG',
+       35, 'ELECTRICO'],
+      ['RFQ_MONITOREO_v2',  6, 11,     1, 'monitoreo',
+       17, 'MONITOREO'],
+      ['RFQ_BESS_v2',       2, 11,     9, 'HW_LUNA',
+       13, 'BESS']
+    ];
+
+    for (var k = 0; k < rfqExpectations.length; k++) {
+      var e = rfqExpectations[k];
+      var rfqName = e[0];
+      var expCount = e[1];
+      var firstRow = e[2];
+      var expFirstQty = e[3];
+      var firstDescNeedle = e[4];
+      var subRow = e[5];
+      var subLabelNeedle = e[6];
+
+      var sh = ss.getSheetByName(rfqName);
+      if (!sh) {
+        t.info('skipped ' + rfqName,
+               'sheet not found -- run "Generate RFQs v2" from the ARGIA menu');
+        continue;
+      }
+
+      // Identity -- project name in C5
+      t.assertContains(rfqName + '.C5 project name carries CULLIGAN',
+                       String(sh.getRange('C5').getValue() || ''),
+                       'CULLIGAN');
+
+      // First item: row + qty + description
+      t.assertNear(rfqName + '.D' + firstRow + ' first item qty',
+                   expFirstQty,
+                   sh.getRange('D' + firstRow).getValue(),
+                   0.5);
+      t.assertContains(rfqName + '.B' + firstRow + ' first item description',
+                       String(sh.getRange('B' + firstRow).getValue() || ''),
+                       firstDescNeedle);
+
+      // Item count -- count rows with a numeric value in col A between
+      // firstRow and subtotalRow - 1
+      var actualCount = 0;
+      for (var rr = firstRow; rr < subRow; rr++) {
+        var a = sh.getRange('A' + rr).getValue();
+        if (typeof a === 'number') actualCount++;
+      }
+      t.assert(rfqName + ' item count', expCount, actualCount);
+
+      // SUBTOTAL row present at expected row
+      t.assertContains(rfqName + '.B' + subRow + ' SUBTOTAL row',
+                       String(sh.getRange('B' + subRow).getValue() || ''),
+                       'SUBTOTAL');
+      t.assertContains(rfqName + '.B' + subRow + ' SUBTOTAL category match',
+                       String(sh.getRange('B' + subRow).getValue() || ''),
+                       subLabelNeedle);
+    }
+
+    // ====================================================================
+    // BLOCK G: engine version stamp
+    // ====================================================================
+    t.suite('G. _META engine version');
+
+    var meta = ss.getSheetByName('_META');
+    if (meta) {
+      var engineVer = String(meta.getRange('B4').getValue() || '');
+      if (engineVer !== '3.5.0') {
+        t.info('engine version drift',
+          'v2 baseline locked at engine v3.5.0 (2026-05-26). ' +
+          'Current engine v' + engineVer + '. If the asserts above pass, ' +
+          'the baseline carries forward cleanly. If they fail, audit which ' +
+          'numbers changed and re-lock with an explicit CHANGELOG entry.');
+      } else {
+        t.assert('engine version matches v2 baseline', '3.5.0', engineVer);
+      }
+    } else {
+      t.info('engine version unknown', '_META sheet not present');
     }
   }
 });

@@ -12,8 +12,8 @@
 //   calcDC(inp, panel, invBank, nom, tbls)  -> dc{}
 //   calcAC(inp, invBank, nom, tbls, dc)     -> ac{}
 //   calcLayout(inp, dc, ac, nom)            -> lay{}
-//   writeMDC(ss, inp, panel, invBank, dc, ac, lay, nom)
-//   writeBOM(ss, inp, panel, invBank, dc, ac, lay, nom)
+//   writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult)
+//   writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult)
 //
 // DATA CONTRACT RULE: every calc function receives ONLY typed objects.
 // No function reads from the spreadsheet directly except readInputs/readElecTables/load*.
@@ -574,13 +574,11 @@ function onOpen() {
   ui.createMenu('ARGIA')
     .addItem('Import Helioscope',         'importHelioscopePdf')
     .addItem('Verify Layout',             'verifyInputs')
-    .addItem('Update CFE_OUTPUT',         'setupCfeOutput')
-    .addItem('Update CFE_OUTPUT v2',      'runUpdateCfeOutputV2')
+    .addItem('Update CFE_OUTPUT',         'runUpdateCfeOutputV2')
     .addItem('Generate MDC and BOM',      'runArgiaEngine')
     .addItem('Generate Installation',     'runInstallCostStandalone')
-    .addItem('Generate Project Card',     'runWriteProjectCard')
-    .addItem('Generate RFQs',             'runWriteAllRFQs')
-    .addItem('Generate RFQs v2',          'runWriteAllRfqsV2')
+    .addItem('Generate Project Card',     'runWriteProjectCardV2')
+    .addItem('Generate RFQs',             'runWriteAllRfqsV2')
     .addSeparator()
     .addSubMenu(ui.createMenu('Exports')
       .addItem('Export MDC',                         'exportMDC')
@@ -609,13 +607,18 @@ function onOpen() {
       .addItem('Repair CFE_SIM Capacidad (BDF-11)', 'runRepairCfeSimulationCapacidad')
       .addItem('Setup BESS Steady-state (BDF-11.1)', 'runSetupBessSimulationSteady')
       .addItem('Setup BESS Install §6',     'setupInputBessInstallRows')
-      .addItem('Setup INPUT_BESS Styling',  'setupInputBessStyling'))
+      .addItem('Setup INPUT_BESS Styling',  'setupInputBessStyling')
+      .addSeparator()
+      .addItem('Load CULLIGAN Fixture',       'runLoadCulliganFixture')
+      .addItem('Restore Inputs from Backup',  'runRestoreInputsFromBackup'))
     .addSeparator()
     .addItem('▶ Suggest BESS',                  'onMenuSuggestBess')
     .addSeparator()
     .addItem('▶ Run Unit Tests (fast)',         'runUnitTests')
     .addItem('▶ Run Tests for Current Chunk',   'runCurrentChunkTests')
-    .addItem('Run Regression Tests',  'runTests')
+    .addItem('Run Regression Tests (regression only)', 'runRegressionTests')
+    .addItem('Run Integration Tests (e2e, modifies workbook)', 'runIntegrationTests')
+    .addItem('Run ALL Tests (regression + integration + unit)', 'runTests')
     .addSeparator()
     .addItem('Create Offer EN',  'generateKickerEN')
     .addItem('Create Offer ES',  'generateKickerES')
@@ -836,70 +839,44 @@ function runArgiaEngine() {
       }
     }
 
-    // Step 10: write MDC ----------------------------------------------------
-    _setArgiaProgress(10, TOTAL, 'Writing MDC\u2026');
-    engineLog(ss, 'Engine', 'INFO', 'Step 10: writing MDC');
-    writeMDC(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
+    // Step 10: write MDC_v2 ----------------------------------------------------
+    // Tier 1 cutover (2026-05-26): legacy writeMDC removed from the pipeline.
+    // v2 is now the only path. The legacy try/catch fallback is gone -- if
+    // the v2 writer breaks, the engine fails loudly (which is correct: there
+    // is no alternative output now).
+    _setArgiaProgress(10, TOTAL, 'Writing MDC_v2\u2026');
+    engineLog(ss, 'Engine', 'INFO', 'Step 10: writing MDC_v2');
+    setupMdcTemplate(ss);
+    writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
 
-    // Step 10-v2: write MDC_v2 in parallel ----------------------------------
-    // Output v2 migration (Chunk 1). The legacy MDC above remains the source
-    // of truth; this v2 path writes to MDC_v2 and is verified side-by-side.
-    // Wrapped in try/catch matching Steps 9.5 / 13.5: a v2 bug never breaks
-    // the legacy pipeline.
-    engineLog(ss, 'Engine', 'INFO', 'Step 10-v2: writing MDC_v2');
-    try {
-      setupMdcTemplate(ss);
-      writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
-    } catch (v2Err) {
-      engineLog(ss, 'V2', 'WARNING',
-        'MDC_v2 skipped: ' + v2Err.message +
-        '. Legacy MDC unaffected.\n' + (v2Err.stack || ''));
-    }
+    // Step 11: write BOM_v2 ----------------------------------------------------
+    // Tier 1 cutover (2026-05-26): legacy writeBOM removed from the pipeline.
+    // v2 includes the BESS section (Section 8) -- one of the bugs v2 fixed.
+    _setArgiaProgress(11, TOTAL, 'Writing BOM_v2\u2026');
+    engineLog(ss, 'Engine', 'INFO', 'Step 11: writing BOM_v2');
+    setupBomTemplate(ss);
+    writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
 
-    // Step 11: write BOM ----------------------------------------------------
-    _setArgiaProgress(11, TOTAL, 'Writing BOM\u2026');
-    engineLog(ss, 'Engine', 'INFO', 'Step 11: writing BOM');
-    writeBOM(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
-
-    // Step 11-v2: write BOM_v2 in parallel -----------------------------------
-    // Output v2 migration (Chunk 4). Legacy BOM above remains the source of
-    // truth; this v2 path writes to BOM_v2 and is verified side-by-side.
-    // Wrapped in try/catch matching Step 10-v2 (MDC) / Step 13-v2 (PC):
-    // a v2 bug never breaks the legacy pipeline.
-    engineLog(ss, 'Engine', 'INFO', 'Step 11-v2: writing BOM_v2');
-    try {
-      setupBomTemplate(ss);
-      writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
-    } catch (v2BomErr) {
-      engineLog(ss, 'V2', 'WARNING',
-        'BOM_v2 skipped: ' + v2BomErr.message +
-        '. Legacy BOM unaffected.\n' + (v2BomErr.stack || ''));
-    }
-
-    // Step 12: install cost -------------------------------------------------
+    // Step 12: install cost calc + write INSTALLATION_v2 ---------------------
+    // Tier 1 cutover (2026-05-26): runInstallCost no longer writes legacy
+    // INSTALLATION -- it now only computes the result. writeInstallationV2
+    // is the only output path. runInstallCost still attaches .drivers to
+    // the returned object so writeInstallationV2 can consume both.
     _setArgiaProgress(12, TOTAL, 'Installation cost\u2026');
     engineLog(ss, 'Engine', 'INFO', 'Step 12: installation cost');
     var installResult = null;
     try {
-      // Chunk 5: capture the return value so Step 12-v2 can reuse it
-      // without re-running the calc layers. runInstallCost attaches
-      // .drivers to the result object (see 13_CalcInstallCost.js).
       installResult = runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult);
     } catch (installErr) {
       engineLog(ss, 'Engine', 'WARNING',
         'Installation cost skipped: ' + installErr.message +
-        '. Run "Calculate Installation" from menu after fixing.');
+        '. Run "Generate Installation" from menu after fixing.');
     }
 
-    // Step 12-v2: write INSTALLATION_v2 in parallel ---------------------------
-    // Output v2 migration (Chunk 5). Legacy INSTALLATION above remains the
-    // source of truth; this v2 path writes to INSTALLATION_v2 and is verified
-    // side-by-side. Wrapped in try/catch like other v2 steps: a v2 bug never
-    // breaks the legacy pipeline.
-    //
-    // Reuses the calc layers (loadInstallLib, readInstallDrivers,
-    // calcInstallCost, applyKwpBenchmarks) by piggybacking on Step 12's
-    // result. Skipped if Step 12 threw (installResult is null).
+    // Step 12-v2: write INSTALLATION_v2 ---------------------------------------
+    // Consumes the calc result from runInstallCost. try/catch isolation is
+    // kept here because the writer does sheet I/O and may fail independently
+    // of the calc layers.
     if (installResult) {
       engineLog(ss, 'Engine', 'INFO', 'Step 12-v2: writing INSTALLATION_v2');
       try {
@@ -916,30 +893,19 @@ function runArgiaEngine() {
         'Step 12-v2: skipped because legacy Step 12 returned no result');
     }
 
-    // Step 13: project card -------------------------------------------------
+    // Step 13: write PROJECT_CARD_v2 ------------------------------------------
+    // Tier 1 cutover (2026-05-26): legacy writeProjectCard removed from the
+    // pipeline. PROJECT_CARD_v2 now includes the BESS line item (C39), one of
+    // the bugs v2 fixed.
     _setArgiaProgress(13, TOTAL, 'Writing Project Card\u2026');
-    engineLog(ss, 'Engine', 'INFO', 'Step 13: writing Project Card');
+    engineLog(ss, 'Engine', 'INFO', 'Step 13: writing PROJECT_CARD_v2');
     try {
-      writeProjectCard(ss, inp, panel, invBank, dc);
+      setupProjectCardTemplate(ss);
+      writeProjectCardV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
     } catch (pcErr) {
       engineLog(ss, 'Engine', 'WARNING',
         'Project Card skipped: ' + pcErr.message +
         '. Run "Generate Project Card" from menu after fixing.');
-    }
-
-    // Step 13-v2: write PROJECT_CARD_v2 in parallel ---------------------------
-    // Output v2 migration (Chunk 3). Legacy Project Card above remains the
-    // source of truth; this v2 path writes to PROJECT_CARD_v2 and is verified
-    // side-by-side. Wrapped in try/catch like Step 10-v2: a v2 bug never
-    // breaks the legacy pipeline.
-    engineLog(ss, 'Engine', 'INFO', 'Step 13-v2: writing PROJECT_CARD_v2');
-    try {
-      setupProjectCardTemplate(ss);
-      writeProjectCardV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
-    } catch (v2PcErr) {
-      engineLog(ss, 'V2', 'WARNING',
-        'PROJECT_CARD_v2 skipped: ' + v2PcErr.message +
-        '. Legacy Project Card unaffected.\n' + (v2PcErr.stack || ''));
     }
 
     // Step 13.4: Hourly Simulation (BDF-5) -----------------------------------
@@ -970,34 +936,19 @@ function runArgiaEngine() {
       hourlySim = null;
     }
 
-    // Step 13.5: CFE_OUTPUT render -------------------------------------------
-    // Reads INPUT_CFE / CFE_SIMULATION / BESS_SIMULATION (already populated
-    // by their live formulas) and renders a customer-facing comparison tab.
-    // Pure renderer -- never modifies source sheets. try/catch matches
-    // Step 9.5 pattern: a render bug never breaks the rest of the pipeline.
-    engineLog(ss, 'Engine', 'INFO', 'Step 13.5: writing CFE_OUTPUT');
-    try {
-      writeCfeOutput(ss, hourlySim);
-    } catch (cfeErr) {
-      engineLog(ss, 'Engine', 'WARNING',
-        'CFE_OUTPUT skipped: ' + cfeErr.message +
-        '. Other outputs are unaffected.');
-    }
-
-    // Step 13.5-v2: CFE_OUTPUT_v2 render (Chunk 7) ---------------------------
-    // Parallel v2 writer; legacy continues writing to CFE_OUTPUT. Both
-    // visible during transition for visual comparison. Same source sheets,
-    // same try/catch isolation pattern as legacy 13.5.
+    // Step 13.5: CFE_OUTPUT_v2 render ----------------------------------------
+    // Tier 1 cutover (2026-05-26): legacy writeCfeOutput removed from the
+    // pipeline. CFE_OUTPUT_v2 is the only path now.
     //
-    // hourlySim is forwarded so v2 can render the same BDF-5 addendum
-    // legacy renders (rows 45-64: hourly summary + bill components +
-    // provenance). If hourlySim is null/blocked the addendum is skipped.
-    engineLog(ss, 'Engine', 'INFO', 'Step 13.5-v2: writing CFE_OUTPUT_v2');
+    // hourlySim is forwarded so v2 can render the BDF-5 addendum (rows 45-64:
+    // hourly summary + bill components + provenance). If hourlySim is
+    // null/blocked the addendum is skipped.
+    engineLog(ss, 'Engine', 'INFO', 'Step 13.5: writing CFE_OUTPUT_v2');
     try {
       writeCfeOutputV2(ss, hourlySim);
-    } catch (cfeV2Err) {
+    } catch (cfeErr) {
       engineLog(ss, 'Engine', 'WARNING',
-        'CFE_OUTPUT_v2 skipped: ' + cfeV2Err.message +
+        'CFE_OUTPUT_v2 skipped: ' + cfeErr.message +
         '. Other outputs are unaffected.');
     }
 
@@ -1084,5 +1035,243 @@ function verifyInputs() {
     ui.alert('Input Verification', formatValidationAlert(val), ui.ButtonSet.OK);
   } catch (e) {
     ui.alert('Verify Error', e.message, ui.ButtonSet.OK);
+  }
+}
+
+
+
+// ===========================================================================
+// CULLIGAN FIXTURE LOADER  (PR-2, 2026-05-26)
+// ---------------------------------------------------------------------------
+// Two menu-driven helpers for loading the CULLIGAN reference project into the
+// active workbook's INPUT sheets, and restoring the prior data afterwards.
+//
+//   runLoadCulliganFixture()       — backs up current INPUT_* sheets, then
+//                                    writes the CULLIGAN_BASELINE fixture
+//                                    from test/CULLIGAN_BASELINE_fixture.gs.
+//   runRestoreInputsFromBackup()   — restores from the backup created above.
+//
+// Both prompt the user with a confirmation dialog before doing anything
+// destructive. The backup machinery is shared with TESTPROJ-001 e2e tests
+// (test/TestSheetBackup.gs).
+//
+// CONTEXT
+//   Before this lander, running the v2 baseline regression test against
+//   CULLIGAN required typing all 158 input values by hand. This loader
+//   automates that step.
+// ===========================================================================
+
+/**
+ * Load the CULLIGAN_BASELINE fixture into the active workbook's INPUT sheets.
+ *
+ * FLOW:
+ *   1. Confirm with the user.
+ *   2. backupAllInputSheets(ss) -- creates hidden _TEST_BACKUP_* twins of
+ *      INPUT_PROJECT / INPUT_DESIGN / INPUT_INSTALL / INPUT_BESS / INPUT_CFE.
+ *   3. writeCulliganInputs(ss) -- writes all 158 fixture values.
+ *   4. Show a summary dialog (fields written, anything skipped, next steps).
+ *
+ * SAFETY:
+ *   - Confirmation prompt before any destructive write.
+ *   - Backup happens BEFORE the fixture writes so a user error mid-flow
+ *     can still be undone via "Restore Inputs from Backup".
+ *   - If backup fails, no fixture writes happen.
+ *   - If a fixture write throws, the backup remains intact for manual restore.
+ */
+function runLoadCulliganFixture() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  var confirmResp = ui.alert(
+    'Load CULLIGAN Fixture',
+    'This will:\n\n' +
+    '  1. Back up your current INPUT_PROJECT, INPUT_DESIGN, INPUT_INSTALL,\n' +
+    '     INPUT_BESS, INPUT_CFE sheets (hidden _TEST_BACKUP_* twins).\n' +
+    '  2. Overwrite those sheets with the CULLIGAN reference project.\n\n' +
+    'Use "Restore Inputs from Backup" afterwards to get your data back.\n\n' +
+    'Continue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (confirmResp !== ui.Button.OK) {
+    ui.alert('Cancelled', 'No changes made.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Step 1: backup ---------------------------------------------------------
+  try {
+    backupAllInputSheets(ss);
+  } catch (e) {
+    ui.alert('Backup failed',
+             'Could not back up input sheets: ' + e.message + '\n\n' +
+             'NO CHANGES MADE to your inputs.',
+             ui.ButtonSet.OK);
+    return;
+  }
+
+  // Step 2: write fixture --------------------------------------------------
+  var skipped;
+  try {
+    skipped = writeCulliganInputs(ss);
+  } catch (e) {
+    ui.alert('Write failed',
+             'writeCulliganInputs threw: ' + e.message + '\n\n' +
+             'Some inputs may have been written before the failure.\n' +
+             'Your backup is still available via "Restore Inputs from Backup".',
+             ui.ButtonSet.OK);
+    return;
+  }
+
+  // Step 3: summary --------------------------------------------------------
+  var msg = 'CULLIGAN fixture loaded.\n\n' +
+            'Project: CULLIGAN  (1350 modules, 864 kWp, BESS enabled)\n\n';
+  if (skipped && skipped.length > 0) {
+    msg += skipped.length + ' field(s) could not be written:\n';
+    var preview = skipped.slice(0, 10);
+    preview.forEach(function (s) { msg += '  - ' + s + '\n'; });
+    if (skipped.length > 10) {
+      msg += '  ... (' + (skipped.length - 10) + ' more)\n';
+    }
+    msg += '\nMost commonly: dropdown cells whose validation list does\n' +
+           'not include the fixture value, or labels/notes cells protected\n' +
+           'by data validation. Engine math is rarely affected.\n\n';
+  } else {
+    msg += 'All fields written without skips.\n\n';
+  }
+  msg += 'NEXT STEPS:\n' +
+         '  1. ARGIA menu -> "Generate MDC and BOM" (runs the engine)\n' +
+         '  2. ARGIA menu -> "Generate RFQs v2" (writes RFQ sheets)\n' +
+         '  3. ARGIA menu -> "Run Regression Tests" (validates baseline)\n' +
+         '  4. ARGIA menu -> Setup -> "Restore Inputs from Backup"';
+  ui.alert('Loaded', msg, ui.ButtonSet.OK);
+}
+
+
+/**
+ * Restore INPUT_* sheets from the most recent backup created by
+ * runLoadCulliganFixture (or any prior backupAllInputSheets() call).
+ *
+ * FLOW:
+ *   1. Sanity-check at least one _TEST_BACKUP_* sheet exists. If not, bail
+ *      with a readable message (nothing to restore).
+ *   2. Confirm with the user.
+ *   3. restoreAllInputSheets(ss) -- copies backup data back to live sheets
+ *      and deletes the backup sheets.
+ */
+function runRestoreInputsFromBackup() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  // Sanity check: is there anything to restore?
+  var anyBackup = false;
+  if (typeof TEST_INPUT_BACKUP_NAMES === 'object') {
+    Object.keys(TEST_INPUT_BACKUP_NAMES).forEach(function (orig) {
+      if (ss.getSheetByName(TEST_INPUT_BACKUP_NAMES[orig])) {
+        anyBackup = true;
+      }
+    });
+  }
+  if (!anyBackup) {
+    ui.alert('No backup found',
+             'No _TEST_BACKUP_* sheets exist in this workbook.\n\n' +
+             'A backup is created automatically when you click\n' +
+             '"Load CULLIGAN Fixture". If your current inputs ARE\n' +
+             'your original data, there is nothing to restore.',
+             ui.ButtonSet.OK);
+    return;
+  }
+
+  var confirmResp = ui.alert(
+    'Restore Inputs from Backup',
+    'This will:\n\n' +
+    '  1. Overwrite your current INPUT_* sheets with the most recent\n' +
+    '     backup (created when you last loaded a fixture).\n' +
+    '  2. Delete the backup sheets after restore.\n\n' +
+    'Your current INPUT data will be LOST. Continue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (confirmResp !== ui.Button.OK) {
+    ui.alert('Cancelled', 'No changes made.', ui.ButtonSet.OK);
+    return;
+  }
+
+  try {
+    restoreAllInputSheets(ss);
+  } catch (e) {
+    ui.alert('Restore failed',
+             'restoreAllInputSheets threw: ' + e.message + '\n\n' +
+             'The backup sheets may still be present -- you can also\n' +
+             'manually copy data from them (hidden, named _TEST_BACKUP_*).',
+             ui.ButtonSet.OK);
+    return;
+  }
+
+  ui.alert('Restored',
+           'INPUT sheets restored from backup.\n' +
+           'Backup sheets have been deleted.',
+           ui.ButtonSet.OK);
+}
+
+
+// ===========================================================================
+// PROJECT CARD v2 STANDALONE  (Tier 1 cutover, 2026-05-26)
+// ---------------------------------------------------------------------------
+// Standalone entry point for "Generate Project Card" menu item. Replaces the
+// legacy runWriteProjectCard() which called writeProjectCard().
+//
+// FLOW
+//   Mirrors the engine's mini-pipeline up to writeProjectCardV2: reads inputs,
+//   loads panel/inverter, computes DC/AC/layout/BESS, calls writeProjectCardV2.
+//   Skips the BOM / installation / CFE writers since they are not Project Card
+//   prerequisites (writeProjectCardV2 reads its inputs from the calc layers
+//   plus already-populated INSTALLATION_v2 / BOM_v2 sheets).
+//
+// NOTE
+//   Running this standalone without a prior engine run means INSTALLATION_v2
+//   and BOM_v2 may be stale -- the user is responsible for running the engine
+//   first (same caveat as the legacy version).
+// ===========================================================================
+function runWriteProjectCardV2() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  var TOTAL = 6;
+
+  try {
+    _setArgiaProgress(0, TOTAL, 'Starting Project Card\u2026');
+    _showArgiaProgress('ARGIA \u2014 Project Card');
+
+    _setArgiaProgress(1, TOTAL, 'Reading inputs\u2026');
+    var nom     = loadNomConstants(ss);
+    var inp     = readInputs(ss);
+
+    _setArgiaProgress(2, TOTAL, 'Loading equipment\u2026');
+    var panel   = lookupPanel(ss, inp.panelModel);
+    var invBank = buildInverterBank(ss, inp.inverterBank);
+    var tbls    = readElecTables(ss);
+
+    _setArgiaProgress(3, TOTAL, 'Calculating DC / AC / layout\u2026');
+    var dc      = calcDC(inp, panel, invBank, nom, tbls);
+    var ac      = calcAC(inp, panel, invBank, nom, tbls, dc);
+    var lay     = calcLayout(inp, dc, ac, nom);
+
+    _setArgiaProgress(4, TOTAL, 'Sizing BESS (if enabled)\u2026');
+    var bessResult = null;
+    try {
+      bessResult = runBessSuggestion(ss, inp, panel, invBank, dc, ac, lay, nom);
+    } catch (bessErr) {
+      // BESS not enabled or failed -- writeProjectCardV2 handles null bessResult.
+      engineLog(ss, 'ProjectCardV2', 'INFO',
+        'BESS sizing skipped: ' + (bessErr.message || bessErr));
+    }
+
+    _setArgiaProgress(5, TOTAL, 'Writing PROJECT_CARD_v2\u2026');
+    setupProjectCardTemplate(ss);
+    writeProjectCardV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
+
+    _setArgiaProgress(TOTAL, TOTAL, '\u2705 Done!');
+    Utilities.sleep(1200);
+
+    ui.alert('PROJECT_CARD_v2 generated.\n\n' +
+             'Tip: Use ARGIA -> Exports -> Export Project Card to save as PDF.');
+  } catch (e) {
+    try { _setArgiaProgress(TOTAL, TOTAL, '\u274C Error'); } catch(_) {}
+    ui.alert('Project Card v2 Error', e.message, ui.ButtonSet.OK);
   }
 }

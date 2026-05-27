@@ -59,6 +59,8 @@ var TEST_INPUT_BACKUP_NAMES = {
   'INPUT_PROJECT': '_TEST_BACKUP_PROJ_V2',
   'INPUT_DESIGN':  '_TEST_BACKUP_DES_V2',
   'INPUT_INSTALL': '_TEST_BACKUP_INST_V2',
+  'INPUT_BESS':    '_TEST_BACKUP_BESS_V2',   // ADDED 2026-05-26 for CULLIGAN fixture (PR-2)
+  'INPUT_CFE':     '_TEST_BACKUP_CFE_V2',    // ADDED 2026-05-26 for CULLIGAN fixture (PR-2)
   'INPUT_GENERAL': '_TEST_BACKUP_GEN_V2'
 };
 
@@ -211,6 +213,191 @@ function writeTestprojInputs(ss) {
   } else if (!gen) {
     skipped.push('INPUT_GENERAL: sheet retired on this project '
                  + '-- legacy writes skipped (v2.0.2+)');
+  }
+
+  return skipped;
+}
+
+
+
+// ===========================================================================
+// CULLIGAN FIXTURE WRITER  (PR-2, 2026-05-26)
+// ---------------------------------------------------------------------------
+// Mirrors writeTestprojInputs() but writes the CULLIGAN_BASELINE fixture
+// from test/CULLIGAN_BASELINE_fixture.gs. Handles five INPUT sheets:
+//
+//   INPUT_PROJECT, INPUT_DESIGN, INPUT_INSTALL : logical keys via writeInput()
+//   INPUT_BESS                                 : hybrid (logical keys for §1-§5,
+//                                                _cell_<A1> direct writes for §6+)
+//   INPUT_CFE                                  : direct cells only
+//
+// The hybrid INPUT_BESS handling is required because INPUT_MAP covers only
+// §1-§5 of INPUT_BESS (cells C6-C39). §6 (distances, location, grounding at
+// C44+) is not in INPUT_MAP yet. INPUT_CFE has no INPUT_MAP entries at all.
+//
+// CALLED BY: runLoadCulliganFixture() in 00_Main.js.
+// ===========================================================================
+
+/**
+ * Write CULLIGAN_BASELINE fixture inputs across INPUT_PROJECT, INPUT_DESIGN,
+ * INPUT_INSTALL, INPUT_BESS, and INPUT_CFE.
+ *
+ * Returns a `skipped` array of "WHERE: WHY" strings so callers can show
+ * the user what couldn't be written without aborting. Common skip reasons:
+ * dropdown validation rejections (cell rejects fixture value), missing
+ * sheets, type mismatches.
+ *
+ * @param {Spreadsheet} ss
+ * @returns {Array<string>} list of skipped-cell descriptions (may be empty)
+ */
+function writeCulliganInputs(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var inputs = CULLIGAN_BASELINE.inputs;
+  var skipped = [];
+
+  // -- Ensure migrated input tabs exist (mirrors writeTestprojInputs) -------
+  try { ensureInputProjectExists(ss); }
+  catch (e) {
+    skipped.push('ensureInputProjectExists: '
+                 + String(e.message || e).slice(0, 80));
+  }
+  try { ensureInputInstallExists(ss); }
+  catch (e) {
+    skipped.push('ensureInputInstallExists: '
+                 + String(e.message || e).slice(0, 80));
+  }
+  try { ensureInputDesignExists(ss); }
+  catch (e) {
+    skipped.push('ensureInputDesignExists: '
+                 + String(e.message || e).slice(0, 80));
+  }
+
+  // -- INPUT_PROJECT: all logical-key writes --------------------------------
+  if (inputs.project) {
+    Object.keys(inputs.project).forEach(function (key) {
+      try {
+        writeInput(ss, key, inputs.project[key]);
+      } catch (e) {
+        skipped.push('INPUT_PROJECT:' + key + ': '
+                     + String(e.message || e).slice(0, 80));
+      }
+    });
+  }
+
+  // -- INPUT_DESIGN: all logical-key writes ---------------------------------
+  if (inputs.design) {
+    Object.keys(inputs.design).forEach(function (key) {
+      try {
+        writeInput(ss, key, inputs.design[key]);
+      } catch (e) {
+        skipped.push('INPUT_DESIGN:' + key + ': '
+                     + String(e.message || e).slice(0, 80));
+      }
+    });
+  }
+
+  // -- INPUT_INSTALL: all logical-key writes --------------------------------
+  if (inputs.install) {
+    Object.keys(inputs.install).forEach(function (key) {
+      try {
+        writeInput(ss, key, inputs.install[key]);
+      } catch (e) {
+        skipped.push('INPUT_INSTALL:' + key + ': '
+                     + String(e.message || e).slice(0, 80));
+      }
+    });
+  }
+
+  // -- INPUT_BESS: hybrid (logical keys + _cell_ direct cells) --------------
+  if (inputs.bess) {
+    var ib = ss.getSheetByName('INPUT_BESS');
+    if (!ib) {
+      skipped.push('INPUT_BESS: sheet not present -- BESS inputs not written');
+    } else {
+      Object.keys(inputs.bess).forEach(function (key) {
+        if (key.indexOf('_cell_') === 0) {
+          // direct A1 write: "_cell_C44" -> A1 = "C44"
+          var a1 = key.substring('_cell_'.length);
+          try {
+            ib.getRange(a1).setValue(inputs.bess[key]);
+          } catch (e) {
+            skipped.push('INPUT_BESS!' + a1 + ': '
+                         + String(e.message || e).slice(0, 80));
+          }
+        } else {
+          // logical key via writeInput
+          try {
+            writeInput(ss, key, inputs.bess[key]);
+          } catch (e) {
+            skipped.push('INPUT_BESS:' + key + ': '
+                         + String(e.message || e).slice(0, 80));
+          }
+        }
+      });
+    }
+  }
+
+  // -- INPUT_CFE: all direct cells (no logical keys exist) ------------------
+  if (inputs.cfe) {
+    var ic = ss.getSheetByName('INPUT_CFE');
+    if (!ic) {
+      skipped.push('INPUT_CFE: sheet not present -- CFE inputs not written');
+    } else {
+      var cfe = inputs.cfe;
+
+      // Tariff metadata scalars
+      var scalarMap = {
+        'C4':  cfe.tariffCode,
+        'C5':  cfe.tariffLocation,
+        'C6':  cfe.tariffDap,
+        'C7':  cfe.bajaTension2pct,
+        'F4':  cfe.serviceName,
+        'F5':  cfe.serviceNumber,
+        'F6':  cfe.contractedDemand,
+        'C41': cfe.interconnectionMode,
+        'C42': cfe.exportPriceMxnPerKwh,
+        'C43': cfe.selfConsumptionPct,
+        'C44': cfe.powerFactorThreshold
+      };
+      Object.keys(scalarMap).forEach(function (a1) {
+        var v = scalarMap[a1];
+        if (v === undefined) return;
+        try {
+          ic.getRange(a1).setValue(v);
+        } catch (e) {
+          skipped.push('INPUT_CFE!' + a1 + ': '
+                       + String(e.message || e).slice(0, 80));
+        }
+      });
+
+      // Monthly arrays -- 12 values per row, cols C..N (col index 3..14)
+      var rowMap = {
+        10: cfe.kWhBase,
+        11: cfe.kWhIntermedia,
+        12: cfe.kWhPunta,
+        13: cfe.kWBase,
+        14: cfe.kWIntermedia,
+        15: cfe.kWPunta,
+        16: cfe.kWMaxAnoMovil,
+        17: cfe.kVArh
+      };
+      Object.keys(rowMap).forEach(function (rowStr) {
+        var row = parseInt(rowStr, 10);
+        var arr = rowMap[rowStr];
+        if (!Array.isArray(arr) || arr.length !== 12) {
+          skipped.push('INPUT_CFE row ' + row + ': expected 12-element array, got '
+                       + (arr ? arr.length : 'null'));
+          return;
+        }
+        try {
+          // setValues expects a 2D array; wrap once
+          ic.getRange(row, 3, 1, 12).setValues([arr]);
+        } catch (e) {
+          skipped.push('INPUT_CFE row ' + row + ': '
+                       + String(e.message || e).slice(0, 80));
+        }
+      });
+    }
   }
 
   return skipped;

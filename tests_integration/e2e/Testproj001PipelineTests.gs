@@ -100,6 +100,29 @@
 // as Phase 12 (MdcBessSec7Tests): "next real engine run rewrites or clears
 // them" -- harmless because they're output, not input.
 //
+// OUTPUT POLLUTION CONTRACT (added 2026-05-26 by PR-2)
+//   This test writes TESTPROJ-001 data to OUTPUT sheets (MDC, BOM,
+//   INSTALLATION, PROJECT_CARD, RFQ_*) and DOES NOT restore them. The
+//   restore step (line ~255) only covers INPUT sheets.
+//
+//   Per the line-99 comment below ("harmless because they're output, not
+//   input -- next real engine run rewrites them"), this is INTENTIONAL.
+//   The output-pollution does not break the engine; the next user-triggered
+//   engine run cleans it up.
+//
+//   BUT: regression baseline tests (REG_CULLIGAN_BASELINE_*) read these
+//   output sheets and assert on cell values. If this e2e test runs
+//   BEFORE a regression baseline in the same suite invocation, the
+//   regression sees TESTPROJ-001 outputs and fails identity checks.
+//
+//   SOLUTION: do NOT run this test in the same suite as a regression
+//   baseline. Use the new menu split (PR-2):
+//     - "Run Regression Tests (regression only)" excludes this test.
+//     - "Run Integration Tests" runs this test (workbook outputs WILL
+//       be left in TESTPROJ-001 state).
+//     - "Run ALL Tests" runs both but order is not guaranteed, so
+//       regression baselines may fail.
+//
 // CO-EXISTENCE
 //   Legacy testEndToEnd in 99_TestRunner.gs unchanged. Both run the same
 //   ~54 asserts until the legacy deletion pass.

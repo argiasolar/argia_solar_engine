@@ -146,15 +146,20 @@ function validateOutputConsistency(ss) {
   var result = { critical: [], info: [], ok: [], message: '', passed: true };
 
   // ─── Sheet existence ───────────────────────────────────────────────────
-  var mdc  = ss.getSheetByName('MDC');
-  var bom  = ss.getSheetByName('BOM');
-  var inst = ss.getSheetByName('INSTALLATION');
-  var pc   = ss.getSheetByName('PROJECT_CARD');
+  // Tier 1 cutover (2026-05-26): switched from legacy MDC/BOM/INSTALLATION/
+  // PROJECT_CARD to *_v2 sheets. Cell positions used below (MDC.C7/C8/C11/C12,
+  // INSTALLATION.B8/B9, PROJECT_CARD.C5, PROJECT_CARD scope-of-work rows 12-30)
+  // are identical between legacy and v2 layouts, so the rest of the function
+  // works unchanged.
+  var mdc  = ss.getSheetByName('MDC_v2');
+  var bom  = ss.getSheetByName('BOM_v2');
+  var inst = ss.getSheetByName('INSTALLATION_v2');
+  var pc   = ss.getSheetByName('PROJECT_CARD_v2');
 
-  if (!mdc)  { result.info.push('MDC sheet not present -- skipping all checks'); }
-  if (!bom)  { result.info.push('BOM sheet not present -- skipping BOM checks'); }
-  if (!inst) { result.info.push('INSTALLATION sheet not present -- skipping INSTALL checks'); }
-  if (!pc)   { result.info.push('PROJECT_CARD sheet not present -- skipping PC checks'); }
+  if (!mdc)  { result.info.push('MDC_v2 sheet not present -- skipping all checks'); }
+  if (!bom)  { result.info.push('BOM_v2 sheet not present -- skipping BOM checks'); }
+  if (!inst) { result.info.push('INSTALLATION_v2 sheet not present -- skipping INSTALL checks'); }
+  if (!pc)   { result.info.push('PROJECT_CARD_v2 sheet not present -- skipping PC checks'); }
 
   if (!mdc) {
     // Nothing to compare against -- MDC is the canonical source. Bail.
@@ -183,13 +188,13 @@ function validateOutputConsistency(ss) {
       result.info.push('BOM not yet written (A4 empty).');
     } else if (bomTitle.indexOf(mdcProj) === -1) {
       result.critical.push(
-        'PROJECT MISMATCH: MDC says "' + mdcProj + '" but BOM banner ' +
-        'does not contain that project name. BOM banner reads: "' +
+        'PROJECT MISMATCH: MDC_v2 says "' + mdcProj + '" but BOM_v2 banner ' +
+        'does not contain that project name. BOM_v2 banner reads: "' +
         bomTitle.substring(0, 80) + '"' +
         (bomTitle.length > 80 ? '...' : '')
       );
     } else {
-      result.ok.push('Project name agrees: MDC <-> BOM');
+      result.ok.push('Project name agrees: MDC_v2 <-> BOM_v2');
     }
   }
 
@@ -199,11 +204,11 @@ function validateOutputConsistency(ss) {
       result.info.push('PROJECT_CARD not yet written (C5 empty).');
     } else if (pcProj !== mdcProj) {
       result.critical.push(
-        'PROJECT MISMATCH: MDC says "' + mdcProj + '" but ' +
-        'PROJECT_CARD.C5 says "' + pcProj + '"'
+        'PROJECT MISMATCH: MDC_v2 says "' + mdcProj + '" but ' +
+        'PROJECT_CARD_v2.C5 says "' + pcProj + '"'
       );
     } else {
-      result.ok.push('Project name agrees: MDC <-> PROJECT_CARD');
+      result.ok.push('Project name agrees: MDC_v2 <-> PROJECT_CARD_v2');
     }
   }
 
@@ -221,11 +226,11 @@ function validateOutputConsistency(ss) {
         result.info.push('INSTALLATION.B8 module count empty -- INSTALL not yet written.');
       } else if (instMods !== mdcMods) {
         result.critical.push(
-          'MODULE COUNT MISMATCH: MDC says ' + mdcMods +
-          ' modules, INSTALLATION says ' + instMods + ' modules'
+          'MODULE COUNT MISMATCH: MDC_v2 says ' + mdcMods +
+          ' modules, INSTALLATION_v2 says ' + instMods + ' modules'
         );
       } else {
-        result.ok.push('Module count agrees: MDC <-> INSTALLATION (' + mdcMods + ')');
+        result.ok.push('Module count agrees: MDC_v2 <-> INSTALLATION_v2 (' + mdcMods + ')');
       }
     }
 
@@ -235,11 +240,11 @@ function validateOutputConsistency(ss) {
         result.info.push('PROJECT_CARD module count not found in scope rows -- PC not yet written or layout changed.');
       } else if (pcMods !== mdcMods) {
         result.critical.push(
-          'MODULE COUNT MISMATCH: MDC says ' + mdcMods +
-          ' modules, PROJECT_CARD scope row says ' + pcMods + ' modules'
+          'MODULE COUNT MISMATCH: MDC_v2 says ' + mdcMods +
+          ' modules, PROJECT_CARD_v2 scope row says ' + pcMods + ' modules'
         );
       } else {
-        result.ok.push('Module count agrees: MDC <-> PROJECT_CARD (' + mdcMods + ')');
+        result.ok.push('Module count agrees: MDC_v2 <-> PROJECT_CARD_v2 (' + mdcMods + ')');
       }
     }
   }
@@ -253,11 +258,11 @@ function validateOutputConsistency(ss) {
       result.info.push('INSTALLATION.B9 inverter count empty -- INSTALL not yet written.');
     } else if (instInvs !== mdcInvs) {
       result.critical.push(
-        'INVERTER COUNT MISMATCH: MDC says ' + mdcInvs +
-        ' inverters, INSTALLATION says ' + instInvs + ' inverters'
+        'INVERTER COUNT MISMATCH: MDC_v2 says ' + mdcInvs +
+        ' inverters, INSTALLATION_v2 says ' + instInvs + ' inverters'
       );
     } else {
-      result.ok.push('Inverter count agrees: MDC <-> INSTALLATION (' + mdcInvs + ')');
+      result.ok.push('Inverter count agrees: MDC_v2 <-> INSTALLATION_v2 (' + mdcInvs + ')');
     }
   }
 
@@ -268,7 +273,7 @@ function validateOutputConsistency(ss) {
   if (result.passed) {
     lines.push('OUTPUT CONSISTENCY: PASS');
     lines.push('Checked ' + result.ok.length + ' invariant(s) across ' +
-               'MDC / BOM / INSTALLATION / PROJECT_CARD.');
+               'MDC_v2 / BOM_v2 / INSTALLATION_v2 / PROJECT_CARD_v2.');
     if (result.info.length > 0) {
       lines.push('');
       lines.push('Skipped (sheet not yet written or layout note):');

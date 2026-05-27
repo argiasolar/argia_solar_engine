@@ -1715,17 +1715,14 @@ function runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult) {
   // Apply kWp productivity benchmarks if set in INPUT_DESIGN rows 80-83
   result = applyKwpBenchmarks(ss, result, drivers);
 
-  engineLog(ss, 'InstallCost', 'INFO', 'Writing INSTALLATION...');
-  writeInstallCost(ss, result, drivers);
+  // Tier 1 cutover (2026-05-26): legacy writeInstallCost + writeInstallDriverMap
+  // calls REMOVED. The functions still exist in this file (used by no one
+  // after Tier 1; will be deleted in Tier 2). runInstallCost now ONLY computes
+  // the result and returns it -- the engine's Step 12-v2 calls
+  // writeInstallationV2 + writeInstallationDriverMapV2 to render the sheets.
 
-  engineLog(ss, 'InstallCost', 'INFO', 'Writing driver map...');
-  writeInstallDriverMap(ss, drivers, result);
-
-  // Chunk 5 (INSTALLATION_v2): attach drivers to the returned result so the
-  // v2 path in 00_Main.js Step 12-v2 can feed both into writeInstallationV2
-  // without re-running the calc layers. Backward-compatible: existing
-  // callers that read result.totals / result.items continue to work
-  // (the property is additive).
+  // Attach drivers to the returned result so writeInstallationV2 in Step 12-v2
+  // can feed both into the v2 writer without re-running the calc layers.
   result.drivers = drivers;
 
   return result;
