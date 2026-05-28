@@ -879,6 +879,17 @@ function buildNomLimitsDefaults() {
     'bess_min_soc_default': 0.10,
     'bess_max_soc_default': 0.90,
     'bess_round_trip_efficiency_floor': 0.90,
+    // -- Install cost sanity bounds (3.7.8 / Chunk 3). Advisory only — used by
+    //    09c_InstallCostSanity.checkInstallCostSanity() to warn when computed
+    //    install costs drift outside industry-typical ranges. Tighten these
+    //    once 94_INSTALL_BENCHMARKS has historical data.
+    //    Sources: NREL 2024 ATB, BloombergNEF 2024, ARGIA market review.
+    'install_pv_mxn_per_wp_warn_min': 1.0,      // commercial Mexico floor
+    'install_pv_mxn_per_wp_warn_max': 5.0,      // small-job ceiling
+    'install_bess_usd_per_kwh_warn_min': 30,    // BoP-only floor
+    'install_bess_usd_per_kwh_warn_max': 200,   // BoP-only ceiling
+    'install_blended_labor_rate_warn_min': 80,  // non-union helper floor
+    'install_blended_labor_rate_warn_max': 400, // specialist subcon ceiling
   };
 }
 
