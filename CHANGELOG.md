@@ -11,6 +11,272 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (MAJOR.MI
 
 ---
 
+## [4.0.0] — 2026-05-28
+
+**First major release. Shipping-readiness milestone + strategy-aware BESS
+dispatch (Chunk 4).**
+
+> **BREAKING:** Existing PV+BESS projects recalculate to different numbers.
+> The hourly battery dispatch is now driven by the `bessStrategy` setting;
+> before 4.0.0 the setting was read but ignored (one fixed greedy policy ran
+> for every project). PV-only projects are unaffected.
+
+### Changed — battery dispatch is now strategy-aware
+
+- `bessStrategy` (INPUT_BESS!C7) now actually steers the hourly simulator.
+  New priority-weighted dispatcher `_bessDispatchHour` in
+  `20_CalcHourlySimulation.js`.
+- **Philosophy:** strategy sets the PRIORITY ORDER when discharge, PV-capture,
+  and grid-arbitrage compete for the battery's finite SoC and power. It is
+  **not** a hard on/off switch — every strategy still pursues every saving
+  type; only the contest order changes ("always pursue every saving").
+- Priority chains:
+  - **PEAK_SHAVING** — punta discharge (1) → PV capture (2) → intermedia
+    discharge (3). No grid charging.
+  - **SELF_CONSUMPTION_MAX** — PV capture (1) → discharge to cover load (2).
+    No grid charging.
+  - **LOAD_SHIFTING** — punta discharge (1) → base grid-charge via smart gate
+    (2) → PV capture (3) → intermedia discharge (4).
+
+### Added
+
+- **LOAD_SHIFTING** is now selectable in the `bessStrategy` dropdown (was
+  defined in the enum but never exposed). It alone grid-charges in base hours
+  for base→punta arbitrage, behind a smart gate: NET_BILLING only, and only
+  when `ratePunta × rte > rateBase` (arbitrage must beat round-trip losses).
+- **CFE_OUTPUT_v2 strategy explainer** — a one-line plain-Spanish "por qué
+  esta estrategia" sentence under the BESS spec row, describing what the
+  battery prioritizes. Customer-facing transparency.
+- `04a_CalcCFEBill` `BESS_STRATEGY` enum gains `LOAD_SHIFTING`; `calcBessImpact`
+  now accepts it (as a conservative self-consumption-capture proxy — the
+  monthly analytic layer does not model grid arbitrage; only the hourly sim
+  does). Keeps both layers from throwing on a valid dropdown value.
+- **`refreshBessStrategyDropdown`** (new menu action: ARGIA → Setup → "Refresh
+  BESS Strategy Dropdown"). Data-validation rules are baked into the sheet when
+  a tab is first built, so adding LOAD_SHIFTING to INPUT_MAP does NOT update an
+  existing C7 dropdown. This one-shot re-applies the C7 validation from the
+  current INPUT_MAP (and clears the stale tooltip). **Run this once after
+  pushing 4.0.0 to make LOAD_SHIFTING selectable** in existing workbooks.
+
+### Recalc impact
+
+- **PEAK_SHAVING**: battery now also discharges in intermedia (priority 3) to
+  capture secondary savings; was punta-exclusive. Slightly higher discharge
+  and savings.
+- **SELF_CONSUMPTION_MAX**: near-identical to PEAK_SHAVING (see convergence
+  note); minimal change vs the old default behavior.
+- **LOAD_SHIFTING**: materially higher savings wherever the punta/base spread
+  + NET_BILLING make arbitrage profitable.
+
+### Known convergence (documented, asserted, not a bug)
+
+- **PEAK_SHAVING ≈ SELF_CONSUMPTION_MAX.** The one ordering difference between
+  them (PV-capture-first vs punta-discharge-first) only matters if PV surplus
+  and punta load occur in the *same hour*. PV surplus is midday
+  (base/intermedia); punta is evening. That conflict almost never arises, so
+  the two converge by design. `LOAD_SHIFTING` is the genuine differentiator.
+  Both properties are asserted in `BessDispatchStrategyTests.gs` so a future
+  change that breaks the relationship gets caught.
+
+### Tests
+
+- `tests_unit/calc/BessDispatchStrategyTests.gs` (new): 8 tests — pure-function
+  policy table (punta-first, intermedia-secondary, PV-first for SC, grid-charge
+  gate open/blocked/non-NET_BILLING, SoC + power limits) plus a full-sim
+  comparative proving PS≈SC, LS distinct, and all three beat the no-battery
+  baseline.
+- `tests_unit/writers_v2/CfeStrategyExplainerTests.gs` (new): explainer text
+  per strategy, case-insensitivity, blank/unknown → "".
+- `tests_unit/calc/CalcHourlySimulationTests.gs` (updated): the old
+  punta-exclusive discharge assertion (TEST 9) is replaced with the new
+  priority-honored invariant (PEAK_SHAVING discharges in punta when punta load
+  exists), reflecting the intended behavior change.
+- Harness: 250 PASS / 0 FAIL.
+
+### Fixed — interconnection display + LOAD_SHIFTING silent-collapse guard (4.0.0)
+
+- **CFE_OUTPUT_v2 INTERCONEXION was blank.** The display source map read
+  `INPUT_CFE!C40`, but the interconnection mode actually lives at **C41**
+  (confirmed: the simulation reader in `02_LoadDB` and `19_RunBessSuggestion`
+  both use C41). The display was reading the wrong cell. Fixed to C41.
+  Interconnection now always renders, mapped to a friendly label
+  (`FACTURACIÓN NETA (NET_BILLING)`, etc.), with `(no definido)` shown when
+  unset instead of a blank cell.
+- **LOAD_SHIFTING silently collapsed to PEAK_SHAVING under non-NET_BILLING.**
+  This is correct behavior (grid arbitrage requires FACTURACION_NETA), but it
+  was *silent* — selecting LOAD_SHIFTING under MEDICION_NETA produced numbers
+  identical to PEAK_SHAVING with no indication why. Now warned in three places:
+  1. A red, bold warning line in CFE_OUTPUT_v2 directly under the strategy.
+  2. A MAJOR log entry during the engine run.
+  3. The end-of-run alert dialog (via bessResult.warnings).
+  The warning names the cause and the fix (set INPUT_CFE!C41 = FACTURACION_NETA
+  or pick PEAK_SHAVING).
+- New helpers `_cfeOutV2_interconnLabel` and `_cfeOutV2_loadShiftWarning`
+  (both unit-tested) and a strategy↔interconnection consistency check in
+  `00_Main.js` after the BESS step.
+
+### Files
+
+- `20_CalcHourlySimulation.js` — `_bessDispatchHour` + strategy threading
+- `20a_RunHourlySimulation.js` — reads `bessStrategy` (C7) into batterySpec
+- `02c_InputMap.js` — LOAD_SHIFTING added to dropdown
+- `02e_InputSetup.js` — `refreshBessStrategyDropdown` (re-applies C7 validation)
+- `04a_CalcCFEBill.js` — enum + calcBessImpact accept LOAD_SHIFTING
+- `00_Main.js` — "Refresh BESS Strategy Dropdown" menu item
+- `writers_v2/WriteCfeOutputV2.js` — strategy explainer + interconnection
+  label + LOAD_SHIFTING warning
+- `writers_v2/helpers/CfeOutputSourceMap.js` — interconnMode C40 → C41 fix
+- `00a_Version.js` — 3.7.8 → 4.0.0
+
+---
+
+## [3.7.8] — 2026-05-27
+
+**Shipping-readiness pass — Chunks 0+1+2+3.** Bug sweep, Node test harness,
+OutputValidate unit coverage, and install cost sanity guardrails. No
+breaking changes; advisory only on the new guardrails.
+
+### Fixed — Chunk 0 (bug sweep, 7 fixes)
+
+- **B1** `05_CalcAC.js:86`: per-inverter status ternary mislabeled
+  OCPD-fail / Vdrop-pass cases as `[PASS]`. The pre-patch ternary
+  `result.pass ? '[PASS]' : (result.vdropACPass ? '[PASS]' : '[REVIEW]')`
+  collapses to "pass OR vdropACPass". Now `[REVIEW] -- Caída AC` unless
+  both checks pass. Customer-facing: MDC §2 status column will now show
+  `[REVIEW]` for the (rare) projects where the OCPD selector landed
+  below the 1.25× breaker requirement but voltage drop happened to pass.
+- **B2** `05_CalcAC.js:86,180`: mojibake. `Cada AC` → `Caída AC`;
+  `Verifica cada de tensin` → `Verificar caída de tensión`. UTF-8
+  accents restored. Customer-facing in MDC §2.
+- **B3** `09_Validate.js:211`: operator-precedence latent bug. JS `&&`
+  binds tighter than `||`, so `acKw > 0 && ratio < X || ratio < 0.8`
+  parsed as `(acKw > 0 && ratio < X) || (ratio < 0.8)` — the second
+  branch fires regardless of the `acKw > 0` guard. Today masked by an
+  enclosing block guard, but a footgun. Explicit parens added.
+- **B6** `00_Main.js:1034`: `engineLog(ss, 'Engine', 'WARN', ...)` typo.
+  Canonical level is `'WARNING'` (10_Logger.js:33,45 documents the set).
+  Pre-patch the row would have rendered without the yellow background
+  in the LOGS sheet.
+- **B7** `00_Main.js:691`: dead conditional `name !== 'BOM'` referenced
+  `SH.BOM`, removed in 3.7.5 with the v2 cutover. Cleaned up.
+- **B8** `00_Main.js:374`: stale comment `=F*$F$3` for `BOM_COL.TOTAL_MXN`.
+  Fixed to reference `BOM_ROW.EXCHANGE_RATE` (the actual source row).
+- **B9** `writers_v2/WriteMdcV2.js:130,132`: MDC §0 GENERALES cited
+  `INPUT_GENERAL!C5/C6` for project name and client name. INPUT_GENERAL
+  was retired in v2.0.2+; those fields now live at `INPUT_PROJECT!D8/D9`.
+  **Customer-facing transparency lie** — MDC pointed customers at a
+  sheet that no longer exists. Now uses `inputLocation('projectName')`
+  and `inputLocation('clientName')`, which resolve via INPUT_MAP (the
+  single source of truth for input cell coordinates).
+
+### Added — Chunk 1 (Node test harness)
+
+- `scripts/full_selftest.js`: Node runner that loads all 54 source files
+  and 67 test files, runs every `registerTest` entry against a mock
+  spreadsheet, and reports PASS / FAIL / ERROR per group.
+- Refined exit gate distinguishes:
+  - **Unit FAILs** (must fix before push)
+  - **Unit ERRORs** that are real bugs (must fix)
+  - **Workbook-dependent test ERRORs** that need a live spreadsheet
+    (recognized by the throw signature `Cannot read properties of null
+    (reading 'getSheetByName' | 'insertSheet' | 'getRange' |
+    'getActiveSpreadsheet')`). These are expected and run from the
+    ARGIA menu in a real workbook.
+- Pre-push ritual: `node scripts/full_selftest.js` must end with
+  `ALL GREEN`.
+
+### Added — Chunk 2 (OutputValidate unit coverage)
+
+- `tests_unit/engine/OutputValidateTests.gs`: 10 new tests for
+  `validateOutputConsistency` (`09b_OutputValidate.js`), which had been
+  in production since v2.4.0 without unit coverage. Covers:
+  1. All sheets agree → `passed=true`
+  2. MDC ↔ BOM project name mismatch → critical
+  3. MDC ↔ PROJECT_CARD project name mismatch → critical
+  4. Module count mismatch (MDC vs INSTALLATION) → critical
+  5. Inverter count mismatch (MDC vs INSTALLATION) → critical
+  6. MDC empty → all checks skipped (info, not critical)
+  7. MDC sheet absent → graceful skip
+  8. BOM_v2 absent → only BOM check skipped, others run
+  9. `_ov_str` helper edge cases (null, undefined, blank, number coercion)
+  10. `_ov_num` helper edge cases (parse, blank → null, non-numeric → null)
+
+### Added — Chunk 3 (Install cost sanity guardrails)
+
+- `09c_InstallCostSanity.js`: post-engine advisory check that compares
+  computed install cost against industry-typical ranges. **Advisory only
+  — never blocks the engine.** Three independent checks:
+  - **PV install MXN/Wp** — warn if outside 1.0–5.0 (commercial Mexico
+    floor / small-job ceiling).
+  - **BESS BoP USD/kWh** — warn if outside 30–200 (only runs when BESS
+    is enabled). Industry C&I commercial BESS BoP install typical is
+    $60-150/kWh (NREL 2024 ATB; BloombergNEF 2024).
+  - **Blended labor rate MXN/MH** — warn if outside 80–400.
+- Bounds live in `buildNomLimitsDefaults()` under six new keys:
+  `install_pv_mxn_per_wp_warn_min/max`,
+  `install_bess_usd_per_kwh_warn_min/max`,
+  `install_blended_labor_rate_warn_min/max`. Ops can tighten as
+  `94_INSTALL_BENCHMARKS` fills in.
+- Wired as **Step 14.5** in `runArgiaEngine`, after the existing output
+  consistency check. Try/catch wrapped — a guardrail bug never breaks
+  the engine.
+- Warnings surface to:
+  - `LOGS` sheet at WARNING level (yellow row background)
+  - End-of-run UI alert dialog (new section appended after BESS line)
+- `tests_unit/engine/InstallCostSanityTests.gs`: 9 new tests covering
+  in-range happy path, each guardrail's LOW and HIGH paths, PV-only
+  (no BESS check), missing-installResult graceful, and a CULLIGAN
+  reproduction case asserting both PV LOW + BESS LOW fire with the
+  exact computed values (0.61 MXN/Wp, $5.30 USD/kWh).
+
+### Fixed — post-deploy follow-ups (same release)
+
+After the first Apps Script run of 3.7.8, two issues surfaced that the
+Node harness had not caught, plus one stale test was fixed proactively:
+
+- **Harness fidelity gap (the important one).** The Node harness in
+  `scripts/full_selftest.js` defined convenience assert methods
+  (`assertNull`, `assertEq`, `assertNotNull`) that the real
+  `test/TestAssert.gs` API does **not** expose. A test using one of them
+  passed locally but threw `t.X is not a function` in Apps Script. The
+  harness now mirrors the real API surface exactly (suite, assert,
+  assertNear, assertThrows, assertContains, assertTrue, assertFalse,
+  fail, assertSnapshot, expectWarning, expectNoWarning, info, error,
+  flush, reset, _setContext) — no more, no less — so this class of error
+  is caught before push.
+- **`UNIT_INSTALL_SANITY_PV_ONLY_NO_BESS_CHECK`** used `t.assertNull`,
+  which does not exist. Replaced with `t.assertTrue(..., value === null)`.
+- **`INT_BDF7_BOM_BESS_SECTION_RENDERS`** read the legacy `BOM` sheet,
+  deleted in the 3.7.5 v2 cutover. Updated to `BOM_v2`. (This was slated
+  for Chunk 6 stale-reference cleanup; pulled forward since it was
+  actively failing.)
+
+Two regression failures observed in the same run are **pre-existing and
+environmental, not 3.7.8 regressions** (documented since 3.7.6):
+`REG_CULLIGAN_BASELINE_V2` and `REG_BESS_SIM_FORMULAS` both require the
+workbook to be holding a fresh CULLIGAN engine run. When the full test
+batch runs smoke-test fixtures over the output/simulation sheets first,
+these read stale state and fail. Both self-diagnose with the fix:
+re-run "Generate MDC and BOM" against CULLIGAN, then run the regression
+suite without an intervening smoke-test batch. No code change.
+
+### Regression risk
+
+- B1: a small number of MDC §2 cells may flip from `[PASS]` to
+  `[REVIEW] -- Caída AC` on projects where OCPD failed but Vdrop
+  passed. Correct behavior — pre-patch was masking a real review case.
+- All other bug fixes are textual or non-functional.
+- Install cost sanity is purely additive. No computed cost changes.
+
+### Test gains
+
+- Harness baseline 218 PASS / 0 FAIL → **241 PASS / 0 FAIL** after this
+  release (+23 unit tests). The 36 workbook-dependent test ERRORs are
+  now correctly classified by the harness gate; they continue to run
+  from the ARGIA menu in a real workbook.
+
+---
+
 ## [3.5.0] — 2026-05-26
 
 Chunk 7 of the output-v2 migration. Lands CFE_OUTPUT_v2 alongside the

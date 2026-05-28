@@ -307,14 +307,14 @@ registerTest({
     // Row 5: col F = service number
     // Row 6: col F = contracted kW
     // Row 7: col C = 2pctBT (we use col C here)
-    // Row 40: col C = interconnection
+    // Row 41: col C = interconnection  (4.0.0: canonical cell, was row 40)
     // Row 42: col C = autoconsumo
     var inputRows = _makeCfeRows({
       4:  [null, null, 'GDMTH', null, null, 'OASIS LATINOAMERICA'],
       5:  [null, null, null, null, null, '414240911417'],
       6:  [null, null, null, null, null, 1620],
       7:  [null, null, 'NO'],
-      40: [null, null, 'NETO'],
+      41: [null, null, 'FACTURACION_NETA'],
       42: [null, null, 0.85]
     });
     var bessRows = _makeCfeRows({
@@ -335,7 +335,8 @@ registerTest({
     t.assert('row 5 col 10 = service name', 'OASIS LATINOAMERICA', _findValueAtCfeWrite(w, 5, 10));
     t.assert('row 6 col 3 = service num',   '414240911417',        _findValueAtCfeWrite(w, 6, 3));
     t.assert('row 6 col 10 = contracted',   1620,                  _findValueAtCfeWrite(w, 6, 10));
-    t.assert('row 7 col 3 = interconn',     'NETO',                _findValueAtCfeWrite(w, 7, 3));
+    t.assertContains('row 7 col 3 = interconn (friendly label)',
+                     _findValueAtCfeWrite(w, 7, 3), 'FACTURACI');
     t.assert('row 7 col 10 = autoconsumo',  0.85,                  _findValueAtCfeWrite(w, 7, 10));
     t.assert('row 8 col 3 = strategy',      'PEAK_SHAVE',          _findValueAtCfeWrite(w, 8, 3));
     t.assertContains('row 8 col 10 contains kWh',

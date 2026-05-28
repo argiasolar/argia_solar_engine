@@ -194,11 +194,15 @@ function _readBatterySpecForHourlySim(ss) {
   //   r14 = RTE %
   var capacityKwh = Number(sh.getRange(10, 3).getValue()) || 0;
   if (capacityKwh <= 0) return null;  // no battery configured
+  // 3.7.9: read strategy (C7) so the hourly dispatcher can prioritize.
+  // Blank/unknown falls back to PEAK_SHAVING inside the simulator.
+  var strategy = String(sh.getRange(7, 3).getValue() || '').trim().toUpperCase();
   return {
     capacityKwh: capacityKwh,
     powerKw:     Number(sh.getRange(11, 3).getValue()) || 0,
     minSocPct:   Number(sh.getRange(12, 3).getValue()) || 0.10,
     maxSocPct:   Number(sh.getRange(13, 3).getValue()) || 0.90,
     rtePct:      Number(sh.getRange(14, 3).getValue()) || 0.90,
+    strategy:    strategy || 'PEAK_SHAVING',
   };
 }

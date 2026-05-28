@@ -1598,6 +1598,47 @@ function setupInputBess() {
 }
 
 
+// ---------------------------------------------------------------------------
+// refreshBessStrategyDropdown  (4.0.0)
+// ---------------------------------------------------------------------------
+// Re-applies the BESS_STRATEGY (INPUT_BESS!C7) data-validation dropdown from
+// the current INPUT_MAP.bessStrategy.dropdown list.
+//
+// WHY THIS EXISTS:
+//   Data-validation rules are baked into the sheet when a tab is first built.
+//   Adding a new option to INPUT_MAP.bessStrategy.dropdown (e.g. LOAD_SHIFTING
+//   in 4.0.0) does NOT retroactively update a dropdown that already exists on
+//   C7 -- the cell keeps the old 2-item list until something re-applies it.
+//   This function does exactly that, reusing the same _applyTypeValidation
+//   path the tab renderer uses, so the dropdown always matches the map.
+//
+//   It also clears any stale help-text tooltip on C7 (the pre-4.0.0 tooltip
+//   mentioned only SELF_CONSUMPTION_MAX / PEAK_SHAVING / HYBRID).
+//
+// IDEMPOTENT. Safe to run any time. The current C7 value is preserved; if the
+// old value is still valid the cell is unchanged, and selecting LOAD_SHIFTING
+// becomes possible immediately after running this.
+//
+// To run from the Apps Script IDE: select refreshBessStrategyDropdown, Run.
+// From the workbook: ARGIA menu -> Setup -> "Refresh BESS Strategy Dropdown".
+function refreshBessStrategyDropdown() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var shBess = ss.getSheetByName(SH.INPUT_BESS);
+  if (!shBess) {
+    throw new Error('refreshBessStrategyDropdown: INPUT_BESS sheet not found.');
+  }
+  if (typeof INPUT_MAP === 'undefined' || !INPUT_MAP.bessStrategy) {
+    throw new Error('refreshBessStrategyDropdown: INPUT_MAP.bessStrategy missing.');
+  }
+  var m = INPUT_MAP.bessStrategy;           // {sheet,row,col,type:'dropdown',dropdown:[...]}
+  var cell = shBess.getRange(m.row, m.col);  // C7
+  cell.clearDataValidations();               // drop stale rule + tooltip
+  _applyTypeValidation(cell, m);             // re-apply from current INPUT_MAP
+  SpreadsheetApp.flush();
+  return 'BESS strategy dropdown refreshed: ' + m.dropdown.join(' / ');
+}
+
+
 // ===========================================================================
 // setupInputBessStyling  (BDF-9)
 // ===========================================================================

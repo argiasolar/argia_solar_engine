@@ -48,9 +48,10 @@
 //     replace MDC_v2 -> MDC etc. and rename this file to
 //     tests_regression/baseline/CulliganBaselineTests.gs, replacing the
 //     legacy one in the same commit.
-//   - The engine version assert is currently set to "3.5.0". Bump to the
-//     cutover release version (likely "4.0.0" per the cleanup plan's
-//     MAJOR-bump policy for sheet renames).
+//   - The engine version assert was relocked to "4.0.0" (2026-05-28) with
+//     the strategy-aware dispatch MAJOR release. The pinned numbers are
+//     material/spec + PV/structural only, which the dispatch change does
+//     not affect, so they carried forward unchanged.
 //
 // TAGS
 //   'chunk1' kept for backward compat with the per-chunk runner.
@@ -578,14 +579,20 @@ registerTest({
     var meta = ss.getSheetByName('_META');
     if (meta) {
       var engineVer = String(meta.getRange('B4').getValue() || '');
-      if (engineVer !== '3.5.0') {
+      // Relocked at 4.0.0 (2026-05-28). The 4.0.0 BESS dispatch rewrite
+      // changed CFE *savings/economics* numbers, but this baseline pins only
+      // physical/material values (BESS capacity, power, topology, strategy
+      // LABEL, BOM material subtotals) and PV/structural calcs — none of
+      // which the dispatch change touches. So the pinned numbers above carry
+      // forward unchanged; only the version stamp is bumped.
+      if (engineVer !== '4.0.0') {
         t.info('engine version drift',
-          'v2 baseline locked at engine v3.5.0 (2026-05-26). ' +
+          'v2 baseline relocked at engine v4.0.0 (2026-05-28). ' +
           'Current engine v' + engineVer + '. If the asserts above pass, ' +
           'the baseline carries forward cleanly. If they fail, audit which ' +
           'numbers changed and re-lock with an explicit CHANGELOG entry.');
       } else {
-        t.assert('engine version matches v2 baseline', '3.5.0', engineVer);
+        t.assert('engine version matches v2 baseline', '4.0.0', engineVer);
       }
     } else {
       t.info('engine version unknown', '_META sheet not present');

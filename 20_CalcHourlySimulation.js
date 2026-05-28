@@ -238,6 +238,162 @@ function classifyTariff(tariffCode) {
 
 
 // ===========================================================================
+// _bessDispatchHour -- strategy-aware single-hour battery dispatch (3.7.9)
+// ===========================================================================
+//
+// PHILOSOPHY (decided 2026-05-28): the battery ALWAYS pursues every saving
+// type. Strategy is NOT a hard on/off switch; it sets the PRIORITY ORDER when
+// discharge, PV capture, and grid arbitrage compete for finite SoC and power.
+// We never ignore a saving opportunity — we just decide who gets first claim.
+//
+// THREE ACTIONS the battery can take in any hour (mutually exclusive per hour,
+// because a battery cannot simultaneously charge and discharge):
+//   D)  DISCHARGE to cover residual load (avoids import at the bucket rate)
+//   P)  CHARGE FROM PV SURPLUS (stores free solar for later)
+//   G)  CHARGE FROM GRID (arbitrage: buy cheap base, discharge in punta)
+//
+// PRIORITY TABLES (first matching action wins each hour):
+//
+//   PEAK_SHAVING       — punta demand/energy is the main driver.
+//     1. Discharge in PUNTA (protect the expensive window above all).
+//     2. Charge from PV surplus (any hour).
+//     3. Discharge in INTERMEDIA (secondary saving — still pursued).
+//     4. No grid charging.
+//
+//   SELF_CONSUMPTION_MAX — maximize use of own solar.
+//     1. Charge from PV surplus FIRST (never spill solar; reserve SoC room).
+//     2. Discharge to cover load in PUNTA.
+//     3. Discharge to cover load in INTERMEDIA.
+//     4. No grid charging.
+//
+//   LOAD_SHIFTING      — time-of-use arbitrage is the main driver.
+//     1. Discharge in PUNTA (capture the spread we charged for).
+//     2. Grid-charge in BASE via smart gate (only if NET_BILLING AND the
+//        base->punta spread beats RTE losses: (ratePunta-rateBase)*rte > 0
+//        AND ratePunta*rte > rateBase, i.e. arbitrage is actually profitable).
+//     3. Charge from PV surplus.
+//     4. Discharge in INTERMEDIA.
+//
+// All three still capture PV surplus and still discharge in intermedia — the
+// ordering just changes which competes first for the same kWh. This is the
+// "always pursue every saving, strategy = priority" model.
+//
+// KNOWN CONVERGENCE (documented 2026-05-28, verified by comparative tests):
+//   PEAK_SHAVING and SELF_CONSUMPTION_MAX produce near-identical economics in
+//   practice. The only ordering difference between them — PV-capture-first
+//   vs punta-discharge-first — requires PV surplus and punta load in the SAME
+//   hour to matter. But PV surplus occurs midday (base/intermedia buckets)
+//   and punta is evening, so that conflict almost never arises. They converge
+//   BY DESIGN, not by bug. LOAD_SHIFTING is the genuine differentiator: it
+//   alone grid-charges for arbitrage, so it diverges materially whenever the
+//   punta/base spread + NET_BILLING make arbitrage profitable. Both
+//   properties are asserted in BessDispatchStrategyTests.gs.
+//
+// @param {Object} o  see destructure below
+// @return {Object} { batteryActionKwh (+disch/-chg), batterySoc,
+//                     pvSurplusKwh, residualNetLoadKwh,
+//                     dischargeKwh, chargeKwh }
+//
+// Pure function — no engine/sheet access. Unit-tested in
+// tests_unit/calc/BessDispatchStrategyTests.gs.
+// ===========================================================================
+function _bessDispatchHour(o) {
+  var strategy           = o.strategy || 'PEAK_SHAVING';
+  var bucket             = o.bucket;
+  var residualNetLoadKwh = o.residualNetLoadKwh;
+  var pvSurplusKwh       = o.pvSurplusKwh;
+  var batterySoc         = o.batterySoc;
+  var minSocKwh          = o.minSocKwh;
+  var maxSocKwh          = o.maxSocKwh;
+  var batteryPowerKw     = o.batteryPowerKw;
+  var rte                = o.rte;
+  var interconnMode      = o.interconnMode;
+  var rateBase           = Number(o.rateBase)  || 0;
+  var ratePunta          = Number(o.ratePunta) || 0;
+
+  var batteryActionKwh = 0;
+  var dischargeKwh = 0;
+  var chargeKwh = 0;
+
+  // --- Primitive actions (each respects SoC + power limits) ----------------
+  function doDischarge() {
+    if (residualNetLoadKwh <= 0) return false;
+    var available = Math.max(0, batterySoc - minSocKwh);
+    var kwh = Math.min(residualNetLoadKwh, available, batteryPowerKw);
+    if (kwh <= 0) return false;
+    dischargeKwh = kwh;
+    batteryActionKwh = kwh;
+    batterySoc -= kwh;
+    return true;
+  }
+  function doChargePv() {
+    if (pvSurplusKwh <= 0) return false;
+    var room = Math.max(0, maxSocKwh - batterySoc);
+    var kwh = Math.min(pvSurplusKwh, room, batteryPowerKw);
+    if (kwh <= 0) return false;
+    chargeKwh = kwh;
+    batteryActionKwh = -kwh;
+    batterySoc += kwh * rte;   // RTE loss on the way in
+    pvSurplusKwh -= kwh;
+    return true;
+  }
+  function doChargeGrid() {
+    // Smart gate: only NET_BILLING, only when arbitrage actually profits.
+    // After RTE losses, a kWh charged in base and discharged in punta is
+    // worth ratePunta*rte but costs rateBase. Require strictly positive edge.
+    if (interconnMode !== 'NET_BILLING') return false;
+    if (!(ratePunta * rte > rateBase)) return false;
+    var room = Math.max(0, maxSocKwh - batterySoc);
+    var kwh = Math.min(room, batteryPowerKw);
+    if (kwh <= 0) return false;
+    chargeKwh = kwh;
+    batteryActionKwh = -kwh;
+    batterySoc += kwh * rte;
+    residualNetLoadKwh += kwh;  // grid charge shows up as extra import
+    return true;
+  }
+
+  // --- Strategy priority chains -------------------------------------------
+  var isPunta = (bucket === 'punta');
+  var isBase  = (bucket === 'base');
+
+  if (strategy === 'SELF_CONSUMPTION_MAX') {
+    // PV capture first (never spill solar), then discharge to cover load.
+    if (doChargePv()) { /* stored solar */ }
+    else if (doDischarge()) { /* covered load from battery */ }
+  } else if (strategy === 'LOAD_SHIFTING') {
+    if (isPunta) {
+      if (!doDischarge()) doChargePv();
+    } else if (isBase) {
+      // Arbitrage window: try to buy cheap, else soak PV, else cover load.
+      if (!doChargeGrid()) { if (!doChargePv()) doDischarge(); }
+    } else {
+      // intermedia: capture PV if any, else cover load
+      if (!doChargePv()) doDischarge();
+    }
+  } else {
+    // PEAK_SHAVING (default): protect punta, soak PV, then intermedia.
+    if (isPunta) {
+      doDischarge();           // priority 1
+    } else if (doChargePv()) { // priority 2
+      /* stored solar */
+    } else {
+      doDischarge();           // priority 3: intermedia/base load cover
+    }
+  }
+
+  return {
+    batteryActionKwh:   batteryActionKwh,
+    batterySoc:         batterySoc,
+    pvSurplusKwh:       pvSurplusKwh,
+    residualNetLoadKwh: residualNetLoadKwh,
+    dischargeKwh:       dischargeKwh,
+    chargeKwh:          chargeKwh,
+  };
+}
+
+
+// ===========================================================================
 // calcHourlySimulation -- main entry point
 // ===========================================================================
 // @param {Object} opts
@@ -392,6 +548,9 @@ function calcHourlySimulation(opts) {
   var minSocFrac = battery ? Number(battery.minSocPct) || 0.05 : 0.05;
   var maxSocFrac = battery ? Number(battery.maxSocPct) || 0.95 : 0.95;
   var rte = battery ? Number(battery.rtePct) || 0.913 : 1.0;
+  // 3.7.9: strategy steers the priority dispatcher. Default to PEAK_SHAVING
+  // (the most common commercial driver). Unknown/blank => PEAK_SHAVING.
+  var batteryStrategy = (battery && battery.strategy) ? String(battery.strategy) : 'PEAK_SHAVING';
   var minSocKwh = batteryCapKwh * minSocFrac;
   var maxSocKwh = batteryCapKwh * maxSocFrac;
   if (batteryCapKwh > 0) batterySoc = minSocKwh;  // start at min SOC
@@ -448,40 +607,42 @@ function calcHourlySimulation(opts) {
         var pvSurplusKwh = (netLoadKwh < 0) ? -netLoadKwh : 0;
         var residualNetLoadKwh = (netLoadKwh > 0) ? netLoadKwh : 0;
 
-        // Battery dispatch (greedy)
+        // Battery dispatch — strategy-aware priority dispatcher (3.7.9).
+        //
+        // The battery always pursues EVERY saving type (discharge to avoid
+        // costly import, charge from PV surplus, optional grid arbitrage).
+        // `strategy` only sets the PRIORITY ORDER when these compete for the
+        // battery's finite energy (SoC) and power (kW/hour). It is never a
+        // hard on/off switch — see _bessDispatchHour() for the policy table.
         var batteryActionKwh = 0;  // positive = discharge, negative = charge
         if (batteryCapKwh > 0) {
-          if (bucket === 'punta' && residualNetLoadKwh > 0) {
-            // Discharge to cover load
-            var availableEnergy = Math.max(0, batterySoc - minSocKwh);
-            var dischargeKwh = Math.min(residualNetLoadKwh, availableEnergy, batteryPowerKw);
-            batteryActionKwh = dischargeKwh;
-            batterySoc -= dischargeKwh;
-            totalBatteryDischargeKwh += dischargeKwh;
-            monthlyBatteryDischargeKwhPerMonth[month - 1] += dischargeKwh;   // BDF-11
-          } else if (pvSurplusKwh > 0) {
-            // Charge from PV surplus (any mode benefits when surplus exists)
-            var roomKwh = Math.max(0, maxSocKwh - batterySoc);
-            var chargeFromPvKwh = Math.min(pvSurplusKwh, roomKwh, batteryPowerKw);
-            // RTE loss: each kWh going in delivers rte * kWh out later
-            batterySoc += chargeFromPvKwh * rte;
-            batteryActionKwh = -chargeFromPvKwh;
-            totalBatteryChargeKwh += chargeFromPvKwh;
-            pvSurplusKwh -= chargeFromPvKwh;
-          } else if (bucket === 'base'
-                     && interconnMode === 'NET_BILLING'
-                     && batterySoc < maxSocKwh) {
-            // Charge from grid base during base hours under NET_BILLING
-            // (only mode where this typically pays).
-            var roomKwhB = Math.max(0, maxSocKwh - batterySoc);
-            var chargeFromGridKwh = Math.min(roomKwhB, batteryPowerKw);
-            batterySoc += chargeFromGridKwh * rte;
-            batteryActionKwh = -chargeFromGridKwh;
-            totalBatteryChargeKwh += chargeFromGridKwh;
-            // This adds to grid import
-            residualNetLoadKwh += chargeFromGridKwh;
+          var dispatch = _bessDispatchHour({
+            strategy:           batteryStrategy,
+            bucket:             bucket,
+            residualNetLoadKwh: residualNetLoadKwh,
+            pvSurplusKwh:       pvSurplusKwh,
+            batterySoc:         batterySoc,
+            minSocKwh:          minSocKwh,
+            maxSocKwh:          maxSocKwh,
+            batteryPowerKw:     batteryPowerKw,
+            rte:                rte,
+            interconnMode:      interconnMode,
+            rateBase:           rateBase,
+            rateInter:          rateInter,
+            ratePunta:          ratePunta,
+          });
+          batteryActionKwh  = dispatch.batteryActionKwh;
+          batterySoc        = dispatch.batterySoc;
+          pvSurplusKwh      = dispatch.pvSurplusKwh;
+          residualNetLoadKwh = dispatch.residualNetLoadKwh;
+          if (dispatch.dischargeKwh > 0) {
+            totalBatteryDischargeKwh += dispatch.dischargeKwh;
+            monthlyBatteryDischargeKwhPerMonth[month - 1] += dispatch.dischargeKwh;  // BDF-11
           }
-          // Clamp SOC to safe range
+          if (dispatch.chargeKwh > 0) {
+            totalBatteryChargeKwh += dispatch.chargeKwh;
+          }
+          // Clamp SOC to safe range (defensive; dispatcher already respects it)
           if (batterySoc < minSocKwh) batterySoc = minSocKwh;
           if (batterySoc > maxSocKwh) batterySoc = maxSocKwh;
         }

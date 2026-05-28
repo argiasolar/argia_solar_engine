@@ -68,7 +68,10 @@ var CFE_OUT_SRC_V2 = (typeof CFE_OUT_SRC_V2 !== 'undefined' && CFE_OUT_SRC_V2) ?
   input_total           : { sheet: 'INPUT_CFE', row: 37 },
 
   // INPUT_CFE interconnection mode (scalar)
-  input_interconnMode   : { sheet: 'INPUT_CFE', row: 40, col:  3 },
+  // 4.0.0 fix: was row 40 — display read the wrong cell and showed blank.
+  // Confirmed canonical cell is C41 (matches the simulation reader in
+  // 02_LoadDB.readBessInterconnectionFromInputCfe and 19_RunBessSuggestion).
+  input_interconnMode   : { sheet: 'INPUT_CFE', row: 41, col:  3 },
   input_autoconsumoPct  : { sheet: 'INPUT_CFE', row: 42, col:  3 },
 
   // CFE_SIMULATION monthly bands (rows 5-7 = kWh after PV; row 8 = solar)

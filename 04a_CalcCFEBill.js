@@ -437,12 +437,22 @@ function calcCfeBillWithPvAnnual(monthlyInputs, tar, pv, options) {
  * BESS strategy constants.
  *   SELF_CONSUMPTION_MAX — v2.2.0, PV-export capture (Strategy B)
  *   PEAK_SHAVING         — v2.3.0, demand-charge reduction
- *   HYBRID               — deferred to v2.4.0 (needs interval data)
+ *   LOAD_SHIFTING        — v3.7.9, time-of-use arbitrage (base->punta)
+ *   HYBRID               — deferred (needs interval data)
+ *
+ * NOTE (3.7.9): the live customer-facing CFE savings come from the hourly
+ * simulation (20_CalcHourlySimulation._bessDispatchHour), which implements
+ * all three as priority policies. The monthly functions below are the
+ * unit-tested analytic reference. LOAD_SHIFTING in the monthly layer reuses
+ * the SELF_CONSUMPTION capture model as a conservative lower bound (it does
+ * not model grid arbitrage; the hourly sim does). Kept consistent so neither
+ * layer throws on a valid dropdown value.
  */
 var BESS_STRATEGY = {
   SELF_CONSUMPTION_MAX: 'SELF_CONSUMPTION_MAX',
   PEAK_SHAVING:         'PEAK_SHAVING',
-  // HYBRID:            'HYBRID',                // v2.4.0 — do not enable
+  LOAD_SHIFTING:        'LOAD_SHIFTING',
+  // HYBRID:            'HYBRID',                // deferred — do not enable
 };
 
 /**
@@ -520,9 +530,15 @@ function calcBessImpact(inp, tar, pv, bess, options) {
 
   // Strategy validation
   var strategy = bess.strategy || BESS_STRATEGY.SELF_CONSUMPTION_MAX;
-  if (strategy !== BESS_STRATEGY.SELF_CONSUMPTION_MAX) {
-    throw new Error('calcBessImpact: only SELF_CONSUMPTION_MAX supported in v2.2.0, got '
-                    + strategy);
+  // 3.7.9: LOAD_SHIFTING is accepted by the monthly layer as a conservative
+  // self-consumption-capture proxy (no grid arbitrage modeled here; the
+  // hourly simulator does the real arbitrage dispatch). PEAK_SHAVING has its
+  // own dedicated function (calcPeakShavingImpact) and must not be routed here.
+  if (strategy !== BESS_STRATEGY.SELF_CONSUMPTION_MAX
+      && strategy !== BESS_STRATEGY.LOAD_SHIFTING) {
+    throw new Error('calcBessImpact: supports SELF_CONSUMPTION_MAX or '
+                    + 'LOAD_SHIFTING (got ' + strategy + '). '
+                    + 'PEAK_SHAVING uses calcPeakShavingImpact.');
   }
 
   // Input bounds validation

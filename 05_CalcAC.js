@@ -79,8 +79,11 @@ function calcAC(inp, panel, invBank, nom, tbls, dc) {
     result.totalInsArea= totalInsArea;
 
     // Overall per-inverter result
+    // Bug B1 fix (3.7.8): previous status was `result.pass ? '[PASS]' : (result.vdropACPass ? '[PASS]' : '[REVIEW]')`
+    // which mislabeled OCPD-fail / vdrop-pass as [PASS]. Now: pass==false => [REVIEW] unconditionally.
+    // Bug B2 fix (3.7.8): "Cada AC" -> "Caída AC" (UTF-8 accents restored).
     result.pass = result.ocpdPass && result.vdropACPass;
-    result.status = result.pass ? '[PASS]' : (result.vdropACPass ? '[PASS]' : '?[REVIEW] -- Cada AC');
+    result.status = result.pass ? '[PASS]' : '[REVIEW] -- Caída AC';
 
     return result;
   });
@@ -174,7 +177,7 @@ function calcAC(inp, panel, invBank, nom, tbls, dc) {
   const feederPass = ac.vdropFeederPass && ac.transformerPass;
   ac.resultFeeder  = feederPass
     ? '[PASS] -- Alimentador principal OK'
-    : '?[REVIEW] -- Verifica cada de tensin o transformador';
+    : '[REVIEW] -- Verificar caída de tensión o transformador';
 
   return ac;
 }

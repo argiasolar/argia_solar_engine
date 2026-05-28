@@ -26,6 +26,78 @@
 //   DB_VERSION uses YYYY.MM
 //     Bump when any *_DB or master table changes.
 //
+// 3.7.8 — PATCH bump (2026-05-27). Shipping-readiness pass: bug sweep +
+// test infrastructure + install cost guardrails. Four-chunk bundle:
+//
+// CHUNK 0 — Bug sweep (7 fixes, all customer-facing or transparency-related):
+//   B1  05_CalcAC.js:83  — broken ternary mislabeled OCPD-fail/Vdrop-pass
+//                          as [PASS]. Now: pass===false => '[REVIEW]'
+//                          unconditionally. Customer-facing.
+//   B2  05_CalcAC.js:86,180 — mojibake. "Cada AC" -> "Caída AC";
+//                          "Verifica cada de tensin" -> "Verificar caída
+//                          de tensión". UTF-8 accents restored.
+//   B3  09_Validate.js:211 — operator precedence latent bug. Pre-patch
+//                          `acKw > 0 && ratio < X || ratio < 0.8` parsed
+//                          as `(acKw > 0 && ratio < X) || (ratio < 0.8)`.
+//                          Explicit parens lock the intended meaning.
+//   B6  00_Main.js:1034 — 'WARN' -> 'WARNING'. 'WARN' is not a recognized
+//                          engineLog level (10_Logger.js:33,45 documents
+//                          the canonical set).
+//   B7  00_Main.js:691  — dead conditional. `name !== 'BOM'` referenced
+//                          SH.BOM, removed in 3.7.5. Cleaned up.
+//   B8  00_Main.js:374  — comment debt. Stale `=F*$F$3` reference fixed
+//                          to point at BOM_ROW.EXCHANGE_RATE.
+//   B9  writers_v2/WriteMdcV2.js:130,132 — MDC §0 GENERALES cited
+//                          'INPUT_GENERAL!C5/C6' for project/client name.
+//                          INPUT_GENERAL was retired in v2.0.2+; canonical
+//                          location is INPUT_PROJECT!D8/D9. Customer-facing
+//                          transparency lie. Now uses inputLocation()
+//                          (single source of truth via INPUT_MAP).
+//
+// CHUNK 1 — Test harness:
+//   scripts/full_selftest.js (new). Node-side runner that loads all 54
+//   source files + 67 test files, runs every registerTest entry against
+//   a mock spreadsheet. Refined exit gate distinguishes real unit FAILs
+//   from workbook-dependent test ERRORs (recognized by the throw signature
+//   "Cannot read properties of null (reading 'getSheetByName')"). Run
+//   before every clasp push: `node scripts/full_selftest.js`.
+//
+// CHUNK 2 — OutputValidate unit tests:
+//   tests_unit/engine/OutputValidateTests.gs (new). 10 unit tests for
+//   validateOutputConsistency, which has been in production since v2.4.0
+//   without unit coverage. Cases: all-match happy path; project name
+//   mismatch (MDC vs BOM, MDC vs PC); module-count and inverter-count
+//   mismatches; MDC empty short-circuit; sheet-missing graceful handling;
+//   _ov_str / _ov_num helper edge cases.
+//
+// CHUNK 3 — Install cost sanity guardrails:
+//   09c_InstallCostSanity.js (new). Post-engine advisory check (Step 14.5)
+//   that warns when computed install cost falls outside industry-typical
+//   ranges. Three independent checks: PV install MXN/Wp (1.0-5.0),
+//   BESS BoP USD/kWh (30-200), blended labor MXN/MH (80-400). Bounds
+//   live in buildNomLimitsDefaults() under install_* keys — Ops can
+//   tighten as 94_INSTALL_BENCHMARKS fills in. Warnings surface to LOGS
+//   and the end-of-run UI alert. Never blocks the engine.
+//
+//   Bounds source: NREL 2024 ATB + BloombergNEF 2024 commercial BESS,
+//   ARGIA market review. Industry C&I commercial BESS BoP install runs
+//   $60-150/kWh typical, $30-200/kWh observed extremes.
+//
+// REGRESSION RISK
+//   B1 changes a few cells in MDC §2 status column from '[PASS]' to
+//   '[REVIEW] -- Caída AC' for projects where OCPD failed but Vdrop
+//   passed (rare in practice; the OCPD selector almost always finds a
+//   passing breaker). All other fixes are textual or non-functional.
+//   Install cost sanity is purely additive — does not alter any
+//   computed cost.
+//
+// TEST GAINS
+//   +27 unit tests (4 bug regressions + 10 OutputValidate + 9 install
+//   sanity + 4 helper variants). Harness moves from 218 PASS / 0 FAIL
+//   baseline to 240+ PASS / 0 FAIL. No new ERRORs introduced; the 36
+//   workbook-dependent test ERRORs are now correctly classified by the
+//   harness gate.
+//
 // 3.7.7 — PATCH bump (2026-05-27). ARGIA menu reorganization.
 //
 // Top level is now action-oriented and minimal:
@@ -367,7 +439,61 @@
 // unchanged. NO charts in v2 (matches the current legacy state — charts
 // were removed in BDF-11).
 //
-var ENGINE_VERSION = '3.7.7';
+// -----------------------------------------------------------------------------
+// 4.0.0 — MAJOR (2026-05-28). First major. Shipping-readiness milestone +
+// strategy-aware BESS dispatch (Chunk 4). BREAKING: existing PV+BESS projects
+// recalculate to different numbers because the hourly battery dispatch is now
+// strategy-driven (it was strategy-blind before).
+//
+//   WHAT CHANGED
+//   - bessStrategy (INPUT_BESS!C7) now actually steers the hourly simulator's
+//     battery dispatch. Before 4.0.0 the dropdown value was read but ignored:
+//     every project used one fixed greedy policy (punta-discharge, PV-charge,
+//     base grid-charge under NET_BILLING).
+//   - New priority-weighted dispatcher (_bessDispatchHour). Strategy sets the
+//     PRIORITY ORDER when discharge / PV-capture / grid-arbitrage compete for
+//     finite SoC + power. It is NOT a hard on/off switch — every strategy
+//     still pursues every saving type; only the contest order changes.
+//   - LOAD_SHIFTING added to the dropdown (was defined in the enum but never
+//     selectable). It alone grid-charges in base for base->punta arbitrage,
+//     behind a smart gate: NET_BILLING only, and only when ratePunta*rte >
+//     rateBase (arbitrage must beat round-trip losses).
+//   - CFE_OUTPUT_v2 now prints a one-line "por qué esta estrategia" explainer
+//     under the BESS spec row (customer-facing transparency).
+//
+//   RECALC IMPACT
+//   - PEAK_SHAVING projects: battery now also discharges in intermedia
+//     (priority 3) to capture secondary savings, where before it was
+//     punta-exclusive. Slightly higher discharge, slightly higher savings.
+//   - SELF_CONSUMPTION_MAX: near-identical economics to PEAK_SHAVING (see
+//     KNOWN CONVERGENCE below) — minimal recalc change vs old default.
+//   - LOAD_SHIFTING: materially different (and usually much higher savings)
+//     wherever the punta/base spread + NET_BILLING make arbitrage profitable.
+//
+//   KNOWN CONVERGENCE (documented, asserted in tests, not a bug)
+//   - PEAK_SHAVING ≈ SELF_CONSUMPTION_MAX. The only ordering difference
+//     between them (PV-capture-first vs punta-discharge-first) needs PV
+//     surplus AND punta load in the SAME hour to matter. PV surplus is midday
+//     (base/intermedia); punta is evening. The conflict almost never arises,
+//     so the two converge. LOAD_SHIFTING is the genuine differentiator.
+//
+//   CONSISTENCY (monthly analytic layer)
+//   - 04a_CalcCFEBill BESS_STRATEGY enum gains LOAD_SHIFTING. calcBessImpact
+//     now accepts it (as a conservative self-consumption-capture proxy; it
+//     does not model grid arbitrage — only the hourly sim does). Neither
+//     layer throws on a valid dropdown value now.
+//
+//   TESTS
+//   - +10 unit tests: 8 in BessDispatchStrategyTests.gs (pure-function policy
+//     table + full-sim comparative proving PS≈SC and LS distinct, all beat
+//     baseline), 1 CFE explainer test, plus an updated CalcHourlySimulation
+//     punta assertion (old punta-exclusive invariant replaced with the new
+//     priority-honored invariant). Harness: 250 PASS / 0 FAIL.
+//
+// 3.7.8 — PATCH (2026-05-27). Bug sweep + harness + OutputValidate tests +
+// install cost guardrails. See CHANGELOG.md.
+// -----------------------------------------------------------------------------
+var ENGINE_VERSION = '4.0.0';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default

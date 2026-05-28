@@ -122,10 +122,14 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
   // ===========================================================================
   // SECTION 0: GENERALES
   // ===========================================================================
+  // Bug B9 fix (3.7.8): citations previously hardcoded 'INPUT_GENERAL!C5/C6',
+  // but INPUT_GENERAL was retired in v2.0.2+ — project/client now live on
+  // INPUT_PROJECT. Use inputLocation() so citations follow INPUT_MAP, the
+  // single source of truth for input cell coordinates.
   row(MDC_ROW.PROJECT, inp.projectName,
-      PROV.INPUT, cellRef('INPUT_GENERAL','C5'), null, null);
+      PROV.INPUT, inputLocation('projectName'), null, null);
   row(MDC_ROW.CLIENT, inp.clientName,
-      PROV.INPUT, cellRef('INPUT_GENERAL','C6'), null, null);
+      PROV.INPUT, inputLocation('clientName'), null, null);
   row(MDC_ROW.MODULE, panel['PANEL_MODEL'] + ' -- PROD_ID: ' + (panel['PROD_ID'] || '?'),
       PROV.DB,
       'Panel DB: ' + panel['PANEL_MODEL'],

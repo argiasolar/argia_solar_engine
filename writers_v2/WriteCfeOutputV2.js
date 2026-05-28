@@ -121,6 +121,82 @@ function writeCfeOutputV2(ss, hourlySim) {
 
 
 // =============================================================================
+// Strategy explainer (3.7.9) — one-line "why this strategy" for CFE_OUTPUT.
+// Customer-facing. Maps the BESS_STRATEGY value to a plain-Spanish sentence
+// describing what the battery prioritizes. Returns '' for unknown/blank so
+// the row is simply skipped.
+// =============================================================================
+function _cfeOutV2_strategyExplainer(strategyRaw) {
+  var s = String(strategyRaw || '').trim().toUpperCase();
+  if (s === 'PEAK_SHAVING') {
+    return 'Estrategia: Recorte de demanda (peak shaving). La batería prioriza '
+         + 'descargar en horario PUNTA para reducir el cargo por demanda y el '
+         + 'consumo en la ventana más cara; también aprovecha excedente solar e '
+         + 'intermedia cuando hay energía disponible.';
+  }
+  if (s === 'SELF_CONSUMPTION_MAX') {
+    return 'Estrategia: Autoconsumo máximo. La batería prioriza almacenar el '
+         + 'excedente solar para usarlo después en vez de exportarlo, y lo '
+         + 'descarga para cubrir consumo (principalmente en punta). En este '
+         + 'esquema el ahorro es muy similar al de recorte de demanda, porque '
+         + 'el excedente solar (mediodía) y la punta (tarde-noche) rara vez '
+         + 'coinciden en la misma hora.';
+  }
+  if (s === 'LOAD_SHIFTING') {
+    return 'Estrategia: Arbitraje horario (load shifting). Además de descargar '
+         + 'en punta, la batería puede cargarse de la red en horario BASE '
+         + '(barato) para descargar en PUNTA (caro), siempre que la diferencia '
+         + 'de tarifa supere las pérdidas de la batería y el esquema sea '
+         + 'NET_BILLING. Es la estrategia con mayor potencial de ahorro cuando '
+         + 'el diferencial base→punta es alto.';
+  }
+  return '';
+}
+
+
+// =============================================================================
+// Interconnection label (4.0.0) — map the raw INPUT_CFE!C41 enum to a
+// human-friendly label, and never return blank. "(no definido)" makes a
+// missing value visible instead of an empty cell.
+// =============================================================================
+function _cfeOutV2_interconnLabel(raw) {
+  var s = String(raw || '').trim().toUpperCase();
+  switch (s) {
+    case 'FACTURACION_NETA': return 'FACTURACIÓN NETA (NET_BILLING)';
+    case 'MEDICION_NETA':    return 'MEDICIÓN NETA (NET_METERING)';
+    case 'SIN_EXPORTACION':  return 'SIN EXPORTACIÓN (ZERO_EXPORT)';
+    case '':                 return '(no definido)';
+    default:                 return raw;   // show whatever is there, unmodified
+  }
+}
+
+
+// =============================================================================
+// LOAD_SHIFTING interconnection warning (4.0.0).
+//
+// LOAD_SHIFTING only performs base->punta grid arbitrage under FACTURACION_NETA
+// (NET_BILLING). Under MEDICION_NETA / SIN_EXPORTACION / unset, the arbitrage
+// smart gate never opens and the dispatcher silently behaves like PEAK_SHAVING
+// — producing IDENTICAL numbers. That silent collapse is exactly what bit us
+// in testing. This returns a loud warning string when the combination is
+// inert, or '' otherwise.
+// =============================================================================
+function _cfeOutV2_loadShiftWarning(strategyRaw, interconnRaw) {
+  var strat = String(strategyRaw || '').trim().toUpperCase();
+  if (strat !== 'LOAD_SHIFTING') return '';
+  var ic = String(interconnRaw || '').trim().toUpperCase();
+  if (ic === 'FACTURACION_NETA') return '';   // arbitrage active — no warning
+  return '\u26A0 ADVERTENCIA: LOAD_SHIFTING requiere interconexión '
+       + 'FACTURACIÓN_NETA (NET_BILLING) para hacer arbitraje de la red. '
+       + 'La interconexión actual es ' + (ic || '(no definida)') + ', por lo que '
+       + 'la batería NO carga de la red y el resultado es idéntico a '
+       + 'PEAK_SHAVING. Cambie la interconexión a FACTURACION_NETA en '
+       + 'INPUT_CFE!C41, o seleccione PEAK_SHAVING para reflejar el '
+       + 'comportamiento real.';
+}
+
+
+// =============================================================================
 // HEADER STRIP (rows 5-8) — values only; template owns labels
 // =============================================================================
 function _cfeOutV2_fillHeaderStrip(sh, ss) {
@@ -133,16 +209,50 @@ function _cfeOutV2_fillHeaderStrip(sh, ss) {
   sh.getRange(R.LOCATION_ROW, 3).setValue(readCfeScalar(ss, 'input_serviceNumber'));
   sh.getRange(R.LOCATION_ROW, 10).setValue(readCfeScalar(ss, 'input_contractedKw'));
   // Row 7: INTERCONEXION | AUTOCONSUMO
-  sh.getRange(R.INTERCONN_ROW, 3).setValue(readCfeScalar(ss, 'input_interconnMode'));
+  // 4.0.0: always render interconnection (never leave blank). Map the raw
+  // INPUT_CFE enum to a friendly label; show "(no definido)" when unset so a
+  // missing value is visible rather than an empty cell.
+  var interconnRaw = String(readCfeScalar(ss, 'input_interconnMode') || '').trim();
+  sh.getRange(R.INTERCONN_ROW, 3).setValue(_cfeOutV2_interconnLabel(interconnRaw));
   sh.getRange(R.INTERCONN_ROW, 10).setValue(readCfeScalar(ss, 'input_autoconsumoPct'));
   // Row 8: ESTRATEGIA BESS | BATERIA kWh/kW
-  sh.getRange(R.BESS_SPEC_ROW, 3).setValue(readCfeScalar(ss, 'bsim_strategy'));
+  var stratRaw = readCfeScalar(ss, 'bsim_strategy');
+  sh.getRange(R.BESS_SPEC_ROW, 3).setValue(stratRaw);
   var ekwh = readCfeScalar(ss, 'bsim_energiaUsable');
   var pkw  = readCfeScalar(ss, 'bsim_potenciaKw');
   sh.getRange(R.BESS_SPEC_ROW, 10).setValue(
     (ekwh === '' ? '-' : ekwh) + ' kWh usable / ' +
     (pkw  === '' ? '-' : pkw)  + ' kW'
   );
+  // Row 9 (3.7.9): one-line "por qué esta estrategia" explainer. Customer-
+  // facing transparency — tells the reader what the battery prioritizes and
+  // why it produces the savings shown below. Spans cols C-J, italic, small.
+  //
+  // 4.0.0: the explainer is now interconnection-aware. LOAD_SHIFTING only
+  // does grid arbitrage under FACTURACION_NETA (NET_BILLING). If the strategy
+  // is LOAD_SHIFTING but interconnection is NOT NET_BILLING, the dispatcher
+  // silently collapses to peak-shaving behavior. We must NOT let that be
+  // silent — append a loud, red warning so the designer sees that the chosen
+  // strategy is not actually active.
+  var warnLoadShift = _cfeOutV2_loadShiftWarning(stratRaw, interconnRaw);
+  var explainer = _cfeOutV2_strategyExplainer(stratRaw);
+  if (warnLoadShift) {
+    explainer = (explainer ? explainer + '  ' : '') + warnLoadShift;
+  }
+  if (explainer) {
+    var exRow = R.BESS_SPEC_ROW + 1;  // row 9
+    sh.getRange(exRow, 3, 1, 8).merge();
+    var exCell = sh.getRange(exRow, 3)
+      .setValue(explainer)
+      .setFontStyle('italic')
+      .setFontSize(9)
+      .setWrap(true);
+    // Red text + light-red fill when the warning is present, so it cannot
+    // be mistaken for a normal informational line.
+    if (warnLoadShift) {
+      exCell.setFontColor('#B00020').setBackground('#FCE8E6').setFontWeight('bold');
+    }
+  }
 
   // Bold values (col C and J) — matches legacy emphasis
   sh.getRange(R.TARIFF_HEADER, 3).setFontWeight('bold');

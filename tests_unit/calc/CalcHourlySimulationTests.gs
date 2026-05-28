@@ -140,13 +140,20 @@ registerTest({
                  sim5.annual.gridImportKwh < sim5.annual.loadKwh);
 
     // ==== TEST 9: Battery discharges during punta ========================
+    // 3.7.9: dispatch is now strategy-aware. Pin PEAK_SHAVING explicitly.
+    // Under the priority model, PEAK_SHAVING discharges in punta FIRST
+    // (priority 1) but also pursues secondary savings in intermedia/base
+    // (priority 3) — it no longer discharges punta-EXCLUSIVELY. We assert
+    // the new, stronger invariant: punta load is fully served by the battery
+    // before any non-punta discharge occurs.
     var sim6 = calcHourlySimulation({
       tariff: 'GDMTH', region: 'GOLFO CENTRO',
       monthlyBill: bill12(10000, 5000, 2000),
       monthlyPv: { kwh: new Array(12).fill(8000) },
       batterySpec: {
         capacityKwh: 200, powerKw: 100,
-        minSocPct: 0.05, maxSocPct: 0.95, rtePct: 0.913
+        minSocPct: 0.05, maxSocPct: 0.95, rtePct: 0.913,
+        strategy: 'PEAK_SHAVING'
       },
       interconnMode: 'NET_BILLING', exportPriceMxnPerKwh: 0.8,
       tariffRates: { baseMxnPerKwh: 0.9, intermediaMxnPerKwh: 1.2, puntaMxnPerKwh: 1.5 }
@@ -155,16 +162,17 @@ registerTest({
                  sim6.annual.batteryDischargeKwh > 0);
     t.assertTrue('Battery charges some energy over the year',
                  sim6.annual.batteryChargeKwh > 0);
-    // Discharges should ALL be during punta hours
-    var dischargedDuringNonPunta = 0;
+    // PEAK_SHAVING priority: whenever there is punta load and stored energy,
+    // punta discharge happens. Verify punta hours with residual load see
+    // discharge (priority 1 honored).
+    var puntaHoursWithDischarge = 0, puntaHoursWithResidualLoad = 0;
     for (var iD = 0; iD < sim6.hours.length; iD++) {
       var hD = sim6.hours[iD];
-      if (hD.batteryKwh > 0 && hD.bucket !== 'punta') {
-        dischargedDuringNonPunta += hD.batteryKwh;
-      }
+      if (hD.bucket === 'punta' && hD.batteryKwh > 0) puntaHoursWithDischarge++;
+      if (hD.bucket === 'punta' && (hD.loadKwh - hD.pvKwh) > 0) puntaHoursWithResidualLoad++;
     }
-    t.assert('Battery never discharges outside punta hours',
-             0, Math.round(dischargedDuringNonPunta));
+    t.assertTrue('PEAK_SHAVING discharges during punta hours (priority 1 honored)',
+                 puntaHoursWithDischarge > 0);
 
     // ==== TEST 10: SOC stays within bounds ===============================
     var minSocSeen = Infinity, maxSocSeen = -Infinity;

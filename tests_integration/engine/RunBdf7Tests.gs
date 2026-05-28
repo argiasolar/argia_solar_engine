@@ -105,9 +105,11 @@ registerTest({
   fn: function (t, ctx) {
     t.suite('INT writers/bom_bess: §8 renders given a bessResult');
     var ss = SpreadsheetApp.getActive();
-    var sh = ss.getSheetByName('BOM');
+    // 3.7.8: legacy 'BOM' sheet was deleted in the 3.7.5 v2 cutover.
+    // BOM_v2 is the source of truth. (Was getSheetByName('BOM').)
+    var sh = ss.getSheetByName('BOM_v2');
     if (!sh) {
-      t.assertTrue('BOM sheet exists', false);
+      t.assertTrue('BOM_v2 sheet exists', false);
       return;
     }
 

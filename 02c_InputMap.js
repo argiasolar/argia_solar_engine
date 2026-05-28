@@ -1369,7 +1369,10 @@ var _MAP_BESS = {
     sheet: 'INPUT_BESS', row: 7, col: 3,        // C7
     label: 'BESS_STRATEGY', type: 'dropdown',
     default: 'SELF_CONSUMPTION_MAX', required: false,
-    dropdown: ['SELF_CONSUMPTION_MAX', 'PEAK_SHAVING'],
+    // 3.7.9: LOAD_SHIFTING now steers the hourly dispatcher (grid arbitrage
+    // base->punta under NET_BILLING). All three are priority policies, not
+    // on/off switches — see _bessDispatchHour() in 20_CalcHourlySimulation.
+    dropdown: ['SELF_CONSUMPTION_MAX', 'PEAK_SHAVING', 'LOAD_SHIFTING'],
     section: 'BESS 1 SELECCION',
     consumedBy: ['engine']
   },

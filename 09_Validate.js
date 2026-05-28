@@ -203,7 +203,12 @@ function runValidation(ss, inp, panel, invBank, nom) {
           'DC/AC ratio = ' + ratio.toFixed(3) + ' exceeds warn threshold ' + nom.dcAcWarn + '.',
           'Verify project/manufacturer basis allows ratio > ' + nom.dcAcWarn + '.');
       }
-      if (acKw > 0 && ratio < nom.limits['project_dc_ac_ratio_warnMin'] || ratio < 0.8) {
+      // Bug B3 fix (3.7.8): previously read `acKw > 0 && ratio < X || ratio < 0.8` which
+      // (due to JS && binding tighter than ||) parsed as `(acKw > 0 && ratio < X) || (ratio < 0.8)` —
+      // the second branch would have fired regardless of the acKw>0 guard. Today it's masked
+      // because the enclosing block already guards acKw>0, but the latent bug stays a footgun.
+      // Explicit parens lock the intended meaning: warn iff acKw>0 AND ratio is below either threshold.
+      if (acKw > 0 && (ratio < nom.limits['project_dc_ac_ratio_warnMin'] || ratio < 0.8)) {
         warn('DC-10', 'DC/AC ratio = ' + ratio.toFixed(3) + ' is very low (< 0.8). Verify panel count.');
       }
     }

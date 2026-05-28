@@ -371,7 +371,7 @@ var BOM_COL = {
   UNIT:        4,   // D — pcs / m / par / etc
   UNIT_PRICE:  5,   // E — price per unit (USD)
   TOTAL_USD:   6,   // F — line total USD (formula: =C*E)
-  TOTAL_MXN:   7,   // G — line total MXN (formula: =F*$F$3)
+  TOTAL_MXN:   7,   // G — line total MXN (formula: =F*$F$<EXCHANGE_RATE> where EXCHANGE_RATE=BOM_ROW.EXCHANGE_RATE, row 6)
   REFERENCE:   8,   // H — DB ref / NOM citation / note
 };
 
@@ -660,6 +660,7 @@ function onOpen() {
       .addItem('Setup BESS Install \u00a76',    'setupInputBessInstallRows')
       .addItem('Setup BESS Steady-state (BDF-11.1)', 'runSetupBessSimulationSteady')
       .addItem('Setup INPUT_BESS Styling',      'setupInputBessStyling')
+      .addItem('Refresh BESS Strategy Dropdown', 'refreshBessStrategyDropdown')
       .addSeparator()
       // ── Repairs for legacy / drifted workbooks ───────────────
       .addItem('Repair CFE_SIM Totals',                  'runRepairCfeSimulationTotals')
@@ -686,7 +687,9 @@ function diagSheets() {
   Object.keys(SH).forEach(function(key) {
     var name  = SH[key];
     var found = ss.getSheetByName(name) !== null;
-    if (!found && name !== 'LOGS' && name !== 'BOM') allOk = false;
+    // Bug B7 fix (3.7.8): dropped `&& name !== 'BOM'` — SH.BOM was removed in 3.7.5,
+    // so the check was dead. SH no longer holds any output sheet names.
+    if (!found && name !== 'LOGS') allOk = false;
     msg += (found ? '  [OK]      ' : '  [MISSING] ') + name + '\n';
   });
   msg += '\n' + (allOk ? 'All required sheets found.' : 'Fix MISSING sheets before running.');
@@ -824,6 +827,32 @@ function runArgiaEngine() {
       engineLog(ss, 'BESS', 'MAJOR',
         'BESS step failed: ' + bessErr.message +
         '. PV outputs continue; fix INPUT_BESS and re-run.');
+    }
+
+    // 4.0.0: LOAD_SHIFTING <-> interconnection consistency check.
+    // LOAD_SHIFTING only does grid arbitrage under FACTURACION_NETA. Under any
+    // other interconnection it silently behaves like PEAK_SHAVING (identical
+    // numbers). Surface that LOUDLY so the designer is never fooled by a
+    // strategy that isn't actually active. Logged as MAJOR and pushed into
+    // bessResult.warnings so it appears in the end-of-run alert too.
+    try {
+      if (bessResult && bessResult.bessEnabled && bessResult.bess &&
+          String(bessResult.bess.strategy || '').toUpperCase() === 'LOAD_SHIFTING') {
+        var icCheck = readBessInterconnectionFromInputCfe(ss);
+        if (!icCheck || icCheck.mode !== 'NET_BILLING') {
+          var icMsg = 'LOAD_SHIFTING selected but interconnection is '
+            + ((icCheck && icCheck.mode) || 'UNKNOWN')
+            + ' (needs FACTURACION_NETA/NET_BILLING for grid arbitrage). '
+            + 'Battery will NOT charge from grid; results are identical to '
+            + 'PEAK_SHAVING. Set INPUT_CFE!C41 = FACTURACION_NETA, or pick '
+            + 'PEAK_SHAVING to reflect actual behavior.';
+          engineLog(ss, 'BESS', 'MAJOR', icMsg);
+          if (bessResult.warnings) bessResult.warnings.push(icMsg);
+        }
+      }
+    } catch (icErr) {
+      engineLog(ss, 'BESS', 'WARNING',
+        'LOAD_SHIFTING interconnection check skipped: ' + icErr.message);
     }
 
     // Step 9.6: BESS BoS quantities + voltage drop + NOM checks (BDF-7) ------
@@ -1020,6 +1049,30 @@ function runArgiaEngine() {
         'Output consistency check threw (non-fatal): ' + ocErr.message);
     }
 
+    // Step 14.5: install cost sanity check (3.7.8 / Chunk 3) -----------------
+    // Advisory only. Compares the just-computed install cost against
+    // industry-typical ranges (PV MXN/Wp, BESS USD/kWh, blended labor MXN/MH).
+    // Surfaces warnings to LOGS and the end-of-run alert. Bounds live in
+    // 02_LoadDB.buildNomLimitsDefaults() under the install_* keys, so Ops
+    // can tighten them without code changes once 94_INSTALL_BENCHMARKS
+    // has historical data.
+    //
+    // Wrapped in try/catch matching Step 14: a guardrail bug never breaks
+    // the engine.
+    var sanityResult = null;
+    engineLog(ss, 'Engine', 'INFO', 'Step 14.5: install cost sanity check');
+    try {
+      sanityResult = runInstallCostSanityCheck(ss, {
+        installResult: installResult,
+        bessResult:    bessResult,
+        inp:           inp,
+        panel:         panel
+      });
+    } catch (sanityErr) {
+      engineLog(ss, 'Engine', 'WARNING',
+        'Install cost sanity check threw (non-fatal): ' + sanityErr.message);
+    }
+
     // Done ------------------------------------------------------------------
     _setArgiaProgress(TOTAL, TOTAL, '\u2705 Complete!');
     logRunEnd(ss, Date.now() - startTime);
@@ -1028,7 +1081,8 @@ function runArgiaEngine() {
     // Wrapped in try/catch so stamping failure never blocks the engine.
     try { stampMeta(ss, {runType: 'engine'}); }
     catch (stampErr) {
-      try { engineLog(ss, 'Engine', 'WARN', 'stampMeta failed: ' + stampErr.message); } catch (_) {}
+      // Bug B6 fix (3.7.8): 'WARN' was a typo; canonical level is 'WARNING' (10_Logger.js:33,45)
+      try { engineLog(ss, 'Engine', 'WARNING', 'stampMeta failed: ' + stampErr.message); } catch (_) {}
     }
 
     Utilities.sleep(1600); // let dialog reach 100 % before auto-close
@@ -1051,13 +1105,26 @@ function runArgiaEngine() {
             : '.');
     }
 
+    // 3.7.8 / Chunk 3: append install cost sanity warnings (if any).
+    // We surface these in the dialog so the designer notices when computed
+    // install cost is implausible vs industry benchmarks.
+    var sanityLine = '';
+    if (sanityResult && sanityResult.warnings && sanityResult.warnings.length > 0) {
+      sanityLine = '\n\nInstall cost guardrails ('
+                 + sanityResult.warnings.length + ' warning'
+                 + (sanityResult.warnings.length === 1 ? '' : 's') + '):\n  - '
+                 + sanityResult.warnings.join('\n  - ')
+                 + '\n\nSee LOGS sheet for full detail.';
+    }
+
     ui.alert(
       'ARGIA ENGINE \u2014 Complete',
       'MDC and BOM generated in ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's.\n\n' +
       (flags.length > 0
         ? 'Active flags:\n' + flags.join('\n') + '\n\nSee section 4.0 in MDC and LOGS sheet.'
         : 'All NOM checks passed.') +
-      bessLine,
+      bessLine +
+      sanityLine,
       ui.ButtonSet.OK
     );
 
