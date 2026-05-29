@@ -1,3 +1,98 @@
+## [4.9.0] — 2026-05-29
+
+**Chunk 7 4B regime-netting: the honest export-capture value.**
+
+> **MINOR — byte-identical for non-4B projects.** Completes Scenario 4B:
+> the export-capture value is now NET of what the exported energy was
+> already worth under the interconnection regime. NET_METERING capture
+> correctly shows LOW/zero value (the export was already credited ~1:1);
+> ZERO_EXPORT shows MAXIMUM. Fixes the v4.8.0 over-statement under
+> favorable net-metering.
+
+### Added
+
+- **`29_CalcCaptureNetValue.js`** — pure `calcCaptureNetValue()`:
+  `captureNetValue = max(0, dischargeValue - priorExportWorth)`, where
+  priorExportWorth depends on the regime:
+    - MEDICION_NETA  (net metering)  -> ~retail (export already ~1:1) -> net LOW
+    - FACTURACION_NETA (net billing) -> export price (~0.80)          -> net HIGH
+    - SIN_EXPORTACION  (zero export) -> 0 (was lost)                  -> net MAX
+  Floored at 0 (never shown negative); when capture adds no value, the note
+  states the battery's case rests on peak-shaving, not capture.
+
+### Changed
+
+- `20a`: for a 4B project with export data, computes captured kWh (capped at
+  the battery's annual throughput), values it at the punta rate, and runs
+  calcCaptureNetValue with the project's interconnection regime. Attaches
+  `result.existingPvExport.captureNetValue`. NEVER blended into CFE savings
+  (its own field, like resilience). batterySpec now also surfaces usableKwh
+  + cyclesPerDay for the throughput cap.
+
+### The table this proves (worked example: 200,000 kWh/yr export, punta 3.5)
+  ZERO_EXPORT   : $700,000/yr net  (max -- surplus was wasted)
+  NET_BILLING   : $540,000/yr net  (high -- export was only 0.80)
+  NET_METERING  : $0/yr, addsValue=false (export already credited ~1:1)
+
+### Conservative assumption (disclosed)
+For MEDICION_NETA, prior-export worth uses the punta rate as the offset
+proxy. This zeroes capture under net-metering -- the SAFE direction (never
+overstates). Refining the exact NM offset rate is a future tweak; the floor
+ensures we never inflate retrofit value under net-metering.
+
+### Tests
+- **+9 tests, 23 assertions, all green** (`CaptureNetValueTests.gs`):
+  the three-regime values, the regime ORDERING invariant (zero > billing >
+  metering), the floor-at-zero invariant (never negative), addsValue flag,
+  the peak-shaving note, gross+prior transparency, zero-capture-zero-value.
+
+### Out of scope (still deferred)
+- 4B capture writer line on CFE_OUTPUT (value on the result; display is a
+  follow-up like resilience).
+- existing PV + NEW PV + battery ("retrofit expansion").
+
+### Version
+Engine 4.8.0 -> 4.9.0.
+
+---
+
+## [4.8.0] — 2026-05-29
+
+**Chunk 7 Scenario 4B: existing-PV export capture (data-gated).**
+
+> **MINOR — byte-identical for all non-4B projects.** Adds the retrofit
+> case: an existing-solar customer adds a battery to capture exported
+> surplus. The export-capture value stream is DATA-GATED — computed only
+> from REAL export data, never estimated from the net bill.
+
+### The honest rule
+A customer's CFE bill is NET grid import; it cannot reveal hourly export.
+Estimating export from net load only produces an upper bound that overstates
+midday capture. So export-capture value is computed only when the customer
+supplies measured exported kWh. Absent -> peak-shaving-only + "DATOS
+INSUFICIENTES" for capture. Maps to SCREENING / PROPOSAL / BANKABLE tiers.
+
+### Added
+- 28_CalcExistingPvShape.js: (monthly | annual | kWp×factor) -> 12 monthly
+  kWh + existingPvSource confidence type.
+- existingPvExportableSurplusByHour charging-only channel in 20b: folded into
+  PV-charge surplus ONLY, never into net/demand-limit (anti-double-count).
+- existingExportKwh input (INPUT_PROJECT SOLAR, D70) -- the capture GATE.
+
+### Changed
+- 01c classifyScenario: 4B data-gated (4B capture-ON with export data;
+  4B-screening peak-shaving-only without). Replaces 4B-pending.
+- 20a/20_: measured export shaped to hourly surplus, fed to the channel;
+  baseline sim never receives it (structural anti-double-count guard).
+
+### Tests
+- +12 tests; combined 22/55 assertions green: shape module, anti-double-
+  count invariant, byte-identical guard, data-gating invariant.
+
+### Version
+Engine 4.7.0 -> 4.8.0.
+
+---
 # Changelog
 
 All notable changes to ARGIA Engine.

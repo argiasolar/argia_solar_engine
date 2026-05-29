@@ -216,6 +216,34 @@ function runHourlySimulation(ss) {
     captureModeled: !!(existingPvExportMonthly)
   };
 
+  // Chunk 7 4B regime-netting: compute the HONEST capture value -- net of
+  // what the exported energy was already worth under the interconnection
+  // regime. Attached as its own field; NEVER blended into CFE savings.
+  if (existingPvExportMonthly && typeof calcCaptureNetValue === 'function'
+      && batterySpec) {
+    // Captured kWh is bounded by the battery's annual throughput: it can't
+    // soak more export than it can cycle. usableKwh x cycles/day x 365.
+    var cyclesPerDay = Number(batterySpec.cyclesPerDay) || 1;
+    var annualThroughput = (Number(batterySpec.usableKwh)
+                            || (batterySpec.capacityKwh * 0.8)) * cyclesPerDay * 365;
+    var exportAnnual = Number(pvConfig.existingExportKwh) || 0;
+    var capturedKwh = Math.min(exportAnnual, annualThroughput);
+
+    // Discharge value per kWh: the punta rate the battery offsets when it
+    // discharges the captured energy (conservative -- ignores demand savings,
+    // which peak-shaving already counts separately to avoid double-count).
+    var puntaRate = Number(tariffRates.puntaMxnPerKwh) || 0;
+    // Offset rate for MEDICION_NETA prior-worth: the energy rate the export
+    // already displaced (~ the punta/retail rate). Use punta as the proxy.
+    proposedResult.existingPvExport.captureNetValue = calcCaptureNetValue({
+      capturedKwh:               capturedKwh,
+      dischargeValueMxnPerKwh:   puntaRate,
+      interconnMode:             interconn.mode,
+      exportPriceMxnPerKwh:      interconn.exportPriceMxnPerKwh,
+      offsetEnergyRateMxnPerKwh: puntaRate
+    });
+  }
+
   // Chunk 7 Session 2: attach the RESILIENCE value as its OWN field, never
   // blended into savingsMxn / CFE numbers. The writer shows it on a separate
   // line with its source qualifier. Computed here because it needs the
@@ -311,6 +339,9 @@ function _readBatterySpecForHourlySim(ss) {
     maxSocPct:   maxSocPct,
     rtePct:      Number(sh.getRange(14, 3).getValue()) || 0.90,
     strategy:    strategy || 'PEAK_SHAVING',
+    // Chunk 7 4B: surfaced for the capture-throughput cap.
+    usableKwh:    usableKwh,
+    cyclesPerDay: Number(sh.getRange(15, 3).getValue()) || 1,
     // Chunk 7 Session 2: reserve fields consumed by 20_ planUsable reduction.
     backupReservePct:        backupReservePct,
     resilienceReservedFrac:  resilienceReservedFrac,
