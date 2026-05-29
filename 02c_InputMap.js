@@ -1357,6 +1357,49 @@ var _MAP_BESS = {
     notes: 'YES => engine reads INPUT_BESS and runs the BESS step.'
   },
 
+  // -- Chunk 7: install-PV toggle + existing-PV declaration ----------------
+  // INPUT_PROJECT section 08 SOLAR (rows 66-70, previously empty). installPv
+  // defaults to YES so pre-Chunk-7 projects (no cell) keep installing PV and
+  // stay byte-identical. NO => battery-only (scenarios 3 / 4A).
+  installPv: {
+    sheet: SH.INPUT_PROJECT, row: 66, col: 4,   // D66
+    label: 'Instalar PV nuevo', type: 'dropdown',
+    default: 'YES', required: false,
+    dropdown: ['YES', 'NO'],
+    section: '08 SOLAR',
+    consumedBy: ['engine'],
+    notes: 'YES (default) => model new PV. NO => battery-only project '
+         + '(scenarios 3 / 4A); the hourly sim runs with monthlyPv=null.'
+  },
+  hasExistingPv: {
+    sheet: SH.INPUT_PROJECT, row: 67, col: 4,   // D67
+    label: 'Cliente ya tiene PV', type: 'dropdown',
+    default: 'NO', required: false,
+    dropdown: ['YES', 'NO'],
+    section: '08 SOLAR',
+    consumedBy: ['engine'],
+    notes: 'Only meaningful when installPv=NO. YES => scenario 4A/4B '
+         + '(existing-solar disclaimer). NO => scenario 3 (greenfield).'
+  },
+  existingPvKwp: {
+    sheet: SH.INPUT_PROJECT, row: 68, col: 4,   // D68
+    label: 'PV existente (kWp)', type: 'number',
+    default: 0, required: false,
+    section: '08 SOLAR',
+    consumedBy: ['engine'],
+    notes: 'Scenario 4B input (roadmap). Existing PV size; not yet used for '
+         + 'capture modeling.'
+  },
+  existingPvAnnualKwh: {
+    sheet: SH.INPUT_PROJECT, row: 69, col: 4,   // D69
+    label: 'PV existente (kWh/año)', type: 'number',
+    default: 0, required: false,
+    section: '08 SOLAR',
+    consumedBy: ['engine'],
+    notes: 'Scenario 4B input (roadmap). Existing PV annual production; not '
+         + 'yet used for capture modeling.'
+  },
+
   // -- INPUT_BESS §1 SELECCIÓN DE BATERÍA ----------------------------------
   bessBatteryId: {
     sheet: 'INPUT_BESS', row: 6, col: 3,        // C6

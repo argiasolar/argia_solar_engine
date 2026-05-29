@@ -661,6 +661,7 @@ function onOpen() {
       .addItem('Setup BESS Install \u00a76',    'setupInputBessInstallRows')
       .addItem('Setup BESS Steady-state (BDF-11.1)', 'runSetupBessSimulationSteady')
       .addItem('Setup INPUT_BESS Styling',      'setupInputBessStyling')
+      .addItem('Setup SOLAR Section (PV toggle)', 'runSetupInputProjectPvSection')
       .addItem('Refresh BESS Strategy Dropdown', 'refreshBessStrategyDropdown')
       .addSeparator()
       // ── Repairs for legacy / drifted workbooks ───────────────

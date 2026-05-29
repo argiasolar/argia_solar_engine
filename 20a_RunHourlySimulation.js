@@ -46,8 +46,19 @@ function runHourlySimulation(ss) {
   var interconn = readBessInterconnectionFromInputCfe(ss);
 
   // -- Monthly PV totals from CFE_SIMULATION -------------------------------
+  // Chunk 7 Session 1: respect the installPv toggle. When the project does
+  // NOT install new PV (battery-only scenarios 3 / 4A), force monthlyPv to
+  // null -- the simulator already treats null as "no solar" (the baseline
+  // run does exactly this), so the battery dispatches against the full
+  // INPUT_CFE load with no new-PV subtraction and no PV-capture. This is the
+  // null-PV object in action: one decision point, no scattered branches.
+  var pvConfig = (typeof readInputPv === 'function')
+    ? readInputPv(ss)
+    : { installed: true };   // legacy fallback: behave as before (install PV)
   var pvInfo = readMonthlyPvFromCfeSimulation(ss);
-  var monthlyPv = (pvInfo.provenance === 'CFE_SIMULATION') ? { kwh: pvInfo.kwh } : null;
+  var monthlyPv = (pvConfig.installed && pvInfo.provenance === 'CFE_SIMULATION')
+    ? { kwh: pvInfo.kwh }
+    : null;
 
   // -- Battery spec from INPUT_BESS (if BESS enabled) ----------------------
   // Read defensively. If battery isn't configured, the simulator runs
@@ -169,6 +180,15 @@ function runHourlySimulation(ss) {
     pv:             pvInfo.provenance,
     battery:        batterySpec ? 'INPUT_BESS' : 'NONE',
   };
+
+  // Chunk 7 Session 1: attach PV config + scenario classification so
+  // downstream writers / BaaS can label the project (PV-only, PV+Battery,
+  // battery-only greenfield, battery-only with existing PV) and surface the
+  // 4A "existing-solar capture not modeled" disclaimer.
+  proposedResult.pvConfig = pvConfig;
+  if (typeof classifyScenario === 'function') {
+    proposedResult.scenario = classifyScenario(pvConfig, !!batterySpec);
+  }
   // -- Chunk 5 Session 3: AUTO_OPTIMIZE strategy evaluator ----------------
   // Reuses the monthCtxs the proposed run already built (surfaced as
   // bessMonthlyContexts). Produces Conservative/Expected/Upside bounds
