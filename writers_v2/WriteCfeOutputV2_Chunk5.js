@@ -235,3 +235,92 @@ function _cfeOutV2_fmtChunk5(n) {
   var v = Math.round(Number(n) || 0);
   return v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
+
+
+// ===========================================================================
+// CHUNK 7 Session 2 -- RESILIENCE / backup value block.
+// ---------------------------------------------------------------------------
+// Renders the backup/resilience value as its OWN, clearly-separated block.
+// HARD RULE (never blend): this value is NEVER added to CFE bill savings.
+// It is presented on a separate line with its value-source qualifier, and
+// only shown as a real number when calcResilience produced one (i.e. a value
+// source was supplied). If cost was entered without a source, the guard set
+// resilienceValueMxn=0 and valueBlockedNoSource=true, and we render an
+// explicit "no source -> not counted" note instead of a peso figure.
+//
+// @param {Object} sh    CFE_OUTPUT_v2 sheet
+// @param {number} startRow
+// @param {Object} resilience  hourlySim.resilience (from calcResilience)
+// @return {number} last row written
+// ---------------------------------------------------------------------------
+function _cfeOutV2_renderResilienceBlock(sh, startRow, resilience) {
+  if (!resilience) return startRow - 1;
+
+  // Nothing to show if no backup was requested at all (no reserve, no value,
+  // no warnings). Keeps the sheet clean for projects that ignore the section.
+  var hasReserve = Number(resilience.reservedKwh) > 0;
+  var hasValue   = Number(resilience.resilienceValueMxn) > 0;
+  var blocked    = !!resilience.valueBlockedNoSource;
+  if (!hasReserve && !hasValue && !blocked
+      && (!resilience.warnings || !resilience.warnings.length)) {
+    return startRow - 1;
+  }
+
+  var r = startRow;
+
+  // Header -- visually distinct from the CFE savings block (different color)
+  // and explicitly labeled as NOT being a CFE bill saving.
+  sh.getRange(r, 2, 1, 14).breakApart().merge()
+    .setValue('VALOR DE RESPALDO / RESILIENCIA (separado del ahorro CFE)')
+    .setBackground('#FFF3E0').setFontWeight('bold').setFontSize(11)
+    .setFontColor('#995700');
+  r++;
+
+  // The reserved capacity line (always when there is a reserve).
+  if (hasReserve) {
+    var covPct = Math.round((Number(resilience.coverageFraction) || 0) * 100);
+    var reserveLabel = 'Capacidad reservada para respaldo, kWh';
+    var reserveVal = _cfeOutV2_fmtChunk5(resilience.reservedKwh) + ' kWh'
+      + (resilience.undersized ? '  (cobertura ' + covPct + '%)' : '');
+    sh.getRange(r, 2, 1, 8).breakApart().merge().setValue(reserveLabel).setFontSize(10);
+    sh.getRange(r, 10, 1, 6).breakApart().merge().setValue(reserveVal)
+      .setFontSize(10).setFontWeight('bold').setHorizontalAlignment('right');
+    r++;
+  }
+
+  // The value line -- a peso figure ONLY if a source was supplied.
+  var valueLabel = 'Valor de respaldo estimado, MXN/año';
+  var valueText;
+  if (blocked) {
+    valueText = '$0 (sin fuente de valor)';
+  } else if (hasValue) {
+    valueText = '$' + _cfeOutV2_fmtChunk5(resilience.resilienceValueMxn)
+      + '  — fuente: ' + (resilience.valueSourceLabel || '');
+  } else {
+    valueText = '$0';
+  }
+  sh.getRange(r, 2, 1, 8).breakApart().merge().setValue(valueLabel).setFontSize(10);
+  sh.getRange(r, 10, 1, 6).breakApart().merge().setValue(valueText)
+    .setFontSize(10).setFontWeight('bold').setHorizontalAlignment('right')
+    .setWrap(true);
+  r++;
+
+  // Disclaimer / warnings line.
+  var noteParts = [];
+  noteParts.push('Este valor NO es ahorro en el recibo CFE; es una '
+    + 'estimación de pérdida evitada y se muestra por separado.');
+  if (blocked) {
+    noteParts.push('Se ingresó un costo por evento sin fuente de valor, por '
+      + 'lo que el valor de respaldo no se contabiliza (anti-ROI-fantasía).');
+  }
+  if (resilience.warnings && resilience.warnings.length) {
+    noteParts.push(resilience.warnings.join(' '));
+  }
+  sh.getRange(r, 2, 1, 14).breakApart().merge()
+    .setValue(noteParts.join(' '))
+    .setFontStyle('italic').setFontSize(9).setWrap(true)
+    .setFontColor('#995700');
+  r++;
+
+  return r - 1;
+}

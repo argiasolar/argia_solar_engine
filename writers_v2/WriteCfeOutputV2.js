@@ -150,6 +150,13 @@ function writeCfeOutputV2(ss, hourlySim) {
     if (typeof _cfeOutV2_renderDemandChargeBreakdown === 'function') {
       _cfeOutV2_renderDemandChargeBreakdown(sh, lastRow + 2, hourlySim);
     }
+    // Chunk 7 Session 2: resilience/backup value block. Rendered as its own
+    // separated section (never blended into CFE savings). No-op when the
+    // project has no backup reserve / value / warnings.
+    if (hourlySim.resilience
+        && typeof _cfeOutV2_renderResilienceBlock === 'function') {
+      _cfeOutV2_renderResilienceBlock(sh, (sh.getLastRow() + 2), hourlySim.resilience);
+    }
   }
 
   SpreadsheetApp.flush && SpreadsheetApp.flush();

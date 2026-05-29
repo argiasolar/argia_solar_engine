@@ -1,7 +1,7 @@
 // =============================================================================
 // ARGIA -- 27a_SetupInputBessResilience.js
 // -----------------------------------------------------------------------------
-// CHUNK 7 Session 2 -- idempotent setup for the INPUT_BESS "6. RESILIENCIA /
+// CHUNK 7 Session 2 -- idempotent setup for the INPUT_BESS "7. RESILIENCIA /
 // RESPALDO" section (the RESILIENCE_MAX inputs).
 //
 // Mirrors setupInputProjectPvSection / setupInputBaasSheet: SAFE to run
@@ -89,7 +89,7 @@ function runSetupInputBessResilienceSection() {
   try {
     var ret = setupInputBessResilienceSection(ss);
     ui.alert('Resilience section setup',
-      'INPUT_BESS "6. RESILIENCIA / RESPALDO" ready.\n\n'
+      'INPUT_BESS "7. RESILIENCIA / RESPALDO" ready.\n\n'
       + 'Created (were blank): ' + (ret.created.join(', ') || '(none)') + '\n'
       + 'Skipped (already set): ' + (ret.skipped.join(', ') || '(none)') + '\n\n'
       + 'All fields default to 0/blank, so projects that ignore this section '
