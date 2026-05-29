@@ -62,28 +62,44 @@ function setupInputProjectPvSection(ss) {
     [R.EXISTING_PV_KWH, 'PV existente (kWh/año)',   0,    null]
   ];
 
+  // Chunk 7 hardening: PRE-FLIGHT collision check. Before writing anything,
+  // verify the target label cells are empty or already hold OUR labels. If a
+  // row holds a DIFFERENT section's content, abort loudly instead of
+  // clobbering it (the INPUT_BESS DISTANCIAS incident). guardSectionRowsEmpty
+  // throws on collision by default.
+  if (typeof guardSectionRowsEmpty === 'function') {
+    var preflight = [];
+    for (var g = 0; g < rows.length; g++) preflight.push({ row: rows[g][0], label: rows[g][1] });
+    guardSectionRowsEmpty(sh, 2, preflight);
+  }
+
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i][0], label = rows[i][1], dflt = rows[i][2], dd = rows[i][3];
-    // Always (re)write the label in col B -- labels are cosmetic, safe to set.
-    sh.getRange(row, 2).setValue(label);
-
-    var valueCell = sh.getRange(row, 4);   // col D
-    var current = valueCell.getValue();
-    var isBlank = (current === '' || current === null || current === undefined);
-
-    if (isBlank) {
-      valueCell.setValue(dflt);
-      created.push(label);
+    // Collision-aware label write (col B): writes only if blank or matching;
+    // throws if a different label is present (guarded above, belt + braces).
+    if (typeof writeSectionLabel === 'function') {
+      writeSectionLabel(sh, row, 2, label);
     } else {
-      skipped.push(label);   // designer already set it -- never overwrite
+      sh.getRange(row, 2).setValue(label);
     }
+
+    // Never-overwrite value (col D).
+    var valueRes = (typeof writeSectionValue === 'function')
+      ? writeSectionValue(sh, row, 4, dflt)
+      : (function () {
+          var cur = sh.getRange(row, 4).getValue();
+          if (cur === '' || cur === null || cur === undefined) {
+            sh.getRange(row, 4).setValue(dflt); return 'written';
+          } return 'skipped';
+        })();
+    if (valueRes === 'written') created.push(label); else skipped.push(label);
 
     // Apply the dropdown rule (idempotent -- safe to re-apply).
     if (dd && typeof SpreadsheetApp !== 'undefined'
         && SpreadsheetApp.newDataValidation) {
       var rule = SpreadsheetApp.newDataValidation()
         .requireValueInList(dd, true).setAllowInvalid(false).build();
-      valueCell.setDataValidation(rule);
+      sh.getRange(row, 4).setDataValidation(rule);
     }
   }
 

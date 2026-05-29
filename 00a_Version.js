@@ -493,7 +493,7 @@
 // 3.7.8 — PATCH (2026-05-27). Bug sweep + harness + OutputValidate tests +
 // install cost guardrails. See CHANGELOG.md.
 // -----------------------------------------------------------------------------
-var ENGINE_VERSION = '4.6.1';
+var ENGINE_VERSION = '4.7.0';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default

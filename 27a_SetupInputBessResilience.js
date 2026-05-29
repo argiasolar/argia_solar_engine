@@ -1,7 +1,7 @@
 // =============================================================================
 // ARGIA -- 27a_SetupInputBessResilience.js
 // -----------------------------------------------------------------------------
-// CHUNK 7 Session 2 -- idempotent setup for the INPUT_BESS "7. RESILIENCIA /
+// CHUNK 7 Session 2 -- idempotent setup for the INPUT_BESS "6. RESILIENCIA /
 // RESPALDO" section (the RESILIENCE_MAX inputs).
 //
 // Mirrors setupInputProjectPvSection / setupInputBaasSheet: SAFE to run
@@ -30,17 +30,6 @@ function setupInputBessResilienceSection(ss) {
   var R = INPUT_BESS_RESILIENCE_ROWS;
   var created = [], skipped = [];
 
-  // Section header (col B).
-  if (!String(sh.getRange(R.SECTION_HEADER, 2).getValue() || '').trim()) {
-    sh.getRange(R.SECTION_HEADER, 2).setValue('7. RESILIENCIA / RESPALDO')
-      .setFontWeight('bold');
-    sh.getRange(R.SECTION_HEADER, 3).setValue(
-      'Respaldo ante apagones, sags, brownouts. Valor SEPARADO del ahorro CFE.');
-    created.push('header');
-  } else {
-    skipped.push('header');
-  }
-
   // [row, label, default, dropdownOrNull]
   var rows = [
     [R.CRITICAL_LOAD_KW, 'Carga crítica (kW)',         0, null],
@@ -51,23 +40,64 @@ function setupInputBessResilienceSection(ss) {
       ['', 'CUSTOMER_ESTIMATE', 'VALIDATED_ESTIMATE', 'AUDITED_ESTIMATE']]
   ];
 
+  // Chunk 7 hardening: PRE-FLIGHT collision check FIRST, before any write.
+  // Verify every target label cell (col B), including the header row, is
+  // empty or already holds OUR label. Aborts loudly on collision with another
+  // section (the incident this section caused at rows 42-46 before relocation).
+  var SECTION_LABEL = '7. RESILIENCIA / RESPALDO';
+  if (typeof guardSectionRowsEmpty === 'function') {
+    var preflight = [{ row: R.SECTION_HEADER, label: SECTION_LABEL }];
+    for (var g = 0; g < rows.length; g++) preflight.push({ row: rows[g][0], label: rows[g][1] });
+    guardSectionRowsEmpty(sh, 2, preflight);
+  }
+
+  // Section header (col B) -- collision-aware.
+  var headerRes = (typeof writeSectionLabel === 'function')
+    ? writeSectionLabel(sh, R.SECTION_HEADER, 2, SECTION_LABEL)
+    : (function () {
+        if (!String(sh.getRange(R.SECTION_HEADER, 2).getValue() || '').trim()) {
+          sh.getRange(R.SECTION_HEADER, 2).setValue(SECTION_LABEL); return 'written';
+        } return 'matched';
+      })();
+  if (headerRes === 'written') {
+    sh.getRange(R.SECTION_HEADER, 2).setFontWeight('bold');
+    sh.getRange(R.SECTION_HEADER, 3).setValue(
+      'Respaldo ante apagones, sags, brownouts. Valor SEPARADO del ahorro CFE.');
+    created.push('header');
+  } else {
+    skipped.push('header');
+  }
+
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i][0], label = rows[i][1], dflt = rows[i][2], dd = rows[i][3];
-    sh.getRange(row, 2).setValue(label);   // label always (cosmetic)
-
-    var valueCell = sh.getRange(row, 3);   // col C
-    var current = valueCell.getValue();
-    var isBlank = (current === '' || current === null || current === undefined);
-    if (isBlank) {
-      valueCell.setValue(dflt);
-      created.push(label);
+    // Collision-aware label write (col B).
+    if (typeof writeSectionLabel === 'function') {
+      writeSectionLabel(sh, row, 2, label);
     } else {
-      skipped.push(label);
+      sh.getRange(row, 2).setValue(label);
     }
+
+    // Never-overwrite value (col C). An empty-string default means "no
+    // default value" (e.g. the source dropdown starts unset) -- we skip the
+    // write entirely so a re-run reports it accurately as skipped, not
+    // re-created.
+    var valueRes;
+    if (dflt === '' || dflt === null || dflt === undefined) {
+      valueRes = 'skipped';
+    } else if (typeof writeSectionValue === 'function') {
+      valueRes = writeSectionValue(sh, row, 3, dflt);
+    } else {
+      var cur = sh.getRange(row, 3).getValue();
+      if (cur === '' || cur === null || cur === undefined) {
+        sh.getRange(row, 3).setValue(dflt); valueRes = 'written';
+      } else { valueRes = 'skipped'; }
+    }
+    if (valueRes === 'written') created.push(label); else skipped.push(label);
+
     if (dd && typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.newDataValidation) {
       var rule = SpreadsheetApp.newDataValidation()
         .requireValueInList(dd, true).setAllowInvalid(false).build();
-      valueCell.setDataValidation(rule);
+      sh.getRange(row, 3).setDataValidation(rule);
     }
   }
 
@@ -89,7 +119,7 @@ function runSetupInputBessResilienceSection() {
   try {
     var ret = setupInputBessResilienceSection(ss);
     ui.alert('Resilience section setup',
-      'INPUT_BESS "7. RESILIENCIA / RESPALDO" ready.\n\n'
+      'INPUT_BESS "6. RESILIENCIA / RESPALDO" ready.\n\n'
       + 'Created (were blank): ' + (ret.created.join(', ') || '(none)') + '\n'
       + 'Skipped (already set): ' + (ret.skipped.join(', ') || '(none)') + '\n\n'
       + 'All fields default to 0/blank, so projects that ignore this section '
