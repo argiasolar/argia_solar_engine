@@ -60,7 +60,13 @@ var BESS_DISPATCH_PRIORITIES = [
 var BESS_STRATEGY_PRIORITIES = {
   PEAK_SHAVING:         ['P1_AVOID_NEW_PEAK', 'P2_CAPTURE_PV', 'P3_REDUCE_PUNTA'],
   SELF_CONSUMPTION_MAX: ['P1_AVOID_NEW_PEAK', 'P2_CAPTURE_PV', 'P3_REDUCE_PUNTA'],
-  LOAD_SHIFTING:        ['P1_AVOID_NEW_PEAK', 'P2_CAPTURE_PV', 'P3_REDUCE_PUNTA', 'P4_ARBITRAGE']
+  LOAD_SHIFTING:        ['P1_AVOID_NEW_PEAK', 'P2_CAPTURE_PV', 'P3_REDUCE_PUNTA', 'P4_ARBITRAGE'],
+  // Chunk 7 Session 2: RESILIENCE_MAX. The resilience reserve is a CAPACITY
+  // carve-out (handled in 20_ by shrinking usableKwh), NOT a different
+  // dispatch order -- so on the NON-reserved capacity it dispatches exactly
+  // like PEAK_SHAVING. (Combining with LOAD_SHIFTING arbitrage on the
+  // remainder is a future refinement; v1 keeps it to peak-shaving.)
+  RESILIENCE_MAX:       ['P1_AVOID_NEW_PEAK', 'P2_CAPTURE_PV', 'P3_REDUCE_PUNTA']
 };
 
 
@@ -104,6 +110,10 @@ function _planMonthlyBessSchedule(monthCtx, strategy) {
     schedule = _planPeakShaving(ctx, 'SELF_CONSUMPTION_MAX');
   } else if (strat === 'LOAD_SHIFTING') {
     schedule = _planLoadShifting(ctx);
+  } else if (strat === 'RESILIENCE_MAX') {
+    // Resilience reserve already removed from ctx.usableKwh upstream (20_);
+    // on the remaining capacity, dispatch like PEAK_SHAVING.
+    schedule = _planPeakShaving(ctx, 'RESILIENCE_MAX');
   } else {
     schedule = _planPeakShaving(ctx, 'PEAK_SHAVING');
   }

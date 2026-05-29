@@ -780,7 +780,26 @@ function calcHourlySimulation(opts) {
     var planRte    = Number(battery.rtePct)      || 0.913;
     var planMinKwh = planCapKwh * planMinPct;
     var planMaxKwh = planCapKwh * planMaxPct;
-    var planUsable = Math.max(0, planMaxKwh - planMinKwh);
+    var planUsableGross = Math.max(0, planMaxKwh - planMinKwh);
+
+    // Chunk 7 Session 2 FIX + RESILIENCE_MAX: honor a reserve fraction.
+    // Previously the hourly-sim planner ignored backup reserve entirely
+    // (it dispatched full usable), while the legacy/economic path reduced
+    // usable by (1 - backupReservePct). That inconsistency over-credited
+    // savings for any project with a reserve. We now subtract a reserve
+    // fraction here too. The fraction is the MAX of:
+    //   - battery.backupReservePct        (legacy percent reserve)
+    //   - battery.resilienceReservedFrac  (RESILIENCE_MAX physical reserve,
+    //                                       computed in 20a from criticalLoad
+    //                                       x hours / usable)
+    // so whichever backup requirement is larger governs. For reserve=0
+    // projects (the common case, incl. CULLIGAN) this is byte-identical:
+    // reserveFrac=0 -> planUsable == planUsableGross.
+    var legacyReserveFrac = Number(battery.backupReservePct) || 0;
+    var resilienceReserveFrac = Number(battery.resilienceReservedFrac) || 0;
+    var reserveFrac = Math.max(0, Math.min(1,
+      Math.max(legacyReserveFrac, resilienceReserveFrac)));
+    var planUsable = planUsableGross * (1 - reserveFrac);
 
     // GDMTH bucket-by-clock-hour. For each clock hour, find the dominant
     // bucket across the month's actual day-of-week mix. For flat-rate

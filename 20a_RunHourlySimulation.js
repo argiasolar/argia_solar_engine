@@ -189,6 +189,22 @@ function runHourlySimulation(ss) {
   if (typeof classifyScenario === 'function') {
     proposedResult.scenario = classifyScenario(pvConfig, !!batterySpec);
   }
+
+  // Chunk 7 Session 2: attach the RESILIENCE value as its OWN field, never
+  // blended into savingsMxn / CFE numbers. The writer shows it on a separate
+  // line with its source qualifier. Computed here because it needs the
+  // usable capacity + the value-source guard.
+  if (typeof calcResilience === 'function' && batterySpec && batterySpec.resilienceInputs) {
+    var ri = batterySpec.resilienceInputs;
+    proposedResult.resilience = calcResilience({
+      criticalLoadKw:      ri.criticalLoadKw,
+      backupDurationHours: ri.backupDurationHours,
+      usableKwh:           ri.usableKwh,
+      eventsPerYear:       ri.eventsPerYear,
+      eventCostMxn:        ri.eventCostMxn,
+      eventValueSource:    ri.eventValueSource
+    });
+  }
   // -- Chunk 5 Session 3: AUTO_OPTIMIZE strategy evaluator ----------------
   // Reuses the monthCtxs the proposed run already built (surfaced as
   // bessMonthlyContexts). Produces Conservative/Expected/Upside bounds
@@ -232,12 +248,51 @@ function _readBatterySpecForHourlySim(ss) {
   // 3.7.9: read strategy (C7) so the hourly dispatcher can prioritize.
   // Blank/unknown falls back to PEAK_SHAVING inside the simulator.
   var strategy = String(sh.getRange(7, 3).getValue() || '').trim().toUpperCase();
+
+  // Chunk 7 Session 2: read the backup reserve (C17) -- previously the hourly
+  // sim never read this, so any reserve was ignored (savings over-credited).
+  var minSocPct = Number(sh.getRange(12, 3).getValue()) || 0.10;
+  var maxSocPct = Number(sh.getRange(13, 3).getValue()) || 0.90;
+  var backupReservePct = Number(sh.getRange(17, 3).getValue()) || 0;
+
+  // Chunk 7 Session 2: RESILIENCE section (7.) -- physical critical-load
+  // backup spec. Rows 58-62 (col C). Rows 42-53 hold the pre-existing
+  // DISTANCIAS section, so resilience lives below it in the empty zone.
+  // Blank/0 => no resilience reserve.
+  var criticalLoadKw      = Number(sh.getRange(58, 3).getValue()) || 0;
+  var backupDurationHours = Number(sh.getRange(59, 3).getValue()) || 0;
+  var eventsPerYear       = Number(sh.getRange(60, 3).getValue()) || 0;
+  var eventCostMxn        = Number(sh.getRange(61, 3).getValue()) || 0;
+  var eventValueSource    = String(sh.getRange(62, 3).getValue() || '').trim().toUpperCase();
+
+  // Compute the resilience reserve fraction (physical reserve / usable). The
+  // pure calc lives in calcResilience; here we just need the fraction to feed
+  // the hourly-sim usable reduction. usable = cap x (maxSoc - minSoc).
+  var usableKwh = capacityKwh * (maxSocPct - minSocPct);
+  var resilienceReservedFrac = 0;
+  if (typeof calcResilience === 'function' && criticalLoadKw > 0 && backupDurationHours > 0) {
+    var rc = calcResilience({
+      criticalLoadKw: criticalLoadKw, backupDurationHours: backupDurationHours,
+      usableKwh: usableKwh
+    });
+    resilienceReservedFrac = rc.reservedFracOfUsable;
+  }
+
   return {
     capacityKwh: capacityKwh,
     powerKw:     Number(sh.getRange(11, 3).getValue()) || 0,
-    minSocPct:   Number(sh.getRange(12, 3).getValue()) || 0.10,
-    maxSocPct:   Number(sh.getRange(13, 3).getValue()) || 0.90,
+    minSocPct:   minSocPct,
+    maxSocPct:   maxSocPct,
     rtePct:      Number(sh.getRange(14, 3).getValue()) || 0.90,
     strategy:    strategy || 'PEAK_SHAVING',
+    // Chunk 7 Session 2: reserve fields consumed by 20_ planUsable reduction.
+    backupReservePct:        backupReservePct,
+    resilienceReservedFrac:  resilienceReservedFrac,
+    // Resilience spec carried for the value calc + writer (separate line).
+    resilienceInputs: {
+      criticalLoadKw: criticalLoadKw, backupDurationHours: backupDurationHours,
+      eventsPerYear: eventsPerYear, eventCostMxn: eventCostMxn,
+      eventValueSource: eventValueSource, usableKwh: usableKwh
+    }
   };
 }

@@ -1478,6 +1478,52 @@ var _MAP_BESS = {
     consumedBy: ['engine']
   },
 
+  // -- INPUT_BESS §6 RESILIENCIA / RESPALDO (Chunk 7 Session 2) ------------
+  // Physical critical-load backup spec for RESILIENCE_MAX. Rows 42-46, col C.
+  // All default to 0/blank => no resilience reserve, no backup value (so a
+  // project that ignores this section is unaffected). Consumed by the hourly
+  // sim (_readBatterySpecForHourlySim) + calcResilience.
+  bessCriticalLoadKw: {
+    sheet: 'INPUT_BESS', row: 58, col: 3,       // C58
+    label: 'Carga crítica (kW)', type: 'number',
+    default: 0, required: false,
+    section: 'BESS 7 RESILIENCIA',
+    consumedBy: ['engine'],
+    notes: 'Carga que debe seguir viva durante un evento (no la carga total).'
+  },
+  bessBackupDurationHours: {
+    sheet: 'INPUT_BESS', row: 59, col: 3,       // C59
+    label: 'Duración de respaldo (h)', type: 'number',
+    default: 0, required: false,
+    section: 'BESS 7 RESILIENCIA',
+    consumedBy: ['engine']
+  },
+  bessEventsPerYear: {
+    sheet: 'INPUT_BESS', row: 60, col: 3,       // C60
+    label: 'Eventos por año', type: 'number',
+    default: 0, required: false,
+    section: 'BESS 7 RESILIENCIA',
+    consumedBy: ['engine'],
+    notes: 'Apagones, sags, brownouts, switching -- no solo apagones totales.'
+  },
+  bessEventCostMxn: {
+    sheet: 'INPUT_BESS', row: 61, col: 3,       // C61
+    label: 'Costo por evento (MXN)', type: 'number',
+    default: 0, required: false,
+    section: 'BESS 7 RESILIENCIA',
+    consumedBy: ['engine']
+  },
+  bessEventValueSource: {
+    sheet: 'INPUT_BESS', row: 62, col: 3,       // C62
+    label: 'Fuente del valor', type: 'dropdown',
+    default: '', required: false,
+    dropdown: ['', 'CUSTOMER_ESTIMATE', 'VALIDATED_ESTIMATE', 'AUDITED_ESTIMATE'],
+    section: 'BESS 7 RESILIENCIA',
+    consumedBy: ['engine'],
+    notes: 'REQUERIDO si costo por evento > 0; si está vacío el valor de '
+         + 'respaldo se fuerza a 0 (anti-ROI-fantasía).'
+  },
+
   // -- INPUT_BESS §2b BATTERY VOLTAGE  (Increment 4b-2.5b) -----------------
   // Manual voltage override / CUSTOM_MANUAL fallback. The reader prefers the
   // selected catalog product's Nominal_Voltage_V (16M_PRODUCTS_BESS via

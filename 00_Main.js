@@ -662,11 +662,13 @@ function onOpen() {
       .addItem('Setup BESS Steady-state (BDF-11.1)', 'runSetupBessSimulationSteady')
       .addItem('Setup INPUT_BESS Styling',      'setupInputBessStyling')
       .addItem('Setup SOLAR Section (PV toggle)', 'runSetupInputProjectPvSection')
+      .addItem('Setup RESILIENCE Section (backup)', 'runSetupInputBessResilienceSection')
       .addItem('Refresh BESS Strategy Dropdown', 'refreshBessStrategyDropdown')
       .addSeparator()
       // ── Repairs for legacy / drifted workbooks ───────────────
       .addItem('Repair CFE_SIM Totals',                  'runRepairCfeSimulationTotals')
       .addItem('Repair CFE_SIM Capacidad (BDF-11)',      'runRepairCfeSimulationCapacidad')
+      .addItem('Repair: resilience collision',           'runRepairResilienceCollision')
       .addSeparator()
       // ── Workbook-level utilities ────────────────────────────
       .addItem('Refresh Logo Cache',            'refreshArgiaLogoCache')
