@@ -60,6 +60,21 @@ function runHourlySimulation(ss) {
     ? { kwh: pvInfo.kwh }
     : null;
 
+  // -- Chunk 7 Scenario 4B: existing-PV EXPORT capture (DATA-GATED) --------
+  // The export-capture value stream is populated ONLY when the customer
+  // supplied real exported kWh. We NEVER estimate export from the net bill
+  // (it can't reveal hourly export). Absent -> null -> the sim runs
+  // peak-shaving-only and capture is reported as "DATOS INSUFICIENTES".
+  var existingPvExportMonthly = null;
+  if (pvConfig.exportDataAvailable && typeof calcExistingPvMonthly === 'function'
+      && pvConfig.existingExportKwh > 0) {
+    // Distribute the annual exported kWh across months by the same seasonal
+    // curve the PV-shape module uses. The sim shapes it to an hourly export
+    // profile and feeds the battery's charging-only channel.
+    var exp = calcExistingPvMonthly({ existingPvAnnualKwh: pvConfig.existingExportKwh });
+    existingPvExportMonthly = { kwh: exp.monthlyKwh, source: 'EXPORT_DATA' };
+  }
+
   // -- Battery spec from INPUT_BESS (if BESS enabled) ----------------------
   // Read defensively. If battery isn't configured, the simulator runs
   // without a battery — that's the baseline / PV-only case.
@@ -129,6 +144,7 @@ function runHourlySimulation(ss) {
     region:               billInfo.region,
     monthlyBill:          billInfo.monthlyBill,
     monthlyPv:            monthlyPv,
+    existingPvExportMonthly: existingPvExportMonthly,   // Chunk 7 4B (gated)
     batterySpec:          batterySpec,
     interconnMode:        interconn.mode,
     exportPriceMxnPerKwh: interconn.exportPriceMxnPerKwh,
@@ -189,6 +205,16 @@ function runHourlySimulation(ss) {
   if (typeof classifyScenario === 'function') {
     proposedResult.scenario = classifyScenario(pvConfig, !!batterySpec);
   }
+
+  // Chunk 7 Scenario 4B: surface the export-capture data tier so the writer
+  // can show either the capture value or the "DATOS INSUFICIENTES" guidance.
+  // Peak-shaving economics are ALWAYS present (from the CFE bill); only the
+  // export-capture stream is gated on real export data.
+  proposedResult.existingPvExport = {
+    available:    !!pvConfig.exportDataAvailable,
+    exportKwh:    Number(pvConfig.existingExportKwh) || 0,
+    captureModeled: !!(existingPvExportMonthly)
+  };
 
   // Chunk 7 Session 2: attach the RESILIENCE value as its OWN field, never
   // blended into savingsMxn / CFE numbers. The writer shows it on a separate

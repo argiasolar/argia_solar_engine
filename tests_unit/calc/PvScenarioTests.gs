@@ -75,22 +75,29 @@ registerTest({
 });
 
 registerTest({
-  id: 'UNIT_PV_SCENARIO_4B_PENDING_NO_DOUBLE_COUNT', group: 'unit', module: 'calc/pv',
-  scenarios: [], tags: ['calc', 'pv', 'chunk7'],
+  id: 'UNIT_PV_SCENARIO_4B_DATA_GATED', group: 'unit', module: 'calc/pv',
+  scenarios: [], tags: ['calc', 'pv', 'chunk7', '4b', 'invariant'],
   source: 'tests_unit/calc/PvScenarioTests.gs',
   fn: function (t) {
-    t.suite('UNIT calc/pv: scenario 4B (profile known) stays capture-OFF until live');
-    // CRITICAL anti-double-count guard: even when the existing-PV profile is
-    // "known", 4B is not yet live, so capture MUST stay OFF -- we never
-    // silently model PV capture (which would double-count the existing solar
-    // already baked into the net bill).
-    var s = classifyScenario(
-      { installed: false, hasExistingPv: true, existingProfileKnown: true }, true);
-    t.assert('id 4B-pending', '4B-pending', s.id);
-    t.assertTrue('pvCapture STILL OFF (4B not live)', s.pvCapture === false);
-    t.assertTrue('disclaimer flags 4B pending', s.disclaimer.indexOf('4B') >= 0);
-    t.assertTrue('disclaimer warns it under-models value',
-                 s.disclaimer.indexOf('subestima') >= 0);
+    t.suite('UNIT calc/pv: 4B export capture is DATA-GATED (no export data => no capture)');
+    // WITHOUT export data: capture OFF, peak-shaving-only, "DATOS
+    // INSUFICIENTES" guidance. We NEVER estimate export from the net bill.
+    var noData = classifyScenario(
+      { installed: false, hasExistingPv: true, existingProfileKnown: true,
+        exportDataAvailable: false }, true);
+    t.assert('id 4B-screening', '4B-screening', noData.id);
+    t.assertTrue('capture OFF without export data', noData.pvCapture === false);
+    t.assertTrue('disclaimer asks for export/production data',
+                 noData.disclaimer.indexOf('exportación') >= 0);
+
+    // WITH export data: capture ON, value computed (netted by regime later).
+    var withData = classifyScenario(
+      { installed: false, hasExistingPv: true, existingProfileKnown: true,
+        exportDataAvailable: true }, true);
+    t.assert('id 4B', '4B', withData.id);
+    t.assertTrue('capture ON with export data', withData.pvCapture === true);
+    t.assertTrue('disclaimer notes regime netting',
+                 withData.disclaimer.indexOf('interconexión') >= 0);
   }
 });
 
@@ -115,7 +122,8 @@ registerTest({
     var configs = [
       { installed: false, hasExistingPv: false },                          // 3
       { installed: false, hasExistingPv: true, existingProfileKnown: false }, // 4A
-      { installed: false, hasExistingPv: true, existingProfileKnown: true }   // 4B-pending
+      { installed: false, hasExistingPv: true, existingProfileKnown: true,
+        exportDataAvailable: false }   // 4B-screening (no export data)
     ];
     for (var i = 0; i < configs.length; i++) {
       var s = classifyScenario(configs[i], true);
@@ -135,7 +143,8 @@ registerTest({
     // without telling anyone).
     var withExisting = [
       classifyScenario({ installed: false, hasExistingPv: true, existingProfileKnown: false }, true),
-      classifyScenario({ installed: false, hasExistingPv: true, existingProfileKnown: true }, true)
+      classifyScenario({ installed: false, hasExistingPv: true, existingProfileKnown: true,
+                         exportDataAvailable: false }, true)
     ];
     for (var i = 0; i < withExisting.length; i++) {
       var s = withExisting[i];

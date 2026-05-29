@@ -30,7 +30,8 @@ var INPUT_PROJECT_PV_ROWS = {
   INSTALL_PV:        66,   // D66
   HAS_EXISTING_PV:   67,   // D67
   EXISTING_PV_KWP:   68,   // D68
-  EXISTING_PV_KWH:   69    // D69
+  EXISTING_PV_KWH:   69,   // D69
+  EXISTING_PV_EXPORT: 70   // D70  (Chunk 7 4B: export-capture gate)
 };
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,8 @@ function setupInputProjectPvSection(ss) {
     [R.INSTALL_PV,      'Instalar PV nuevo',       'YES', ['YES', 'NO']],
     [R.HAS_EXISTING_PV, 'Cliente ya tiene PV',     'NO',  ['YES', 'NO']],
     [R.EXISTING_PV_KWP, 'PV existente (kWp)',       0,    null],
-    [R.EXISTING_PV_KWH, 'PV existente (kWh/año)',   0,    null]
+    [R.EXISTING_PV_KWH, 'PV existente (kWh/año)',   0,    null],
+    [R.EXISTING_PV_EXPORT, 'PV existente: exportación (kWh/año)', 0, null]
   ];
 
   // Chunk 7 hardening: PRE-FLIGHT collision check. Before writing anything,

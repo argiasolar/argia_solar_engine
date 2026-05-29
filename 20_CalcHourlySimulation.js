@@ -739,6 +739,25 @@ function calcHourlySimulation(opts) {
     }
   }
 
+  // Chunk 7 Scenario 4B: existing-PV EXPORTABLE SURPLUS, hourly. This is the
+  // customer's MEASURED export (opts.existingPvExportMonthly), so it IS the
+  // exportable surplus already -- we shape it to a daytime profile and pass
+  // it as the charging-only channel. We do NOT subtract load from it (it is
+  // already net of the customer's on-site consumption; that's what "export"
+  // means). Null/absent => zero channel => peak-shaving-only (no estimate).
+  var existingExportMonthly = opts.existingPvExportMonthly || null;
+  var existingPvSurplusByHourPerMonth = new Array(12).fill(null);
+  if (existingExportMonthly && existingExportMonthly.kwh) {
+    for (var me = 0; me < 12; me++) {
+      var expKwh = _safeNum(existingExportMonthly.kwh, me);
+      var daysE = _daysInMonth(me + 1);
+      var dailyExp = (expKwh > 0 && daysE > 0) ? expKwh / daysE : 0;
+      existingPvSurplusByHourPerMonth[me] = (typeof _planSyntheticPvBellShape === 'function')
+        ? _planSyntheticPvBellShape(dailyExp)
+        : _fallbackFlatDaylightPv(dailyExp);
+    }
+  }
+
   // ----- Chunk 5 Session 2: build per-month monthCtx + run planner -------
   // ONE planner call per month BEFORE the 8760 loop. The schedule for
   // each month is then consulted hour-by-hour inside the loop. Planner
@@ -815,6 +834,8 @@ function calcHourlySimulation(opts) {
         loadByHour[h2] = perHourKwh[bucketByHour[h2]][mb - 1] || 0;
       }
       var pvByHour = pvByHourPerMonth[mb - 1] || new Array(24).fill(0);
+      var existingPvSurplusByHour = existingPvSurplusByHourPerMonth[mb - 1]
+        || new Array(24).fill(0);
 
       // Actual billed demand for this month (max of three buckets)
       var billedKwBase = _safeNum(monthlyBill.kwBase,       mb - 1);
@@ -844,6 +865,7 @@ function calcHourlySimulation(opts) {
         bucketByHour:          bucketByHour,
         loadByHour:            loadByHour,
         pvByHour:              pvByHour,
+        existingPvExportableSurplusByHour: existingPvSurplusByHour,
         batteryCapKwh:         planCapKwh,
         batteryPowerKw:        planPwrKw,
         minSocKwh:             planMinKwh,

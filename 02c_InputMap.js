@@ -1396,8 +1396,20 @@ var _MAP_BESS = {
     default: 0, required: false,
     section: '08 SOLAR',
     consumedBy: ['engine'],
-    notes: 'Scenario 4B input (roadmap). Existing PV annual production; not '
-         + 'yet used for capture modeling.'
+    notes: 'Scenario 4B: existing PV annual production (PROPOSAL-level input '
+         + 'for export-capture context).'
+  },
+  existingExportKwh: {
+    sheet: SH.INPUT_PROJECT, row: 70, col: 4,   // D70
+    label: 'PV existente: exportación (kWh/año)', type: 'number',
+    default: 0, required: false,
+    section: '08 SOLAR',
+    consumedBy: ['engine'],
+    notes: 'Scenario 4B GATE: measured exported kWh/year (from the CFE bill '
+         + 'export line or inverter portal). > 0 enables the export-capture '
+         + 'value stream. Blank/0 => peak-shaving-only ("DATOS INSUFICIENTES" '
+         + 'for capture). The net bill alone CANNOT reveal export, so this is '
+         + 'required to value capture.'
   },
 
   // -- INPUT_BESS §1 SELECCIÓN DE BATERÍA ----------------------------------

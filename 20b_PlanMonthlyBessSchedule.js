@@ -142,6 +142,12 @@ function _planNormalizeCtx(o) {
   }
   var loadByHour = arr24(o && o.loadByHour, 0);
   var pvByHour = arr24(o && o.pvByHour, 0);
+  // Chunk 7 Scenario 4B: EXISTING-PV exportable surplus (already net of the
+  // customer's own load, computed upstream). CHARGING-ONLY channel: it feeds
+  // pvSurplusByHour but NEVER the net/demand-limit calc, because the
+  // customer's bill ALREADY reflects their existing solar. Default zero =>
+  // byte-identical for all non-4B scenarios.
+  var existingPvSurplusByHour = arr24(o && o.existingPvExportableSurplusByHour, 0);
   var bucketByHour = new Array(24);
   for (var h = 0; h < 24; h++) {
     var b = (o && o.bucketByHour && o.bucketByHour[h]) ? String(o.bucketByHour[h]) : 'base';
@@ -196,6 +202,7 @@ function _planNormalizeCtx(o) {
     bucketByHour:         bucketByHour,
     loadByHour:           loadByHour,
     pvByHour:             pvByHour,
+    existingPvSurplusByHour: existingPvSurplusByHour,
     batteryCapKwh:        batteryCapKwh,
     batteryPowerKw:       batteryPowerKw,
     minSocKwh:            minSocKwh,
@@ -284,7 +291,14 @@ function _planPeakShaving(ctx, strategyLabel) {
   var pvSurplusByHour = new Array(24);
   var pvChargeable = 0;
   for (var h = 0; h < 24; h++) {
+    // NEW-PV surplus: dispatcher computes it from generation minus load.
     var s = Math.max(0, ctx.pvByHour[h] - ctx.loadByHour[h]);
+    // Chunk 7 4B: ADD the EXISTING-PV exportable surplus. This is ALREADY
+    // net of load (computed upstream), so we add it directly -- we do NOT
+    // subtract load again. It is charging-only; it never touched net /
+    // demand-limit above. Result: the battery can soak the existing solar's
+    // export, without re-crediting it against the (already-net) bill.
+    s += Math.max(0, ctx.existingPvSurplusByHour[h]);
     pvSurplusByHour[h] = s;
     pvChargeable += s;
   }
@@ -391,6 +405,8 @@ function _planLoadShifting(ctx) {
   var pvChargeable = 0;
   for (var h = 0; h < 24; h++) {
     var s = Math.max(0, ctx.pvByHour[h] - ctx.loadByHour[h]);
+    // Chunk 7 4B: add EXISTING-PV exportable surplus (already net of load).
+    s += Math.max(0, ctx.existingPvSurplusByHour[h]);
     pvSurplusByHour[h] = s;
     pvChargeable += s;
   }

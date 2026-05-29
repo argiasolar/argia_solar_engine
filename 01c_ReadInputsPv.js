@@ -58,9 +58,7 @@ function readInputPv(ss) {
   var installPv = (toggle !== 'NO');   // anything but explicit NO => install
 
   // Existing-PV declaration (only meaningful when installPv = NO). Default NO.
-  // Drives scenario 3 vs 4A/4B. The "known profile" inputs (4B) are read but
-  // NOT yet used for capture -- 4B is roadmap. We read them so the input
-  // surface is stable when 4B lands.
+  // Drives scenario 3 vs 4A/4B.
   var hasExistingRaw = readInput(ss, 'hasExistingPv');
   var hasExistingPv = String(hasExistingRaw || 'NO').trim().toUpperCase() === 'YES';
 
@@ -68,6 +66,15 @@ function readInputPv(ss) {
   var existingAnnualKwh = Number(readInput(ss, 'existingPvAnnualKwh')) || 0;
   var existingProfileKnown = hasExistingPv
     && (existingPvKwp > 0 || existingAnnualKwh > 0);
+
+  // Chunk 7 4B: EXPORT data is the gate for the export-CAPTURE value stream.
+  // The CFE bill is NET import and CANNOT reveal hourly export, so we never
+  // estimate capture from net load. Capture value is computed ONLY when the
+  // customer supplies real exported kWh (from the bill's export line or an
+  // inverter portal). Absent -> capture shown as "DATOS INSUFICIENTES" and
+  // the proposal runs peak-shaving-only.
+  var existingExportKwh = Number(readInput(ss, 'existingExportKwh')) || 0;
+  var exportDataAvailable = hasExistingPv && existingExportKwh > 0;
 
   return {
     installed:            installPv,
@@ -78,6 +85,8 @@ function readInputPv(ss) {
     existingPvKwp:        existingPvKwp,
     existingAnnualKwh:    existingAnnualKwh,
     existingProfileKnown: existingProfileKnown,
+    existingExportKwh:    existingExportKwh,
+    exportDataAvailable:  exportDataAvailable,
     provenance:           'INPUT_PROJECT'
   };
 }
@@ -120,17 +129,35 @@ function classifyScenario(pvConfig, bessEnabled) {
 
   // Existing PV present.
   if (profileKnown) {
-    // Scenario 4B -- ROADMAP. Capture would be ON, but it is not yet live.
-    // For now we behave as 4A (capture OFF) and flag that the higher-value
-    // 4B path is pending, so we NEVER silently double-count.
+    // Scenario 4B -- existing-PV capture. The export-CAPTURE value stream is
+    // DATA-GATED: we never estimate export from the net bill (it can't reveal
+    // hourly export). Capture value is computed only when real export data is
+    // supplied; otherwise the proposal runs peak-shaving-only and capture
+    // shows "DATOS INSUFICIENTES".
+    var exportData = !!pvConfig.exportDataAvailable;
+    if (exportData) {
+      return {
+        id: '4B',
+        label: 'Battery only, existing PV — export capture (data present)',
+        pvCapture: true,
+        exportDataAvailable: true,
+        disclaimer: 'Cliente con PV existente y datos de exportación. Se '
+                  + 'valúa la captura del excedente solar exportado, neta del '
+                  + 'valor que ya tenía bajo el esquema de interconexión '
+                  + 'actual. Verifique los datos de exportación.'
+      };
+    }
     return {
-      id: '4B-pending',
-      label: 'Battery only, existing PV (profile known) — 4B pending',
+      id: '4B-screening',
+      label: 'Battery only, existing PV — peak-shaving only (no export data)',
       pvCapture: false,
-      disclaimer: 'Cliente con PV existente y perfil conocido. La captura del '
-                + 'excedente solar existente (escenario 4B) aún no está activa; '
-                + 'esta proyección NO la modela y subestima el valor real de la '
-                + 'batería. (Roadmap.)'
+      exportDataAvailable: false,
+      disclaimer: 'Cliente con PV existente. La economía de peak-shaving y '
+                + 'desplazamiento se calcula del recibo CFE. La CAPTURA de '
+                + 'excedente solar NO se valúa: el recibo (importación neta) '
+                + 'no revela la exportación horaria. Para valuarla se '
+                + 'requieren datos de exportación o producción del PV '
+                + 'existente (Nivel Propuesta).'
     };
   }
 
@@ -139,6 +166,7 @@ function classifyScenario(pvConfig, bessEnabled) {
     id: '4A',
     label: 'Battery only, existing PV (profile unknown)',
     pvCapture: false,
+    exportDataAvailable: false,
     disclaimer: 'Cliente con PV existente. El valor de la batería es '
               + 'incremental a su solar actual; NO se modela la captura del '
               + 'excedente de su solar existente (requeriría sus datos de '
