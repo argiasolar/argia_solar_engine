@@ -169,6 +169,21 @@ function runHourlySimulation(ss) {
     pv:             pvInfo.provenance,
     battery:        batterySpec ? 'INPUT_BESS' : 'NONE',
   };
+  // -- Chunk 5 Session 3: AUTO_OPTIMIZE strategy evaluator ----------------
+  // Reuses the monthCtxs the proposed run already built (surfaced as
+  // bessMonthlyContexts). Produces Conservative/Expected/Upside bounds
+  // from the planner ledgers -- no extra full sim runs (decision 1c).
+  // Expected headline still comes from the real full-bill proposed run.
+  if (typeof _runBessAutoOptimize === 'function'
+      && proposedResult.bessMonthlyContexts) {
+    var selectedStrat = (batterySpec && batterySpec.strategy)
+      ? String(batterySpec.strategy) : 'PEAK_SHAVING';
+    proposedResult.autoOptimize = _runBessAutoOptimize(
+      proposedResult.bessMonthlyContexts,
+      { selectedStrategy: selectedStrat }
+    );
+  }
+
   return proposedResult;
 }
 

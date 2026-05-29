@@ -484,6 +484,39 @@ registerTest({
       t.assert('CFE_v2.N13 last month label',  'Dic',
                String(cfe.getRange('N13').getValue() || '').trim());
 
+      // -- E6: Chunk 5 Session 3 additive elements (Option 2) --------------
+      // Section 2 monthly numbers stay on the formula sheet (rows 30/31
+      // locked above are UNCHANGED). These assertions cover the NEW
+      // hourly-sim-sourced blocks that were ADDED this session:
+      //   - tier banner + disclaimer at row 4 (and row 21)
+      //   - Conservative/Expected/Upside + demand breakdown below the sheet
+      //
+      // The disclaimer is the LOCKED non-guarantee invariant: PROPOSAL-tier
+      // output MUST carry it. This regression assertion makes that
+      // permanent at the customer-sheet level (the unit test asserts it at
+      // the function level; this asserts it survived end-to-end rendering).
+      var bannerTop = String(cfe.getRange('B4').getValue() || '');
+      // Banner is PROPOSAL when the hourly sim ran; if the sim was blocked
+      // it would be SCREENING. CULLIGAN has a full run, so expect PROPOSAL.
+      var bannerIsProposal = bannerTop.indexOf('PROPUESTA') >= 0;
+      var bannerIsScreening = bannerTop.indexOf('SCREENING') >= 0;
+      t.assertTrue('CFE_v2.B4 tier banner present (PROPOSAL or SCREENING)',
+                   bannerIsProposal || bannerIsScreening);
+      if (bannerIsProposal) {
+        t.assertContains('CFE_v2.B4 PROPOSAL banner: not-guaranteed disclaimer',
+                         bannerTop, 'no garantizados');
+        t.assertContains('CFE_v2.B4 PROPOSAL banner: 15-min interval requirement',
+                         bannerTop, 'intervalos de 15 minutos');
+      }
+      t.info('CFE_v2 Chunk 5 tier',
+             'banner row 4 = "' + bannerTop.substring(0, 60) + '..."');
+
+      // Section 2 source provenance: Option 2 keeps it on the formula sheet
+      // this session. (Session 4 flips to hourly-sim post-validation.)
+      t.info('CFE_v2 Section 2 source',
+             'Option 2: monthly numbers from BESS_SIMULATION formula sheet; ' +
+             'hourly-sim source swap deferred to Session 4 (post 15-min validation).');
+
       // -- E5: PARITY vs legacy CFE_OUTPUT -- REMOVE AT CUTOVER (Chunk 11) --
       // Skipped intentionally: legacy CFE_OUTPUT row layout changed across
       // engine versions and a positional diff would be brittle. The annual

@@ -57,6 +57,11 @@ var CFE_OUT_ROW_V2 = (typeof CFE_OUT_ROW_V2 !== 'undefined' && CFE_OUT_ROW_V2) ?
   TITLE           : 2,    // title text starts at col 3 (cols 1-2 = logo)
   SUBTITLE        : 3,
 
+  // Chunk 5 Session 3: tier banner + disclaimer rows (use template GAP rows
+  // so no existing row shifts -- preserves CULLIGAN baseline cell refs).
+  TIER_BANNER_TOP : 4,    // gap between SUBTITLE(3) and TARIFF_HEADER(5)
+  TIER_BANNER_SEC2: 21,   // gap between SEC1_AHORRO(20) and SEC2_HEADER(22)
+
   // Header strip — 4 rows, label in col B, value in col C; second pair at H/J
   TARIFF_HEADER   : 5,
   LOCATION_ROW    : 6,

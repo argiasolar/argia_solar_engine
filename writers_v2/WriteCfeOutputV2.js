@@ -98,10 +98,25 @@ function writeCfeOutputV2(ss, hourlySim) {
   var sh = setupCfeOutputTemplate(ss);
 
   // -- 3. Fill data section by section. ------------------------------------
+  // Chunk 5 Session 3: tier banner (LOCKED disclaimer) renders FIRST, in two
+  // places (top + above Section 2). The tier is PROPOSAL whenever the hourly
+  // sim produced attribution data (customer-facing estimate); SCREENING
+  // otherwise (internal/incomplete).
+  var tier = (hourlySim && !hourlySim.blocked && hourlySim.attribution)
+             ? 'PROPOSAL' : 'SCREENING';
+  if (typeof _cfeOutV2_renderTierBanner === 'function') {
+    _cfeOutV2_renderTierBanner(sh, CFE_OUT_ROW_V2.TIER_BANNER_TOP || 4, tier);
+  }
+
   _cfeOutV2_fillHeaderStrip(sh, ss);
   _cfeOutV2_fillKpiStrip(sh, ss);
   _cfeOutV2_fillSection1(sh, ss);
-  _cfeOutV2_fillSection2(sh, ss);
+
+  // Second tier banner, directly above Section 2 (adjacent to the savings).
+  if (typeof _cfeOutV2_renderTierBanner === 'function') {
+    _cfeOutV2_renderTierBanner(sh, CFE_OUT_ROW_V2.TIER_BANNER_SEC2 || 21, tier);
+  }
+  _cfeOutV2_fillSection2(sh, ss, hourlySim);
   _cfeOutV2_fillFooter(sh, ss);
   var hasSteady = _cfeOutV2_fillYear1SteadySection(sh, ss);
 
@@ -113,6 +128,28 @@ function writeCfeOutputV2(ss, hourlySim) {
   if (hourlySim && !hourlySim.blocked) {
     _cfeOutV2_fillHourlyAddendum(sh, hourlySim);
     hasHourly = true;
+  }
+
+  // -- 5. Chunk 5 Session 3: Conservative/Expected/Upside + demand breakdown.
+  // These render BELOW everything else (computed from getLastRow) so they
+  // never collide with existing rows. Only shown when the hourly sim
+  // produced attribution + autoOptimize data.
+  if (hourlySim && !hourlySim.blocked && hourlySim.attribution
+      && typeof _cfeOutV2_renderConsExpUpside === 'function') {
+    var blockStart = sh.getLastRow() + 2;
+    var ao = hourlySim.autoOptimize || null;
+    // Expected headline = the proposed run's actual BESS-attributable
+    // annual savings (pvOnly total - pvBess total), the real full-bill number.
+    var expectedAnnual = 0;
+    if (hourlySim.attribution.pvOnly && hourlySim.attribution.pvBess) {
+      expectedAnnual = (Number(hourlySim.attribution.pvOnly.totalCostMxn) || 0)
+                     - (Number(hourlySim.attribution.pvBess.totalCostMxn) || 0);
+    }
+    var interconnMode = hourlySim.interconnMode || '';
+    var lastRow = _cfeOutV2_renderConsExpUpside(sh, blockStart, ao, expectedAnnual, interconnMode);
+    if (typeof _cfeOutV2_renderDemandChargeBreakdown === 'function') {
+      _cfeOutV2_renderDemandChargeBreakdown(sh, lastRow + 2, hourlySim);
+    }
   }
 
   SpreadsheetApp.flush && SpreadsheetApp.flush();
@@ -375,7 +412,25 @@ function _cfeOutV2_fillSection1(sh, ss) {
 // =============================================================================
 // SECTION 2 (rows 24-31) — Con PV + BESS monthly data
 // =============================================================================
-function _cfeOutV2_fillSection2(sh, ss) {
+// CHUNK 5 Session 3 (Option 2 — headline stays on formula sheet):
+//   Section 2 monthly numbers continue to read from the BESS_SIMULATION
+//   formula sheet, UNCHANGED from 4.1.0. The hourly-sim source swap is
+//   DEFERRED to Session 4, after the 15-minute interval validation tells
+//   us whether the hourly sim or the formula sheet is more accurate.
+//
+//   Rationale: swapping the headline customer number to an unvalidated
+//   calculation method — before the very validation that Session 4 exists
+//   to perform — is exactly what the PROPOSAL disclaimer warns customers
+//   about. So we don't do it to ourselves. The new hourly-sim VALUE
+//   (Conservative/Expected/Upside range, kW-aware demand breakdown, tier
+//   disclaimer) still ships this session as ADDITIVE blocks; only the
+//   core monthly headline numbers stay on the proven formula-sheet source.
+//
+//   The `hourlySim` parameter is kept (unused for the monthly rows) so the
+//   signature is forward-compatible: Session 4 flips the source here once
+//   validated, with no caller change.
+// =============================================================================
+function _cfeOutV2_fillSection2(sh, ss, hourlySim) {
   var R = CFE_OUT_ROW_V2;
 
   var ahorroCap  = readCfeMonthly(ss, 'bsim_ahorroMesCap');
@@ -403,7 +458,13 @@ function _cfeOutV2_fillSection2(sh, ss) {
   _cfeOutV2_writeMonthlyValues(sh, R.SEC2_AHORRO_VAR,   ahorroVar,                              'mxn');
   _cfeOutV2_writeMonthlyValues(sh, R.SEC2_AHORRO_TOTAL, ahorroBessTotal,                        'mxn');
   _cfeOutV2_writeMonthlyValues(sh, R.SEC2_RECIBO_FINAL, reciboFinalMonthly,                     'mxn');
+
+  // Session 4 will flip this to 'HOURLY_SIM_ATTRIBUTION' post-validation.
+  _cfeOutV2_section2Source = 'BESS_SIMULATION_FORMULA';
 }
+
+// Module-scope marker of which source Section 2 used (read by addendum).
+var _cfeOutV2_section2Source = 'BESS_SIMULATION_FORMULA';
 
 
 // =============================================================================

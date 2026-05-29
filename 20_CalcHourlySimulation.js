@@ -755,6 +755,7 @@ function calcHourlySimulation(opts) {
   var ratePunta = Number(rates.puntaMxnPerKwh)      || rateBase;
 
   var monthlySchedules = new Array(12).fill(null);
+  var monthlyContexts  = new Array(12).fill(null);   // Session 3: surfaced for AUTO_OPTIMIZE
   var plannerEnabled = (typeof _planMonthlyBessSchedule === 'function')
                       && battery
                       && Number(battery.capacityKwh) > 0;
@@ -841,6 +842,7 @@ function calcHourlySimulation(opts) {
       };
 
       monthlySchedules[mb - 1] = _planMonthlyBessSchedule(monthCtx, batteryStrategyForPlanner);
+      monthlyContexts[mb - 1]  = monthCtx;   // Session 3: surface for AUTO_OPTIMIZE
     }
   }
 
@@ -1429,6 +1431,8 @@ function calcHourlySimulation(opts) {
     // Chunk 5 Session 2: planner's monthly schedules + ledgers, exposed
     // so the writer can show per-month strategy decomposition.
     bessSchedules: monthlySchedules,
+    bessMonthlyContexts: monthlyContexts,   // Session 3: input to AUTO_OPTIMIZE
+    interconnMode: interconnMode,           // Session 3: for range explanation
     provenance: {
       loadShape:  'PIECEWISE_FLAT_FROM_BILLS',
       pvShape:    monthlyPv
