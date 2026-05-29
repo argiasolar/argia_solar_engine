@@ -93,9 +93,17 @@ function resolvePickerSelection(c6Value, catalog, recommendations) {
         capacityKwh: Number(rec.capacityKwh) || 0,
         powerKw: Number(rec.powerKw) || 0,
         capexMxn: Number(rec.installedCapexMxn) || 0,
-        minSocPct: base ? (Number(base.minSocPct) || 0.10) : 0.10,
-        maxSocPct: base ? (Number(base.maxSocPct) || 0.90) : 0.90,
-        rtePct:    base ? (Number(base.rtePct)    || 0.90) : 0.90,
+        minSocPct: base ? (Number(_pickerGet(base, 'minSocPct', 'Min_SOC_%')) || 0.10) : 0.10,
+        maxSocPct: base ? (Number(_pickerGet(base, 'maxSocPct', 'Max_SOC_%')) || 0.90) : 0.90,
+        rtePct:    base ? (Number(_pickerGet(base, 'rtePct',    'Round_Trip_Efficiency_%')) || 0.90) : 0.90,
+        // -- Chunk 5 Session 2: lifetime economics fields (R3 enrichment) ----
+        // Come from the catalog row of baseBatteryId. Fall back to conservative
+        // defaults when baseBatteryId is missing or the field isn't populated.
+        cycleLifeAt100Dod: base ? (Number(_pickerGet(base, 'cycleLifeAt100Dod', 'Cycle_Life_Cycles')) || 0) : 0,
+        warrantyYears:     base ? (Number(_pickerGet(base, 'warrantyYears',     'Warranty_Years'))     || 0) : 0,
+        residualValuePct:  base ? (Number(_pickerGet(base, 'residualValuePct',  'Residual_Value_Pct')) || 0) : 0,
+        degradationPct:    base ? (Number(_pickerGet(base, 'degradationPct',    'Annual_Degradation_%')) || 0) : 0,
+        usableCapacityKwh: base ? (Number(_pickerGet(base, 'usableCapacityKwh', 'Usable_Capacity_kWh')) || 0) : 0,
         found: true,
       };
     }
@@ -107,15 +115,21 @@ function resolvePickerSelection(c6Value, catalog, recommendations) {
   if (cat) {
     return {
       source: 'CATALOG',
-      batteryId: cat.batteryId,
-      baseBatteryId: cat.batteryId,
+      batteryId: _pickerGet(cat, 'batteryId', 'Battery_ID'),
+      baseBatteryId: _pickerGet(cat, 'batteryId', 'Battery_ID'),
       qty: 1,
-      capacityKwh: Number(cat.capacityKwh) || 0,
-      powerKw:    Number(cat.powerKw)      || 0,
-      capexMxn:   Number(cat.installedCapexMxn) || 0,
-      minSocPct:  Number(cat.minSocPct)    || 0.10,
-      maxSocPct:  Number(cat.maxSocPct)    || 0.90,
-      rtePct:     Number(cat.rtePct)       || 0.90,
+      capacityKwh: Number(_pickerGet(cat, 'capacityKwh', 'Nominal_Capacity_kWh')) || 0,
+      powerKw:    Number(_pickerGet(cat, 'powerKw',     'Power_kW'))               || 0,
+      capexMxn:   Number(_pickerGet(cat, 'installedCapexMxn', 'Installed_CAPEX_MXN')) || 0,
+      minSocPct:  Number(_pickerGet(cat, 'minSocPct',   'Min_SOC_%'))              || 0.10,
+      maxSocPct:  Number(_pickerGet(cat, 'maxSocPct',   'Max_SOC_%'))              || 0.90,
+      rtePct:     Number(_pickerGet(cat, 'rtePct',      'Round_Trip_Efficiency_%')) || 0.90,
+      // -- Chunk 5 Session 2: lifetime economics fields (R3 enrichment) ------
+      cycleLifeAt100Dod: Number(_pickerGet(cat, 'cycleLifeAt100Dod', 'Cycle_Life_Cycles'))    || 0,
+      warrantyYears:     Number(_pickerGet(cat, 'warrantyYears',     'Warranty_Years'))       || 0,
+      residualValuePct:  Number(_pickerGet(cat, 'residualValuePct',  'Residual_Value_Pct'))   || 0,
+      degradationPct:    Number(_pickerGet(cat, 'degradationPct',    'Annual_Degradation_%')) || 0,
+      usableCapacityKwh: Number(_pickerGet(cat, 'usableCapacityKwh', 'Usable_Capacity_kWh'))  || 0,
       found: true,
     };
   }
@@ -132,11 +146,47 @@ function resolvePickerSelection(c6Value, catalog, recommendations) {
 }
 
 
+// ===========================================================================
+// _pickerGet (Chunk 5 Session 2)
+// ===========================================================================
+// Tolerate BOTH catalog-row shapes:
+//   - camelCase (synthetic test fixtures + the normalized shape from
+//     19_RunBessSuggestion.js): row.batteryId, row.capacityKwh, ...
+//   - Header-keyed (raw from getAllBatteryProducts in production):
+//     row['Battery_ID'], row['Nominal_Capacity_kWh'], ...
+//
+// Try camelCase first (matches existing test fixtures + recommended shape),
+// fall back to the raw header name. Returns undefined when neither is set.
+//
+// NOTE -- pre-existing production bug flagged for separate diagnostic:
+//   In production, getAllBatteryProducts(ss) returns header-keyed rows, but
+//   pre-Session-2 _findCatalogEntry only looked at row.batteryId (camelCase),
+//   so `applyBessPickerForCell` never resolved a CATALOG match in the live
+//   workbook -- it silently fell through to CUSTOM_MANUAL. The synthetic
+//   tests pass because they use camelCase fixtures. This helper hardens the
+//   path for both shapes; the full fix would also normalize in
+//   `applyBessPickerForCell` before passing into resolvePickerSelection.
+// ===========================================================================
+function _pickerGet(row, camelKey, headerKey) {
+  if (!row) return undefined;
+  if (row[camelKey] !== undefined && row[camelKey] !== '' && row[camelKey] !== null) {
+    return row[camelKey];
+  }
+  if (headerKey && row[headerKey] !== undefined && row[headerKey] !== '' && row[headerKey] !== null) {
+    return row[headerKey];
+  }
+  return undefined;
+}
+
+
 function _findCatalogEntry(catalog, batteryId) {
   if (!batteryId) return null;
   var id = String(batteryId).trim();
   for (var i = 0; i < catalog.length; i++) {
-    if (catalog[i] && String(catalog[i].batteryId).trim() === id) {
+    if (!catalog[i]) continue;
+    // Tolerate both camelCase (test fixtures) and header-keyed (production)
+    var rowId = _pickerGet(catalog[i], 'batteryId', 'Battery_ID');
+    if (rowId != null && String(rowId).trim() === id) {
       return catalog[i];
     }
   }

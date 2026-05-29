@@ -219,6 +219,61 @@ function _countHoursPerBucketPerMonth(region) {
 
 
 // ===========================================================================
+// _dominantBucketByHourForMonth (Chunk 5 Session 2)
+// ===========================================================================
+// For each clock hour 0..23, return the bucket that appears most often
+// across the days of the given month. Used to build the planner's
+// 24-hour bucketByHour vector when collapsing the per-DOW variance into
+// a typical-day shape.
+//
+// For flat-rate tariffs every hour is 'base'.
+// ===========================================================================
+function _dominantBucketByHourForMonth(tariffClass, region, month) {
+  var out = new Array(24);
+  if (tariffClass !== 'TOU_GDMTH') {
+    for (var hh = 0; hh < 24; hh++) out[hh] = 'base';
+    return out;
+  }
+  var days = _daysInMonth(month);
+  var counts = new Array(24);
+  for (var h = 0; h < 24; h++) {
+    counts[h] = { base: 0, intermedia: 0, punta: 0 };
+  }
+  for (var d = 1; d <= days; d++) {
+    var dow = _dayOfWeekFor(month, d);
+    for (var k = 0; k < 24; k++) {
+      var b = classifyGdmthHour(region, month, dow, k);
+      counts[k][b]++;
+    }
+  }
+  for (var h2 = 0; h2 < 24; h2++) {
+    var c = counts[h2];
+    var dom = 'base'; var domN = c.base;
+    if (c.intermedia > domN) { dom = 'intermedia'; domN = c.intermedia; }
+    if (c.punta      > domN) { dom = 'punta';      domN = c.punta; }
+    out[h2] = dom;
+  }
+  return out;
+}
+
+
+// ===========================================================================
+// _fallbackFlatDaylightPv (Chunk 5 Session 2 safety fallback)
+// ===========================================================================
+// When _planSyntheticPvBellShape isn't loaded (e.g. unit tests that don't
+// load 20b_PlanMonthlyBessSchedule.js), fall back to the pre-Session-2
+// flat-daylight shape so the engine never NaNs.
+// ===========================================================================
+function _fallbackFlatDaylightPv(dailyKwh) {
+  var pv = new Array(24).fill(0);
+  if (!(dailyKwh > 0)) return pv;
+  var per = dailyKwh / 14;
+  for (var h = 6; h <= 19; h++) pv[h] = per;
+  return pv;
+}
+
+
+// ===========================================================================
 // Tariff classification.
 // ===========================================================================
 // Splits known tariffs into:
@@ -296,8 +351,25 @@ function classifyTariff(tariffCode) {
 //
 // Pure function — no engine/sheet access. Unit-tested in
 // tests_unit/calc/BessDispatchStrategyTests.gs.
+//
+// CHUNK 5 / Session 2 — schedule-aware path:
+//   When opts.scheduleHour is supplied (an object from the Session 1
+//   monthly planner: { chargeKwh, gridChargeKwh, dischargeKwh }), the
+//   dispatcher EXECUTES that schedule for the hour, clamping to actual
+//   SoC + power bounds. When scheduleHour is absent, the legacy greedy
+//   priority chains run unchanged (backward compatibility for tests +
+//   any callers that don't yet supply a schedule).
 // ===========================================================================
 function _bessDispatchHour(o) {
+  // -- Schedule-aware execution path (Session 2) ----------------------------
+  // If a precomputed schedule for this hour is supplied, use it instead of
+  // the greedy chains. The schedule has already enforced strategy-level
+  // priorities (P1..P4), so this is pure execution: charge / discharge as
+  // planned, clamp to actual SoC + power, return the same shape.
+  if (o.scheduleHour) {
+    return _bessExecuteScheduleHour(o);
+  }
+
   var strategy           = o.strategy || 'PEAK_SHAVING';
   var bucket             = o.bucket;
   var residualNetLoadKwh = o.residualNetLoadKwh;
@@ -389,6 +461,127 @@ function _bessDispatchHour(o) {
     residualNetLoadKwh: residualNetLoadKwh,
     dischargeKwh:       dischargeKwh,
     chargeKwh:          chargeKwh,
+  };
+}
+
+
+// ===========================================================================
+// _bessExecuteScheduleHour (Chunk 5 Session 2)
+// ===========================================================================
+//
+// Level 2 of the two-level dispatcher. Given a precomputed schedule for
+// this hour (from _planMonthlyBessSchedule in 20b_PlanMonthlyBessSchedule.js),
+// execute it with real-SoC + power clamping.
+//
+// The planner's schedule already enforces I1..I8 and the priority stack.
+// All this function does is apply that schedule to the actual SoC state
+// in the current hour. SoC may have drifted from the planner's assumed
+// trajectory (different actual load on this specific day vs the typical-day
+// shape the planner used) -- the clamping handles that gracefully.
+//
+// Conservation rules:
+//   - charge       <= maxSocKwh - batterySoc (room available)
+//   - discharge    <= batterySoc - minSocKwh (energy available)
+//   - all flows    <= batteryPowerKw         (power cap)
+//
+// Mutual exclusion (I2): when both charge and discharge are present in the
+// schedule for the same hour (should never happen post-planner due to I2,
+// but defensive), discharge wins.
+//
+// Returns the SAME shape as legacy _bessDispatchHour, so downstream
+// consumers don't need to change.
+// ===========================================================================
+function _bessExecuteScheduleHour(o) {
+  var s = o.scheduleHour || {};
+  var residualNetLoadKwh = Number(o.residualNetLoadKwh) || 0;
+  var pvSurplusKwh       = Number(o.pvSurplusKwh) || 0;
+  var batterySoc         = Number(o.batterySoc) || 0;
+  var minSocKwh          = Number(o.minSocKwh) || 0;
+  var maxSocKwh          = Number(o.maxSocKwh) || 0;
+  var batteryPowerKw     = Number(o.batteryPowerKw) || 0;
+  var rte                = Number(o.rte) || 0.913;
+
+  var plannedDischarge  = Math.max(0, Number(s.dischargeKwh)    || 0);
+  var plannedPvCharge   = Math.max(0, Number(s.chargeKwh)       || 0);
+  var plannedGridCharge = Math.max(0, Number(s.gridChargeKwh)   || 0);
+
+  var dischargeKwh = 0;
+  var chargeKwh    = 0;     // includes both PV and grid charge for return-shape parity
+  var batteryActionKwh = 0;
+
+  // Defensive: if both charge and discharge planned for same hour (shouldn't
+  // happen, but the planner's I2 sweep is best-effort), discharge wins.
+  if (plannedDischarge > 0) {
+    var available = Math.max(0, batterySoc - minSocKwh);
+    dischargeKwh = Math.min(plannedDischarge, available, batteryPowerKw);
+    // Cap by actual residual load too -- can't discharge more than the
+    // residual demand for this hour (no point feeding back to grid via
+    // discharge under any interconnection mode).
+    if (dischargeKwh > residualNetLoadKwh) {
+      dischargeKwh = residualNetLoadKwh;
+    }
+    if (dischargeKwh > 0) {
+      batteryActionKwh = dischargeKwh;
+      batterySoc -= dischargeKwh;
+    }
+  } else if (plannedPvCharge > 0 || plannedGridCharge > 0) {
+    var room = Math.max(0, maxSocKwh - batterySoc);
+    var roomLeft = room;
+
+    // PV charge first (capped by actual PV surplus this hour + power)
+    if (plannedPvCharge > 0) {
+      var pvUse = Math.min(plannedPvCharge, pvSurplusKwh, roomLeft, batteryPowerKw);
+      if (pvUse > 0) {
+        chargeKwh += pvUse;
+        batterySoc += pvUse * rte;        // RTE loss on the way in
+        pvSurplusKwh -= pvUse;
+        roomLeft = Math.max(0, maxSocKwh - batterySoc);
+      }
+    }
+
+    // Grid charge second. The "room left" and remaining power cap apply.
+    var powerLeft = Math.max(0, batteryPowerKw - chargeKwh);
+    if (plannedGridCharge > 0 && roomLeft > 0 && powerLeft > 0) {
+      var gridUse = Math.min(plannedGridCharge, roomLeft, powerLeft);
+      if (gridUse > 0) {
+        chargeKwh += gridUse;
+        batterySoc += gridUse * rte;
+        // Grid charge shows up as extra import for the hour
+        residualNetLoadKwh += gridUse;
+      }
+    }
+
+    if (chargeKwh > 0) {
+      batteryActionKwh = -chargeKwh;
+    }
+  }
+
+  return {
+    batteryActionKwh:   batteryActionKwh,
+    batterySoc:         batterySoc,
+    pvSurplusKwh:       pvSurplusKwh,
+    residualNetLoadKwh: residualNetLoadKwh,
+    dischargeKwh:       dischargeKwh,
+    chargeKwh:          chargeKwh,
+  };
+}
+
+
+// ===========================================================================
+// _bessPickScheduleHourForClock (Chunk 5 Session 2)
+// ===========================================================================
+// Given a monthly schedule (24 hours of charge/gridCharge/discharge from
+// _planMonthlyBessSchedule) and a clock hour (0..23), return the
+// scheduleHour object _bessExecuteScheduleHour expects.
+// ===========================================================================
+function _bessPickScheduleHourForClock(monthlySchedule, hour) {
+  if (!monthlySchedule) return null;
+  var h = hour | 0;
+  if (h < 0 || h > 23) return null;
+  return {
+    chargeKwh:     (monthlySchedule.chargeByHour     || [])[h] || 0,
+    gridChargeKwh: (monthlySchedule.gridChargeByHour || [])[h] || 0,
+    dischargeKwh:  (monthlySchedule.dischargeByHour  || [])[h] || 0
   };
 }
 
@@ -524,17 +717,130 @@ function calcHourlySimulation(opts) {
     perHourKwh.punta[mi]      = (hoursPerBucket.punta[mi]      > 0) ? kwhP / hoursPerBucket.punta[mi]      : 0;
   }
 
-  // PV per-hour (split monthly PV evenly across daylight hours: 6:00-19:00).
-  // The existing PV engine doesn't yet expose hourly PV; this is a placeholder
-  // that approximates the "PV is available during the day" pattern.
-  // BDF-5 follow-up: read actual hourly PV from the PV calc step if available.
-  var pvPerDaylightHour = new Array(12).fill(0);
+  // PV per-hour (Chunk 5 Session 2: bell-curve shape from planner).
+  // Previously a flat 6:00-19:59 distribution -- replaced with a
+  // half-sine bell across daylight hours so the planner and the
+  // executor reason about PV timing the same way. The bell is built
+  // from monthly PV totals and gives ~zero at sunrise/sunset and
+  // peak near solar noon.
+  // BDF-5 follow-up: read actual hourly PV from the PV calc step
+  // (Helioscope) if available -- not in this chunk's scope.
+  var pvByHourPerMonth = new Array(12).fill(null);
   if (monthlyPv) {
     for (var mp = 0; mp < 12; mp++) {
       var pvKwh = _safeNum(monthlyPv.kwh, mp);
-      var daylightHours = 14;  // 6:00 - 19:59 = 14 hours
       var daysInM = _daysInMonth(mp + 1);
-      pvPerDaylightHour[mp] = (pvKwh > 0) ? pvKwh / (daysInM * daylightHours) : 0;
+      var dailyPv = (pvKwh > 0 && daysInM > 0) ? pvKwh / daysInM : 0;
+      // _planSyntheticPvBellShape lives in 20b_PlanMonthlyBessSchedule.js;
+      // Apps Script global scope ⇒ direct call. Returns num[24].
+      pvByHourPerMonth[mp] = (typeof _planSyntheticPvBellShape === 'function')
+        ? _planSyntheticPvBellShape(dailyPv)
+        : _fallbackFlatDaylightPv(dailyPv);  // safety fallback
+    }
+  }
+
+  // ----- Chunk 5 Session 2: build per-month monthCtx + run planner -------
+  // ONE planner call per month BEFORE the 8760 loop. The schedule for
+  // each month is then consulted hour-by-hour inside the loop. Planner
+  // is pure; no engine/sheet side effects.
+  //
+  // BUGFIX 4.1.0: must resolve rateBase/rateInter/ratePunta BEFORE the
+  // planner block; they were previously declared further down (~line 897
+  // pre-fix). Var-hoisting made them undefined here, so the planner saw
+  // rate=0 -> LS arbitrage gate failed -> LS schedule == PS schedule ->
+  // UNIT_BESS_DISPATCH_STRATEGIES_DIFFER_AND_SAVE failed. Caught by
+  // the regression test in Apps Script after first push of 4.1.0 to clasp.
+  var rateBase  = Number(rates.baseMxnPerKwh)       || 0;
+  var rateInter = Number(rates.intermediaMxnPerKwh) || rateBase;
+  var ratePunta = Number(rates.puntaMxnPerKwh)      || rateBase;
+
+  var monthlySchedules = new Array(12).fill(null);
+  var plannerEnabled = (typeof _planMonthlyBessSchedule === 'function')
+                      && battery
+                      && Number(battery.capacityKwh) > 0;
+  if (plannerEnabled) {
+    // BUGFIX 4.1.0 defensive guard: confirm rates resolved before passing
+    // to planner. If this fires the var-hoisting ordering bug has returned.
+    if (!isFinite(rateBase) || !isFinite(rateInter) || !isFinite(ratePunta)) {
+      warnings.push('Session 2 planner skipped: tariff rates not resolved at '
+                  + 'planner-call site (rateBase=' + rateBase + ', rateInter='
+                  + rateInter + ', ratePunta=' + ratePunta + '). '
+                  + 'Falling back to legacy greedy dispatch.');
+      plannerEnabled = false;
+    }
+  }
+  if (plannerEnabled) {
+    var batteryStrategyForPlanner = (battery && battery.strategy)
+      ? String(battery.strategy) : 'PEAK_SHAVING';
+    var planCapKwh = Number(battery.capacityKwh) || 0;
+    var planPwrKw  = Number(battery.powerKw)     || 0;
+    var planMinPct = Number(battery.minSocPct)   || 0.05;
+    var planMaxPct = Number(battery.maxSocPct)   || 0.95;
+    var planRte    = Number(battery.rtePct)      || 0.913;
+    var planMinKwh = planCapKwh * planMinPct;
+    var planMaxKwh = planCapKwh * planMaxPct;
+    var planUsable = Math.max(0, planMaxKwh - planMinKwh);
+
+    // GDMTH bucket-by-clock-hour. For each clock hour, find the dominant
+    // bucket across the month's actual day-of-week mix. For flat-rate
+    // tariffs every hour is base.
+    for (var mb = 1; mb <= 12; mb++) {
+      var bucketByHour = _dominantBucketByHourForMonth(tariffClass, region, mb);
+      var loadByHour = new Array(24);
+      for (var h2 = 0; h2 < 24; h2++) {
+        // Average load at clock hour h: use perHourKwh for the dominant
+        // bucket. This is an approximation -- the actual sim varies by
+        // dow/holiday -- but it's the typical-day shape the planner's
+        // contract is built on (see CHUNK_5_SESSION1_SPEC §5).
+        loadByHour[h2] = perHourKwh[bucketByHour[h2]][mb - 1] || 0;
+      }
+      var pvByHour = pvByHourPerMonth[mb - 1] || new Array(24).fill(0);
+
+      // Actual billed demand for this month (max of three buckets)
+      var billedKwBase = _safeNum(monthlyBill.kwBase,       mb - 1);
+      var billedKwInt  = _safeNum(monthlyBill.kwIntermedia, mb - 1);
+      var billedKwPun  = _safeNum(monthlyBill.kwPunta,      mb - 1);
+      var actualBilledDemandKw = Math.max(billedKwBase, billedKwInt, billedKwPun);
+
+      // Tariff rates: prefer per-month if available, else fall back to legacy
+      var rB = rateBase, rI = rateInter, rP = ratePunta;
+      var demandRatesForMonth = null;
+      if (Array.isArray(opts.tariffRatesByMonth)
+          && opts.tariffRatesByMonth.length === 12
+          && opts.tariffRatesByMonth[mb - 1]) {
+        var m12 = opts.tariffRatesByMonth[mb - 1];
+        rB = Number(m12.baseMxnPerKwh) || rB;
+        rI = Number(m12.intermediaMxnPerKwh) || rI;
+        rP = Number(m12.puntaMxnPerKwh) || rP;
+        demandRatesForMonth = {
+          capacidadMxnPerKw:    Number(m12.capacidadMxnPerKw) || 0,
+          distribucionMxnPerKw: Number(m12.distribucionMxnPerKw) || 0
+        };
+      }
+
+      var monthCtx = {
+        monthIndex:            mb - 1,
+        daysInMonth:           _daysInMonth(mb),
+        bucketByHour:          bucketByHour,
+        loadByHour:            loadByHour,
+        pvByHour:              pvByHour,
+        batteryCapKwh:         planCapKwh,
+        batteryPowerKw:        planPwrKw,
+        minSocKwh:             planMinKwh,
+        maxSocKwh:             planMaxKwh,
+        usableKwh:             planUsable,
+        rte:                   planRte,
+        interconnMode:         interconnMode,
+        rateBase:              rB,
+        rateInter:             rI,
+        ratePunta:             rP,
+        actualBilledDemandKw:  actualBilledDemandKw,
+        wearCostMxnPerKwh:     (battery.wearCostMxnPerKwh != null)
+                                 ? Number(battery.wearCostMxnPerKwh) : null,
+        demandRates:           demandRatesForMonth
+      };
+
+      monthlySchedules[mb - 1] = _planMonthlyBessSchedule(monthCtx, batteryStrategyForPlanner);
     }
   }
 
@@ -586,10 +892,30 @@ function calcHourlySimulation(opts) {
     punta:      new Array(12).fill(0),
   };
 
-  // Resolve rates with sensible defaults so the loop never NaNs
-  var rateBase  = Number(rates.baseMxnPerKwh)       || 0;
-  var rateInter = Number(rates.intermediaMxnPerKwh) || rateBase;
-  var ratePunta = Number(rates.puntaMxnPerKwh)      || rateBase;
+  // -------- Chunk 5 Session 2: single-pass attribution accumulators -------
+  // Track three parallel cost streams in ONE loop pass:
+  //   baseline : no PV, no BESS -- load × bucketRate
+  //   pvOnly   : PV present, no BESS -- residualNetLoad × bucketRate
+  //              minus export credits per interconnMode
+  //   pvBess   : PV + BESS (what the legacy cost tracking already does)
+  // From these, Session 3 writer can compute BESS-attributable savings as
+  //   pvOnlyMxn - pvBessMxn = BESS savings (per tier, monthly).
+  // No triple-runtime -- same hours, three accumulators.
+  var attrBaselineCostMxn = 0;
+  var attrPvOnlyCostMxn = 0;
+  var attrPvBessCostMxn = 0;     // = totalImportCostMxn - totalExportCreditMxn at end
+  var attrBaselineByBucket = { base: 0, intermedia: 0, punta: 0 };
+  var attrPvOnlyByBucket   = { base: 0, intermedia: 0, punta: 0 };
+  var attrPvBessByBucket   = { base: 0, intermedia: 0, punta: 0 };
+  // Per-month peak kW under each scenario, for demand-charge attribution
+  var attrBaselinePeakPuntaKw = new Array(12).fill(0);
+  var attrPvOnlyPeakPuntaKw   = new Array(12).fill(0);
+  var attrPvBessPeakPuntaKw   = new Array(12).fill(0);
+  var attrBaselinePeakAllKw = new Array(12).fill(0);
+  var attrPvOnlyPeakAllKw   = new Array(12).fill(0);
+  var attrPvBessPeakAllKw   = new Array(12).fill(0);
+
+  // (rateBase, rateInter, ratePunta declared earlier, above the planner block)
 
   for (var month = 1; month <= 12; month++) {
     var days = _daysInMonth(month);
@@ -600,22 +926,28 @@ function calcHourlySimulation(opts) {
                      ? classifyGdmthHour(region, month, dow, hour)
                      : 'base';
         var loadKwh = perHourKwh[bucket][month - 1];
-        var pvKwh = (hour >= 6 && hour <= 19) ? pvPerDaylightHour[month - 1] : 0;
+        var pvKwh = (pvByHourPerMonth[month - 1] != null)
+                    ? (pvByHourPerMonth[month - 1][hour] || 0) : 0;
 
         // Net load after PV
         var netLoadKwh = loadKwh - pvKwh;
         var pvSurplusKwh = (netLoadKwh < 0) ? -netLoadKwh : 0;
         var residualNetLoadKwh = (netLoadKwh > 0) ? netLoadKwh : 0;
 
-        // Battery dispatch — strategy-aware priority dispatcher (3.7.9).
+        // Battery dispatch -- Chunk 5 Session 2 schedule-aware path.
         //
-        // The battery always pursues EVERY saving type (discharge to avoid
-        // costly import, charge from PV surplus, optional grid arbitrage).
-        // `strategy` only sets the PRIORITY ORDER when these compete for the
-        // battery's finite energy (SoC) and power (kW/hour). It is never a
-        // hard on/off switch — see _bessDispatchHour() for the policy table.
+        // If the planner produced a schedule for this month (Level 1),
+        // we EXECUTE that schedule hour-by-hour (Level 2), clamping to
+        // real SoC. Otherwise (legacy path, no battery, or planner
+        // unavailable), the greedy strategy-aware chain runs as before.
         var batteryActionKwh = 0;  // positive = discharge, negative = charge
         if (batteryCapKwh > 0) {
+          var scheduleHourArg = null;
+          if (plannerEnabled && monthlySchedules[month - 1]) {
+            scheduleHourArg = _bessPickScheduleHourForClock(
+              monthlySchedules[month - 1], hour
+            );
+          }
           var dispatch = _bessDispatchHour({
             strategy:           batteryStrategy,
             bucket:             bucket,
@@ -630,6 +962,7 @@ function calcHourlySimulation(opts) {
             rateBase:           rateBase,
             rateInter:          rateInter,
             ratePunta:          ratePunta,
+            scheduleHour:       scheduleHourArg
           });
           batteryActionKwh  = dispatch.batteryActionKwh;
           batterySoc        = dispatch.batterySoc;
@@ -689,6 +1022,52 @@ function calcHourlySimulation(opts) {
         }
         // BDF-5 R2: per-month per-bucket kWh import (for full-bill math)
         monthlyImportKwh[bucket][monthIdx] += gridImportKwh;
+
+        // -- Chunk 5 Session 2: 3-scenario attribution accumulation --------
+        // baseline (no PV, no BESS): all load is imported at bucket rate.
+        // pvOnly (PV, no BESS): import = max(0, load - pv); export = max(0, pv - load).
+        // pvBess: already computed above (importCostMxn - exportCreditMxn).
+        var baselineImportKwh = loadKwh;
+        var pvOnlyNetKwh = loadKwh - pvKwh;
+        var pvOnlyImportKwh = (pvOnlyNetKwh > 0) ? pvOnlyNetKwh : 0;
+        var pvOnlyExportKwh = (pvOnlyNetKwh < 0) ? -pvOnlyNetKwh : 0;
+
+        var baselineCost = baselineImportKwh * bucketRate;
+        var pvOnlyImportCost = pvOnlyImportKwh * bucketRate;
+        var pvOnlyExportCredit = 0;
+        if (interconnMode === 'NET_METERING') {
+          pvOnlyExportCredit = pvOnlyExportKwh * bucketRate;
+        } else if (interconnMode === 'NET_BILLING') {
+          pvOnlyExportCredit = pvOnlyExportKwh * exportPrice;
+        }
+        var pvOnlyCost = pvOnlyImportCost - pvOnlyExportCredit;
+
+        attrBaselineCostMxn += baselineCost;
+        attrPvOnlyCostMxn   += pvOnlyCost;
+        attrPvBessCostMxn   += netCostMxn;     // mirrors costByBucket sum
+        attrBaselineByBucket[bucket] += baselineCost;
+        attrPvOnlyByBucket[bucket]   += pvOnlyCost;
+        attrPvBessByBucket[bucket]   += netCostMxn;
+
+        // Per-month peak kW under each scenario (for demand-charge attribution)
+        if (baselineImportKwh > attrBaselinePeakAllKw[monthIdx]) {
+          attrBaselinePeakAllKw[monthIdx] = baselineImportKwh;
+        }
+        if (bucket === 'punta' && baselineImportKwh > attrBaselinePeakPuntaKw[monthIdx]) {
+          attrBaselinePeakPuntaKw[monthIdx] = baselineImportKwh;
+        }
+        if (pvOnlyImportKwh > attrPvOnlyPeakAllKw[monthIdx]) {
+          attrPvOnlyPeakAllKw[monthIdx] = pvOnlyImportKwh;
+        }
+        if (bucket === 'punta' && pvOnlyImportKwh > attrPvOnlyPeakPuntaKw[monthIdx]) {
+          attrPvOnlyPeakPuntaKw[monthIdx] = pvOnlyImportKwh;
+        }
+        if (gridImportKwh > attrPvBessPeakAllKw[monthIdx]) {
+          attrPvBessPeakAllKw[monthIdx] = gridImportKwh;
+        }
+        if (bucket === 'punta' && gridImportKwh > attrPvBessPeakPuntaKw[monthIdx]) {
+          attrPvBessPeakPuntaKw[monthIdx] = gridImportKwh;
+        }
 
         // Record this hour (we'll keep all 8760 in memory; ~35KB total)
         hours.push({
@@ -1023,12 +1402,46 @@ function calcHourlySimulation(opts) {
       monthlyImportKwh:   monthlyImportKwh,    // per-bucket per-month
       fullBill:           fullBill,            // null when tariffRatesByMonth omitted
     },
+    // Chunk 5 Session 2: 3-scenario attribution (single-pass).
+    // Writer (Session 3) computes BESS-attributable savings as
+    //   bessSavings = pvOnly - pvBess     (per tier, per month)
+    //   pvSavings   = baseline - pvOnly
+    attribution: {
+      baseline: {
+        totalCostMxn:        attrBaselineCostMxn,
+        costByBucket:        attrBaselineByBucket,
+        monthlyPeakPuntaKw:  attrBaselinePeakPuntaKw,
+        monthlyPeakAllKw:    attrBaselinePeakAllKw,
+      },
+      pvOnly: {
+        totalCostMxn:        attrPvOnlyCostMxn,
+        costByBucket:        attrPvOnlyByBucket,
+        monthlyPeakPuntaKw:  attrPvOnlyPeakPuntaKw,
+        monthlyPeakAllKw:    attrPvOnlyPeakAllKw,
+      },
+      pvBess: {
+        totalCostMxn:        attrPvBessCostMxn,
+        costByBucket:        attrPvBessByBucket,
+        monthlyPeakPuntaKw:  attrPvBessPeakPuntaKw,
+        monthlyPeakAllKw:    attrPvBessPeakAllKw,
+      },
+    },
+    // Chunk 5 Session 2: planner's monthly schedules + ledgers, exposed
+    // so the writer can show per-month strategy decomposition.
+    bessSchedules: monthlySchedules,
     provenance: {
       loadShape:  'PIECEWISE_FLAT_FROM_BILLS',
-      pvShape:    monthlyPv ? 'PIECEWISE_FLAT_DAYLIGHT_PROXY' : 'NONE',
+      pvShape:    monthlyPv
+                    ? ((typeof _planSyntheticPvBellShape === 'function')
+                        ? 'SYNTHETIC_BELL_CURVE_DAYLIGHT'
+                        : 'PIECEWISE_FLAT_DAYLIGHT_PROXY')
+                    : 'NONE',
       windows:    (tariffClass === 'TOU_GDMTH')
                   ? 'GDMTH_HARDCODED_' + region + '_EFFECTIVE_' + GDMTH_WINDOWS_EFFECTIVE_DATE
                   : (tariffClass === 'FLAT_RATE' ? 'FLAT_RATE_NO_WINDOWS' : 'FALLBACK_FLAT'),
+      dispatcher: (typeof _planMonthlyBessSchedule === 'function')
+                    ? 'SCHEDULE_AWARE_LEVEL2_CHUNK5'
+                    : 'LEGACY_GREEDY',
     },
   };
 }
