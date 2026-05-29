@@ -629,6 +629,7 @@ function onOpen() {
     .addItem('Generate Installation',     'runInstallCostStandalone')
     .addItem('Generate Project Card',     'runWriteProjectCardV2')
     .addItem('Generate RFQs',             'runWriteAllRfqsV2')
+    .addItem('Generate BaaS Projection',  'runBaasProjectionMenu')
     .addSeparator()
     .addSubMenu(ui.createMenu('Exports')
       .addItem('Export MDC',                         'exportMDC')
@@ -1596,5 +1597,42 @@ function runWriteProjectCardV2() {
   } catch (e) {
     try { _setArgiaProgress(TOTAL, TOTAL, '\u274C Error'); } catch(_) {}
     ui.alert('Project Card v2 Error', e.message, ui.ButtonSet.OK);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// runBaasProjectionMenu() -- Chunk 6 menu handler. Standalone (Option A):
+// generates BAAS_PROJECTION_v2 from BESS materials + BESS install CAPEX and
+// the BESS-attributable savings. Touches nothing in the PPA / FINANCE path.
+// Requires a prior engine run (needs BOM_v2 + INSTALLATION_v2 + CFE_OUTPUT_v2
+// populated).
+// ---------------------------------------------------------------------------
+function runBaasProjectionMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var ret = runBaasProjection(ss);
+
+    var msg = 'BAAS_PROJECTION_v2 generated.\n\n'
+      + 'BaaS CAPEX (materiales + instalacion BESS): $'
+      + _baasFmt(ret.capex.totalMxn) + ' MXN\n'
+      + '  - materiales (BOM_v2): $' + _baasFmt(ret.capex.materialsMxn) + '\n'
+      + '  - instalacion (INSTALLATION_v2): $' + _baasFmt(ret.capex.installMxn) + '\n\n'
+      + 'Mensualidad Ano 1: $' + _baasFmt(ret.result.headline.mensualidadAno1) + ' MXN\n'
+      + 'Ahorro neto Ano 1: $' + _baasFmt(ret.result.headline.ahorroAno1Mxn)
+      + ' (' + _baasPct(ret.result.headline.ahorroAno1Pct) + ')\n'
+      + 'TIR ARGIA: ' + (ret.result.argiaIrr != null ? _baasPct(ret.result.argiaIrr) : 'n/d');
+
+    if (ret.warnings && ret.warnings.length) {
+      msg += '\n\nAvisos:\n- ' + ret.warnings.join('\n- ');
+    }
+    if (!ret.ok) {
+      msg += '\n\n\u26A0 Datos incompletos: ejecute primero "Generate MDC and BOM" '
+           + 'y "Update CFE Output" para poblar BOM/INSTALLATION/CFE.';
+    }
+    ui.alert('BaaS Projection', msg, ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('BaaS Projection Error', e.message + '\n\n' + (e.stack || ''), ui.ButtonSet.OK);
   }
 }
