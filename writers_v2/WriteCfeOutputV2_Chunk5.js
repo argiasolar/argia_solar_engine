@@ -324,3 +324,101 @@ function _cfeOutV2_renderResilienceBlock(sh, startRow, resilience) {
 
   return r - 1;
 }
+
+
+// ===========================================================================
+// CHUNK 7 Scenario 4B -- EXISTING-PV EXPORT CAPTURE value block.
+// ---------------------------------------------------------------------------
+// Renders the export-capture value as its OWN, clearly-separated block, NET
+// of what the export was already worth under the interconnection regime (the
+// honest value). NEVER blended into CFE bill savings.
+//
+// Three states:
+//   (a) export data present + capture adds value -> show net value + regime
+//   (b) export data present + adds NO value (e.g. net-metering, already ~1:1
+//       credited) -> show $0 + "rests on peak-shaving" note
+//   (c) export data ABSENT -> "DATOS INSUFICIENTES" + what data is needed
+//
+// @param {Object} sh        CFE_OUTPUT_v2 sheet
+// @param {number} startRow
+// @param {Object} ex        hourlySim.existingPvExport
+// @return {number} last row written
+// ---------------------------------------------------------------------------
+function _cfeOutV2_renderCaptureBlock(sh, startRow, ex) {
+  if (!ex) return startRow - 1;
+
+  // Only render for existing-PV (4B) projects -- i.e. when export data was
+  // either supplied (capture modeled) or the scenario flagged it relevant.
+  // If there's nothing 4B about this project, render nothing (keeps non-4B
+  // sheets byte-identical).
+  var hasCapture = !!ex.captureNetValue;
+  var exportDeclared = Number(ex.exportKwh) > 0 || ex.available === true;
+  if (!hasCapture && !exportDeclared) {
+    return startRow - 1;
+  }
+
+  var r = startRow;
+
+  // Header -- distinct color, explicitly separated from CFE savings.
+  sh.getRange(r, 2, 1, 14).breakApart().merge()
+    .setValue('CAPTURA DE EXCEDENTE SOLAR EXISTENTE (separado del ahorro CFE)')
+    .setBackground('#E8F0FE').setFontWeight('bold').setFontSize(11)
+    .setFontColor('#1A4480');
+  r++;
+
+  if (hasCapture) {
+    var cv = ex.captureNetValue;
+
+    // Captured kWh + regime line.
+    sh.getRange(r, 2, 1, 8).breakApart().merge()
+      .setValue('Excedente capturado (kWh/año) — esquema: ' + (cv.regimeLabel || ''))
+      .setFontSize(10);
+    sh.getRange(r, 10, 1, 6).breakApart().merge()
+      .setValue(_cfeOutV2_fmtChunk5(cv.capturedKwh) + ' kWh')
+      .setFontSize(10).setFontWeight('bold').setHorizontalAlignment('right');
+    r++;
+
+    // Gross vs prior-worth transparency line.
+    sh.getRange(r, 2, 1, 8).breakApart().merge()
+      .setValue('Valor bruto desplazado − valor que ya tenía como exportación')
+      .setFontSize(9).setFontStyle('italic');
+    sh.getRange(r, 10, 1, 6).breakApart().merge()
+      .setValue('$' + _cfeOutV2_fmtChunk5(cv.grossValueMxn)
+                + ' − $' + _cfeOutV2_fmtChunk5(cv.priorExportWorthMxn))
+      .setFontSize(9).setFontStyle('italic').setHorizontalAlignment('right');
+    r++;
+
+    // Net value (the headline of this block).
+    var netLabel = 'Valor NETO de captura, MXN/año';
+    var netText = cv.addsValue
+      ? '$' + _cfeOutV2_fmtChunk5(cv.netValueMxn)
+      : '$0 (no agrega valor bajo este esquema)';
+    sh.getRange(r, 2, 1, 8).breakApart().merge().setValue(netLabel)
+      .setFontSize(10).setFontWeight('bold');
+    sh.getRange(r, 10, 1, 6).breakApart().merge().setValue(netText)
+      .setFontSize(10).setFontWeight('bold').setHorizontalAlignment('right')
+      .setWrap(true);
+    r++;
+
+    // Note (regime explanation / peak-shaving fallback).
+    sh.getRange(r, 2, 1, 14).breakApart().merge()
+      .setValue(cv.note + ' Este valor NO es ahorro en el recibo CFE; se '
+                + 'muestra por separado.')
+      .setFontStyle('italic').setFontSize(9).setWrap(true)
+      .setFontColor('#1A4480');
+    r++;
+  } else {
+    // Export declared/relevant but NO capture value computed -> data gate.
+    sh.getRange(r, 2, 1, 14).breakApart().merge()
+      .setValue('Captura de excedente: DATOS INSUFICIENTES. El recibo CFE '
+                + '(importación neta) no revela la exportación horaria. Para '
+                + 'valuar la captura se requieren datos de exportación o '
+                + 'producción del PV existente (Nivel Propuesta). La economía '
+                + 'de peak-shaving se calcula normalmente del recibo.')
+      .setFontStyle('italic').setFontSize(9).setWrap(true)
+      .setFontColor('#1A4480');
+    r++;
+  }
+
+  return r - 1;
+}

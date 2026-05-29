@@ -1,3 +1,44 @@
+## [4.10.0] — 2026-05-29
+
+**Chunk 7 4B (writer): export-capture value display line.**
+
+> **PATCH/MINOR — additive, byte-identical for non-4B projects.** Renders
+> the 4B export-capture value on CFE_OUTPUT_v2. v4.9.0 computed it; this
+> surfaces it. Non-4B projects (no existing PV) render exactly as before
+> (the block is a no-op — proven).
+
+### Added
+- **`_cfeOutV2_renderCaptureBlock`** (WriteCfeOutputV2_Chunk5.js) — a
+  separated "CAPTURA DE EXCEDENTE SOLAR EXISTENTE" block, three states:
+    (a) capture adds value -> net value + regime + gross/prior transparency
+    (b) net-metering adds no value -> "$0 (no agrega valor)" + the battery
+        rests-on-peak-shaving note
+    (c) export data absent -> "DATOS INSUFICIENTES" + what data is needed
+  Wired into writeCfeOutputV2 after the resilience block.
+
+### Invariants (visible to the customer)
+- Never blend: header "separado del ahorro CFE"; value render carries
+  "NO es ahorro en el recibo CFE".
+- The regime label + the gross − prior-worth = net subtraction are shown,
+  so the honesty of the netting is transparent on the sheet.
+
+### Tests
+- **+6 tests, 15 assertions, all green** (CaptureBlockTests.gs): the three
+  states, the non-4B no-op (byte-identical), the never-blend invariant,
+  gross/prior/net transparency.
+- Byte-identical proof: a non-4B project (existingPvExport empty) renders
+  ZERO rows from the block.
+
+### Chunk 7 4B is now complete end-to-end
+inputs (D70 export gate) -> data-gated classify (4.8.0) -> capture channel
++ anti-double-count (4.8.0) -> regime-netting honest value (4.9.0) ->
+CFE_OUTPUT display line (this version).
+
+### Version
+Engine 4.9.0 -> 4.10.0.
+
+---
+
 ## [4.9.0] — 2026-05-29
 
 **Chunk 7 4B regime-netting: the honest export-capture value.**

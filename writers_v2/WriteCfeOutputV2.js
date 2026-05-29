@@ -157,6 +157,12 @@ function writeCfeOutputV2(ss, hourlySim) {
         && typeof _cfeOutV2_renderResilienceBlock === 'function') {
       _cfeOutV2_renderResilienceBlock(sh, (sh.getLastRow() + 2), hourlySim.resilience);
     }
+    // Chunk 7 Scenario 4B: existing-PV export-capture value block (separated
+    // from CFE savings, net of regime). No-op for non-4B projects.
+    if (hourlySim.existingPvExport
+        && typeof _cfeOutV2_renderCaptureBlock === 'function') {
+      _cfeOutV2_renderCaptureBlock(sh, (sh.getLastRow() + 2), hourlySim.existingPvExport);
+    }
   }
 
   SpreadsheetApp.flush && SpreadsheetApp.flush();
