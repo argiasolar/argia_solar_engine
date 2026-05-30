@@ -1,3 +1,201 @@
+## [4.12.0] — 2026-05-29
+
+**Formatting pass: INPUT_BAAS into INPUT_MAP (Group 1) + branded headers on two output sheets (Group 2).**
+
+> **MINOR.** Consistency fixes so these sheets match the rest of the workbook.
+
+### Group 1 — INPUT_BAAS → INPUT_MAP (full fix)
+v4.11.0 restyled INPUT_BAAS by hand (a near-miss). Now its 14 fields live in
+INPUT_MAP (_MAP_BAAS) and it renders through _setupOneTab -- the IDENTICAL
+path as INPUT_PROJECT / INPUT_INSTALL / INPUT_BESS: label B:C, value D, col-E
+format hints, dropdowns (FINANCIERO/PURO, YES/NO), percent formatting,
+dividers, section header at row 6.
+- Added _MAP_BAAS (14 fields, rows 8-21, col D) + SH.INPUT_BAAS constant.
+- setupInputBaasSheet(force) is now a thin _setupOneTab wrapper + disclaimer
+  appender. readInputBaas reads col D (was C) -- only the reader touches the
+  sheet, fully contained.
+- Verified: map merges clean (179 keys), section discovered, header at row 6,
+  reader reads col D correctly. CONFIRMED LIVE: matches the other input sheets.
+
+### Group 2 — branded output-sheet headers (BOM/MDC recipe)
+BESS_RECOMMENDATIONS and BAAS_PROJECTION_v2 lacked the logo/header band the
+other output sheets (BOM_v2, MDC_v2, CFE_OUTPUT_v2) have.
+
+**BAAS_PROJECTION_v2 — full fix.** Follows the BOM template recipe exactly:
+  - logo anchored (2,1), displaying across a widened col 2 (260px)
+  - title at row 2 (FONT_SIZE_TITLE 22, token font/color), subtitle row 3
+  - PROPOSAL disclaimer relocated to row 4 (tokenized callout colors); KPIs
+    shifted to row 6; projection table cascades down accordingly
+  - ALL hardcoded colors tokenized (table header -> BG_INPUT_CELL, range band
+    -> BG_SUBTOTAL, disclaimers -> BG_CALLOUT/STATUS_WARN, status ->
+    STATUS_FAIL/TEXT_PRIMARY, footnotes -> TEXT_MUTED). Zero hardcoded hex.
+
+**BESS_RECOMMENDATIONS — partial fix (deliberate).** This is a DENSE internal
+diagnostic table with ~36 rows of absolutely-positioned content starting at
+row 2; a full BOM-style banner would require shifting every row (high risk for
+an internal-only sheet). So: logo at (1,1) + token-styled title (FONT_SIZE_
+TITLE) on row 1; the dense body is intentionally left intact. The RECOMMENDED
+banner at row 2 and all downstream rows are untouched (verified no collision).
+A full template rebuild remains available as a future dedicated increment.
+
+### Verified
+- BAAS: logo (2,1), col2=260, title row 2, disclaimer row 4, KPIs row 6 --
+  layout holds, all colors tokenized.
+- BESS: logo (1,1), token title row 1, body/banner untouched.
+
+### How to apply
+- clasp push.
+- INPUT_BAAS: run setupInputBaasSheet(true) once (force rebuild). DONE/confirmed.
+- BESS_RECOMMENDATIONS + BAAS_PROJECTION_v2: regenerate via a normal engine run.
+
+### Version
+Engine 4.11.0 -> 4.12.0.
+
+---
+## [4.12.0] — 2026-05-29
+
+**Formatting pass: INPUT_BAAS into INPUT_MAP (Group 1) + branded headers on BESS_RECOMMENDATIONS & BAAS_PROJECTION_v2 (Group 2).**
+
+> **MINOR.** Two consistency fixes so these sheets match the rest of the
+> workbook. Group 1 makes INPUT_BAAS render through the SAME machinery as the
+> other input sheets. Group 2 adds the ARGIA logo + token-styled header to two
+> output sheets that were missing them.
+
+### Group 1 — INPUT_BAAS → INPUT_MAP
+v4.11.0 restyled INPUT_BAAS by hand (a near-miss: 2-column layout, no col-E
+hints/dropdowns). Now its 14 fields live in INPUT_MAP (_MAP_BAAS) and it
+renders through _setupOneTab -- the IDENTICAL path as INPUT_PROJECT /
+INPUT_INSTALL / INPUT_BESS: label B:C, value D, format hints, dropdowns,
+validation, dividers.
+- Added _MAP_BAAS (14 fields, rows 8-21, col D, section "01 PARÁMETROS DE
+  ARRENDAMIENTO"); types: percent (escalaciones/TIR/WACC/ISR), number
+  (plazo/años/MXN/FX), dropdown (FINANCIERO/PURO, YES/NO). Added to _mergeMaps.
+- Added SH.INPUT_BAAS constant (00_Main.js).
+- setupInputBaasSheet(force) is now a thin _setupOneTab wrapper + disclaimer
+  appender. readInputBaas reads col D (was C) -- only the reader touches the
+  sheet, so the blast radius is contained. INPUT_BAAS_ROWS shifted to 8-21.
+- Verified: map merges clean (179 keys), 14 fields registered, _setupOneTab
+  discovers the section + places header at row 6, reader reads col D correctly.
+
+### Group 2 — branded headers on the two output sheets
+BESS_RECOMMENDATIONS (19b) and BAAS_PROJECTION_v2 had no logo/header band,
+unlike CFE_OUTPUT_v2. Both now follow the CFE output-sheet recipe: load
+tokens, stamp _insertArgiaLogo(sh, 1, 1), title in col 3 (clears the logo),
+hidden gridlines.
+- BAAS_PROJECTION_v2: logo + token title at row 1 (was a bare 13px title).
+  Downstream rows unchanged.
+- BESS_RECOMMENDATIONS: logo + token title at row 1, generation timestamp
+  appended to the title (NOT a new row) so the RECOMMENDED banner at row 2 and
+  all downstream row math are untouched -- verified no collision.
+
+### Verified
+- Both writers: logo at (1,1), title at (1,3); BESS row 2 left clear for the
+  banner. Header changes don't shift any data rows.
+
+### How to apply
+- clasp push.
+- INPUT_BAAS: run setupInputBaasSheet(true) once to rebuild with the shared
+  renderer. (Signature is now (force) first-arg; bare no-arg engine call still
+  leaves an existing sheet untouched.)
+- BESS_RECOMMENDATIONS + BAAS_PROJECTION_v2: regenerate via a normal engine
+  run -- the logo/header appears automatically.
+
+### Version
+Engine 4.11.0 -> 4.12.0.
+
+---
+## [4.12.0] — 2026-05-29
+
+**INPUT_BAAS migrated into INPUT_MAP — now renders identically to every other input sheet.**
+
+> **MINOR.** v4.11.0 restyled INPUT_BAAS by hand (a near-miss: it kept a
+> 2-column layout and lacked the col-E hints, dropdowns, and per-row styling
+> the other sheets get). This migrates its 14 fields into INPUT_MAP so it
+> renders through the SAME _setupOneTab machinery as INPUT_PROJECT /
+> INPUT_INSTALL / INPUT_BESS -- label B:C, value D, format hints, dropdowns,
+> validation, dividers. No longer a near-miss; it IS the same renderer.
+
+### Added
+- _MAP_BAAS in 02c_InputMap.js: 14 fields (rows 8-21, col D), section
+  "01 PARÁMETROS DE ARRENDAMIENTO". Proper types: percent (escalaciones,
+  TIR, WACC, ISR), number (plazo, años, MXN/año, FX), dropdown (tipo
+  FINANCIERO/PURO, ¿beneficio fiscal? YES/NO). Added to the _mergeMaps list.
+- SH.INPUT_BAAS constant in 00_Main.js (was previously the literal string).
+
+### Changed
+- 30a_ReadInputsBaas.js:
+  - setupInputBaasSheet(force) is now a thin wrapper over _setupOneTab(
+    SH.INPUT_BAAS, 'INPUT BAAS', force) + a disclaimer-note appender. The
+    hand-rolled styling is gone.
+  - readInputBaas reads the VALUE column D (col 4) -- the house standard --
+    instead of C. (Only readInputBaas touches the sheet; downstream consumes
+    the returned object, so this is the full blast radius.)
+  - INPUT_BAAS_ROWS shifted to rows 8-21 (clears logo block + section header
+    at row 6), matching the map.
+
+### Verified
+- INPUT_MAP merges with no duplicate-key error (179 total keys).
+- All 14 BaaS fields registered on INPUT_BAAS col D, one section.
+- inputSectionsForTab('INPUT_BAAS') discovers the section; _setupOneTab
+  places the header at row 6 (minRow 8 - 2) and renders fields 8-21 via
+  _renderInputRow -- the identical path the other input sheets use.
+- Reader reads all values correctly from col D after a rebuild.
+
+### How to apply
+- clasp push, then run setupInputBaasSheet(true) (force) once to rebuild the
+  existing sheet with the shared renderer. (No-arg engine-run call still
+  leaves an existing sheet untouched.)
+- NOTE the new signature: setupInputBaasSheet(force) -- the force flag is the
+  FIRST arg now (it delegates to _setupOneTab). A bare setupInputBaasSheet()
+  during an engine run is unchanged (returns existing untouched).
+
+### Version
+Engine 4.11.0 -> 4.12.0.
+
+---
+## [4.11.0] — 2026-05-29
+
+**INPUT_BAAS restyle: match the shared input-sheet design system.**
+
+> **MINOR.** INPUT_BAAS was hand-styled (bare bold title, hardcoded colors)
+> and looked inconsistent with the other input tabs. Now routed through the
+> same design primitives: logo top-left (B2:C3), title shifted to D2,
+> section-header band, design tokens (warm page bg, Inter type, input-cell
+> backgrounds on the value column, shared callout colors).
+
+### Changed
+- 30a_ReadInputsBaas.js `setupInputBaasSheet(ss, force)`:
+  - Adopts the house contract (force flag + user-data guard), matching
+    _setupOneTab: no-arg returns an existing sheet untouched (engine-run
+    back-compat); (ss,true) force-rebuilds with the new styling; 1-arg
+    guarded call throws rather than clobbering user values.
+  - Uses _insertArgiaLogo + _writeTitleShifted + primSectionHeader + design
+    tokens instead of the old inline styling.
+  - The reader (readInputBaas) and the row layout are UNCHANGED -- values
+    still live in col C on the same rows; verified the reader reads correctly
+    after a restyled rebuild.
+
+### Tests
+- Styling rebuild verified via mock: logo at B2, title shifted, section
+  header rendered, all 14 rows (label B / value C) with input-cell
+  backgrounds, no-arg back-compat preserved, reader integrity intact
+  post-rebuild.
+
+### Note
+Applying the look to an EXISTING INPUT_BAAS requires a forced rebuild
+(setupInputBaasSheet(ss, true)) -- see PLACEMENT_GUIDE. The no-arg engine
+path intentionally leaves existing sheets untouched.
+
+### Next
+- BESS_RECOMMENDATIONS + BAAS_PROJECTION_v2 (output sheets) to match the
+  v2 output-sheet header/logo pattern.
+- Optional: native seasonal Con/Sin BESS chart (image-6 style) fed by engine
+  data. Images 4 & 5 are proposal-deck assets, not engine-renderable.
+
+### Version
+Engine 4.10.1 -> 4.11.0.
+
+---
 ## [4.10.0] — 2026-05-29
 
 ## [4.10.1] — 2026-05-29

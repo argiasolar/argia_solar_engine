@@ -18,23 +18,27 @@
 
 // ---------------------------------------------------------------------------
 // Cell map for INPUT_BAAS (label in col B, value in col C).
+// Rows start at 8 (not 4) so the logo/title block (rows 1-4) and the section
+// header (row 6) have the same breathing room as every other input sheet.
+// The reader reads col C on these rows; setup writes labels/values here.
 // ---------------------------------------------------------------------------
 var INPUT_BAAS_ROWS = {
-  HEADER:               2,
-  LEASE_TERM:           4,   // years
-  LEASE_TYPE:           5,   // FINANCIERO | PURO
-  PAYMENT_ESC_FIXED:    6,   // financiero fixed escalation (e.g. 0.04)
-  INPC_ESC:             7,   // puro INPC escalation (e.g. 0.05)
-  BILL_ESC:             8,   // CFE bill escalation (e.g. 0.07)
-  SAVINGS_ESC:          9,   // bill-savings escalation (e.g. 0.04)
-  TARGET_IRR:           10,  // ARGIA target IRR (per deal)
-  DISCOUNT_RATE:        11,  // ARGIA WACC (per deal)
-  OM_COST_YEAR:         12,  // O&M MXN/year (often bundled = 0)
-  REPL_RESERVE_YEAR:    13,  // battery replacement reserve MXN/year
-  TAX_BENEFIT_RATE:     14,  // ISR rate for solar CAPEX deduction (e.g. 0.30)
-  TAX_AMORT_YEARS:      15,  // years to amortize the benefit (e.g. 10)
-  CUSTOMER_CAN_USE_TAX: 16,  // YES | NO -- customer has taxable profit to use it
-  FX_RATE:              17   // MXN/USD assumption (e.g. 18.20)
+  HEADER:               2,   // title block (logo B2:C3, title D2)
+  SECTION_1:            6,   // section header row
+  LEASE_TERM:           8,   // years
+  LEASE_TYPE:           9,   // FINANCIERO | PURO
+  PAYMENT_ESC_FIXED:    10,  // financiero fixed escalation (e.g. 0.04)
+  INPC_ESC:             11,  // puro INPC escalation (e.g. 0.05)
+  BILL_ESC:             12,  // CFE bill escalation (e.g. 0.07)
+  SAVINGS_ESC:          13,  // bill-savings escalation (e.g. 0.04)
+  TARGET_IRR:           14,  // ARGIA target IRR (per deal)
+  DISCOUNT_RATE:        15,  // ARGIA WACC (per deal)
+  OM_COST_YEAR:         16,  // O&M MXN/year (often bundled = 0)
+  REPL_RESERVE_YEAR:    17,  // battery replacement reserve MXN/year
+  TAX_BENEFIT_RATE:     18,  // ISR rate for solar CAPEX deduction (e.g. 0.30)
+  TAX_AMORT_YEARS:      19,  // years to amortize the benefit (e.g. 10)
+  CUSTOMER_CAN_USE_TAX: 20,  // YES | NO -- customer has taxable profit to use it
+  FX_RATE:              21   // MXN/USD assumption (e.g. 18.20)
 };
 
 // ---------------------------------------------------------------------------
@@ -45,20 +49,24 @@ function readInputBaas(ss) {
   ss = ss || SpreadsheetApp.getActive();
   var sh = ss.getSheetByName('INPUT_BAAS');
   var R = INPUT_BAAS_ROWS;
+  // Value column is D (col 4) -- the house standard now that INPUT_BAAS is
+  // rendered by _setupOneTab via INPUT_MAP (label B:C, value D, hint E).
+  var VALUE_COL = 4;
 
   function readNum(row, dflt) {
     if (!sh) return dflt;
-    var v = Number(sh.getRange(row, 3).getValue());
-    return isFinite(v) && v !== 0 ? v : (sh.getRange(row, 3).getValue() === 0 ? 0 : dflt);
+    var v = Number(sh.getRange(row, VALUE_COL).getValue());
+    return isFinite(v) && v !== 0 ? v
+      : (sh.getRange(row, VALUE_COL).getValue() === 0 ? 0 : dflt);
   }
   function readStr(row, dflt) {
     if (!sh) return dflt;
-    var v = String(sh.getRange(row, 3).getValue() || '').trim();
+    var v = String(sh.getRange(row, VALUE_COL).getValue() || '').trim();
     return v || dflt;
   }
   function readYesNo(row, dflt) {
     if (!sh) return dflt;
-    var v = String(sh.getRange(row, 3).getValue() || '').trim().toUpperCase();
+    var v = String(sh.getRange(row, VALUE_COL).getValue() || '').trim().toUpperCase();
     if (v === 'YES' || v === 'SI' || v === 'SÍ') return true;
     if (v === 'NO') return false;
     return dflt;
@@ -86,52 +94,40 @@ function readInputBaas(ss) {
 
 
 // ---------------------------------------------------------------------------
-// setupInputBaasSheet(ss) -- create the INPUT_BAAS sheet with labels +
-// default values if it doesn't exist. Idempotent: only writes labels +
-// defaults on first creation; never overwrites a designer's values.
+// setupInputBaasSheet(force) -- create/rebuild INPUT_BAAS via the shared
+// _setupOneTab renderer (same machinery as INPUT_PROJECT / INPUT_INSTALL /
+// INPUT_BESS). INPUT_BAAS's fields live in INPUT_MAP (_MAP_BAAS), so this
+// gets the logo, section header, col-D values, format hints, dropdowns, and
+// validation for free -- identical look to every other input sheet.
+//
+// Signature mirrors the other setup entrypoints: force=true overwrites an
+// existing sheet that has user data; otherwise _setupOneTab guards it.
+// Back-compat: a no-arg call during an engine run returns an existing sheet
+// untouched (never clobbers values mid-run).
 // ---------------------------------------------------------------------------
-function setupInputBaasSheet(ss) {
-  ss = ss || SpreadsheetApp.getActive();
-  var existing = ss.getSheetByName('INPUT_BAAS');
-  if (existing) return existing;   // never clobber designer inputs
-
-  var sh = ss.insertSheet('INPUT_BAAS');
-  var R = INPUT_BAAS_ROWS;
-
-  sh.getRange(R.HEADER, 2).setValue('INPUT_BAAS — Economía de Arrendamiento (BaaS)')
-    .setFontWeight('bold').setFontSize(12);
-
-  var rows = [
-    [R.LEASE_TERM,           'Plazo del arrendamiento (años)',            15],
-    [R.LEASE_TYPE,           'Tipo (FINANCIERO / PURO)',                  'FINANCIERO'],
-    [R.PAYMENT_ESC_FIXED,    'Escalación pago fijo (financiero)',         0.04],
-    [R.INPC_ESC,             'Escalación INPC (puro)',                    0.05],
-    [R.BILL_ESC,             'Escalación recibo CFE',                     0.07],
-    [R.SAVINGS_ESC,          'Escalación del ahorro (BESS+PV)',           0.04],
-    [R.TARGET_IRR,           'TIR objetivo ARGIA (por trato)',            0.15],
-    [R.DISCOUNT_RATE,        'Tasa de descuento / WACC ARGIA (por trato)',0.12],
-    [R.OM_COST_YEAR,         'Gastos de operación (MXN/año)',             0],
-    [R.REPL_RESERVE_YEAR,    'Reserva de reemplazo batería (MXN/año)',    0],
-    [R.TAX_BENEFIT_RATE,     'Tasa beneficio fiscal solar (ISR)',         0.30],
-    [R.TAX_AMORT_YEARS,      'Años amortización beneficio fiscal',        10],
-    [R.CUSTOMER_CAN_USE_TAX, '¿Cliente puede usar beneficio fiscal? (YES/NO)', 'NO'],
-    [R.FX_RATE,              'Tipo de cambio (MXN/USD)',                  18.20]
-  ];
-  for (var i = 0; i < rows.length; i++) {
-    sh.getRange(rows[i][0], 2).setValue(rows[i][1]);
-    sh.getRange(rows[i][0], 3).setValue(rows[i][2]);
+function setupInputBaasSheet(force) {
+  var ss = SpreadsheetApp.getActive();
+  // No-arg engine-run back-compat: leave an existing sheet untouched.
+  if (arguments.length < 1) {
+    var pre = ss.getSheetByName('INPUT_BAAS');
+    if (pre) return pre;
   }
+  var sh = _setupOneTab(SH.INPUT_BAAS, 'INPUT BAAS', force === true);
+  _baasAppendDisclaimer(sh);
+  return sh;
+}
 
-  // Disclaimer note about the tax benefit (its own row below the inputs).
-  sh.getRange(R.FX_RATE + 2, 2, 1, 6).merge()
+// Disclaimer note about the tax benefit, appended below the inputs. Rendered
+// after _setupOneTab so it survives the rebuild. Uses shared callout tokens.
+function _baasAppendDisclaimer(sh) {
+  if (!sh) return;
+  var noteRow = INPUT_BAAS_ROWS.FX_RATE + 2;   // two rows below the last field
+  sh.getRange(noteRow, 2, 1, 6).breakApart().merge()
     .setValue('NOTA: El beneficio fiscal solo aplica al arrendamiento FINANCIERO '
             + 'y únicamente si el cliente tiene utilidad fiscal suficiente para '
             + 'aprovechar la deducción del CAPEX solar. Confirme con el asesor '
             + 'fiscal del cliente. Si no es aprovechable, ponga "NO" arriba.')
-    .setFontStyle('italic').setFontSize(9).setWrap(true)
-    .setBackground('#FFF3E0').setFontColor('#995700');
-
-  sh.setColumnWidth(2, 320);
-  sh.setColumnWidth(3, 140);
-  return sh;
+    .setFontFamily(token('FONT_FAMILY'))
+    .setFontStyle('italic').setFontSize(tokenNum('FONT_SIZE_SMALL')).setWrap(true)
+    .setBackground(token('BG_CALLOUT')).setFontColor(token('STATUS_WARN'));
 }

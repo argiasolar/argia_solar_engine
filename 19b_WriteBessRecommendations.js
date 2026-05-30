@@ -84,11 +84,34 @@ function writeBessRecommendations(ss, result, opts) {
   sh.clear();
   sh.clearConditionalFormatRules();
 
-  // -- Header strip --------------------------------------------------------
+  // Shared design system: load tokens + stamp the ARGIA logo top-left so this
+  // output sheet matches CFE_OUTPUT_v2 / the input sheets. Logo at (row 1,
+  // col 1); the header text shifts to col 3 so it clears the logo image.
+  if (typeof resetDesignTokenCache_ === 'function') resetDesignTokenCache_();
+  if (typeof loadDesignTokens === 'function') loadDesignTokens(ss);
+  try { sh.setHiddenGridlines(true); } catch (e) { /* mock */ }
+  try {
+    if (typeof _insertArgiaLogo === 'function') _insertArgiaLogo(sh, 1, 1);
+  } catch (logoErr) { /* header text alone is fine if logo can't load */ }
+
+  // -- Header strip (title shifted to col 3, leaving cols 1-2 for the logo) -
+  // The "RECOMMENDED:" banner lives at row 2, so the branded title stays on
+  // row 1 only -- the generation timestamp is appended to the title rather
+  // than taking its own row, so no downstream row math shifts.
   var tsLocal = Utilities.formatDate(new Date(),
                   Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
-  sh.getRange(1, 1).setValue('BESS Recommendations -- generated ' + tsLocal)
-    .setFontWeight('bold').setFontSize(12);
+  var brHdr = sh.getRange(1, 3, 1, 10).breakApart().merge()
+    .setValue('BESS RECOMMENDATIONS   ·   generado ' + tsLocal)
+    .setVerticalAlignment('middle').setHorizontalAlignment('left');
+  if (typeof token === 'function') {
+    brHdr.setFontFamily(token('FONT_FAMILY'))
+      .setFontSize(tokenNum('FONT_SIZE_TITLE'))
+      .setFontWeight(token('FONT_WEIGHT_EMPHASIS'))
+      .setFontColor(token('TEXT_PRIMARY'));
+  } else {
+    brHdr.setFontWeight('bold').setFontSize(16);
+  }
+  sh.setRowHeight(1, tokenNum ? tokenNum('ROW_H_TITLE') : 42);
 
   // -- Blocked path: write the reason and stop -----------------------------
   if (result.blocked) {

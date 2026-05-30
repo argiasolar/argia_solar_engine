@@ -36,6 +36,7 @@ var SH = {
   INPUT_INSTALL  : 'INPUT_INSTALL',
   INPUT_CFE      : 'INPUT_CFE',
   INPUT_BESS     : 'INPUT_BESS',
+  INPUT_BAAS     : 'INPUT_BAAS',
   // Simulation worksheets
   CFE_SIM        : 'CFE_SIMULATION',
   BESS_SIM       : 'BESS_SIMULATION',

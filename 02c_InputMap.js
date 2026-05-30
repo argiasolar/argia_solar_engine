@@ -1624,11 +1624,136 @@ var _MAP_BESS = {
 };
 
 // ---------------------------------------------------------------------------
+// INPUT_BAAS — Economía de Arrendamiento (BaaS). Migrated into INPUT_MAP so it
+// renders through _setupOneTab with the same look as every other input sheet
+// (logo, section header, col-D values, format hints, dropdowns, validation).
+// Value column is D (col:4), matching the house standard. Rows start at 8 to
+// clear the logo/title block (rows 1-4) + the section header (row 6).
+// readInputBaas() reads these same rows at col D.
+// ---------------------------------------------------------------------------
+var _MAP_BAAS = {
+  baasLeaseTermYears: {
+    sheet: SH.INPUT_BAAS, row: 8, col: 4,
+    label: 'Plazo del arrendamiento (años)', type: 'number',
+    default: 15, required: false, unit: 'años',
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'Lease term used by the BaaS projection.'
+  },
+  baasLeaseType: {
+    sheet: SH.INPUT_BAAS, row: 9, col: 4,
+    label: 'Tipo de arrendamiento', type: 'dropdown',
+    dropdown: ['FINANCIERO', 'PURO'],
+    default: 'FINANCIERO', required: false,
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'FINANCIERO permite beneficio fiscal; PURO no.'
+  },
+  baasPaymentEscFixed: {
+    sheet: SH.INPUT_BAAS, row: 10, col: 4,
+    label: 'Escalación pago fijo (financiero)', type: 'percent',
+    default: 0.04, required: false,
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: '0.04 = 4%. Escalación anual del pago en arrendamiento financiero.'
+  },
+  baasInpcEsc: {
+    sheet: SH.INPUT_BAAS, row: 11, col: 4,
+    label: 'Escalación INPC (puro)', type: 'percent',
+    default: 0.05, required: false,
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: '0.05 = 5%. Escalación por inflación en arrendamiento puro.'
+  },
+  baasBillEsc: {
+    sheet: SH.INPUT_BAAS, row: 12, col: 4,
+    label: 'Escalación recibo CFE', type: 'percent',
+    default: 0.07, required: false,
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: '0.07 = 7%. Escalación anual esperada del recibo CFE.'
+  },
+  baasSavingsEsc: {
+    sheet: SH.INPUT_BAAS, row: 13, col: 4,
+    label: 'Escalación del ahorro (BESS+PV)', type: 'percent',
+    default: 0.04, required: false,
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: '0.04 = 4%. Escalación del ahorro generado por BESS+PV.'
+  },
+  baasTargetIrr: {
+    sheet: SH.INPUT_BAAS, row: 14, col: 4,
+    label: 'TIR objetivo ARGIA (por trato)', type: 'percent',
+    default: 0.15, required: false,
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: '0.15 = 15%. TIR objetivo de ARGIA para el trato.'
+  },
+  baasDiscountRate: {
+    sheet: SH.INPUT_BAAS, row: 15, col: 4,
+    label: 'Tasa de descuento / WACC ARGIA', type: 'percent',
+    default: 0.12, required: false,
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: '0.12 = 12%. Tasa de descuento (WACC) de ARGIA.'
+  },
+  baasOmCostYear: {
+    sheet: SH.INPUT_BAAS, row: 16, col: 4,
+    label: 'Gastos de operación (MXN/año)', type: 'number',
+    default: 0, required: false, unit: 'MXN/año',
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'O&M anual. Frecuentemente 0 si está incluido en el paquete.'
+  },
+  baasReplReserveYear: {
+    sheet: SH.INPUT_BAAS, row: 17, col: 4,
+    label: 'Reserva de reemplazo batería (MXN/año)', type: 'number',
+    default: 0, required: false, unit: 'MXN/año',
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'Reserva anual para reemplazo de batería.'
+  },
+  baasTaxBenefitRate: {
+    sheet: SH.INPUT_BAAS, row: 18, col: 4,
+    label: 'Tasa beneficio fiscal solar (ISR)', type: 'percent',
+    default: 0.30, required: false,
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: '0.30 = 30%. Tasa ISR para deducción del CAPEX solar.'
+  },
+  baasTaxAmortYears: {
+    sheet: SH.INPUT_BAAS, row: 19, col: 4,
+    label: 'Años amortización beneficio fiscal', type: 'number',
+    default: 10, required: false, unit: 'años',
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'Años para amortizar el beneficio fiscal.'
+  },
+  baasCustomerCanUseTax: {
+    sheet: SH.INPUT_BAAS, row: 20, col: 4,
+    label: '¿Cliente puede usar beneficio fiscal?', type: 'dropdown',
+    dropdown: ['YES', 'NO'],
+    default: 'NO', required: false,
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'YES solo si el cliente tiene utilidad fiscal suficiente.'
+  },
+  baasFxRate: {
+    sheet: SH.INPUT_BAAS, row: 21, col: 4,
+    label: 'Tipo de cambio (MXN/USD)', type: 'number',
+    default: 18.20, required: false, unit: 'MXN/USD',
+    section: '01 PARÁMETROS DE ARRENDAMIENTO',
+    consumedBy: ['engine'],
+    notes: 'Supuesto de tipo de cambio MXN/USD.'
+  }
+};
+
+// ---------------------------------------------------------------------------
 // COMBINE — the single map. Writers and readers only touch INPUT_MAP.
 // ---------------------------------------------------------------------------
 var INPUT_MAP = {};
 (function _mergeMaps() {
-  var parts = [_MAP_PROJECT, _MAP_DESIGN, _MAP_INSTALL, _MAP_INSTALL_BESS, _MAP_BESS];
+  var parts = [_MAP_PROJECT, _MAP_DESIGN, _MAP_INSTALL, _MAP_INSTALL_BESS, _MAP_BESS, _MAP_BAAS];
   for (var p = 0; p < parts.length; p++) {
     var src = parts[p];
     for (var k in src) {

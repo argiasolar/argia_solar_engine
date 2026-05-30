@@ -30,28 +30,59 @@ function writeBaasProjectionV2(ss, baasResult, opts) {
   if (!sh) sh = ss.insertSheet('BAAS_PROJECTION_v2');
   else sh.clear();
 
+  // Shared design system, matching BOM_v2 / MDC_v2 / CFE_OUTPUT_v2:
+  //   - hidden gridlines
+  //   - logo anchored at (2,1); it displays across the wide col 2
+  //   - title (22px token) at row 2 col 3; subtitle (small, secondary) row 3
+  // Tokens drive every color/font so this sheet matches the others exactly.
+  if (typeof resetDesignTokenCache_ === 'function') resetDesignTokenCache_();
+  if (typeof loadDesignTokens === 'function') loadDesignTokens(ss);
+  try { sh.setHiddenGridlines(true); } catch (e) { /* mock */ }
+
+  // Column widths FIRST (before the logo) so the logo displays at full size
+  // across the wide col 2 -- same ordering as the BOM/MDC templates.
+  sh.setColumnWidth(1, 50);
+  sh.setColumnWidth(2, 260);   // wide: the logo (anchored col 1) displays here
+  for (var cw = 3; cw <= 11; cw++) sh.setColumnWidth(cw, 105);
+
   var fmt = _baasFmt;
   var pct = _baasPct;
 
-  // -- Row 1: title -------------------------------------------------------
-  sh.getRange(1, 1, 1, 12).merge()
-    .setValue('PROYECCIÓN DE AHORRO — ARRENDAMIENTO ' + baasResult.leaseType)
-    .setFontWeight('bold').setFontSize(13).setVerticalAlignment('middle');
-  sh.setRowHeight(1, 32);
+  try {
+    if (typeof _insertArgiaLogo === 'function') _insertArgiaLogo(sh, 2, 1);
+  } catch (logoErr) { /* title alone is fine */ }
 
-  // -- Row 2: PROPOSAL disclaimer (inherited; structural invariant) -------
-  sh.getRange(2, 1, 1, 12).merge()
+  // -- Banner: title (row 2) + subtitle (row 3), shifted to col 3 ---------
+  sh.getRange(2, 3, 1, 8).breakApart().merge()
+    .setValue('PROYECCIÓN DE AHORRO — ARRENDAMIENTO ' + baasResult.leaseType)
+    .setFontFamily(token('FONT_FAMILY'))
+    .setFontSize(tokenNum('FONT_SIZE_TITLE'))
+    .setFontWeight(token('FONT_WEIGHT_EMPHASIS'))
+    .setFontColor(token('TEXT_PRIMARY'))
+    .setVerticalAlignment('bottom').setHorizontalAlignment('left');
+  sh.setRowHeight(2, tokenNum('ROW_H_TITLE'));
+  sh.getRange(3, 3, 1, 8).breakApart().merge()
+    .setValue('Proyección a ' + baasResult.headline.plazoAnios
+            + ' años · cifras en MXN antes de IVA · v2')
+    .setFontFamily(token('FONT_FAMILY'))
+    .setFontSize(tokenNum('FONT_SIZE_SMALL'))
+    .setFontColor(token('TEXT_SECONDARY'))
+    .setHorizontalAlignment('left');
+
+  // -- Row 4: PROPOSAL disclaimer (inherited; structural invariant) -------
+  sh.getRange(4, 1, 1, 12).breakApart().merge()
     .setValue('ESTIMACIÓN DE PROPUESTA — ahorros no garantizados. '
             + 'Se requieren datos de intervalos de 15 minutos para validación '
             + 'bancable. Cifras en pesos mexicanos antes de IVA.')
-    .setBackground('#FFF3E0').setFontColor('#995700')
-    .setFontSize(9).setFontWeight('bold').setWrap(true)
+    .setFontFamily(token('FONT_FAMILY'))
+    .setBackground(token('BG_CALLOUT')).setFontColor(token('STATUS_WARN'))
+    .setFontSize(tokenNum('FONT_SIZE_SMALL')).setFontWeight('bold').setWrap(true)
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
-  sh.setRowHeight(2, 34);
+  sh.setRowHeight(4, 34);
 
-  // -- Rows 4-8: headline KPIs --------------------------------------------
+  // -- Headline KPIs (start row 6, below the disclaimer) ------------------
   var h = baasResult.headline;
-  var kpiRow = 4;
+  var kpiRow = 6;
   var kpis = [
     ['Plazo',                       h.plazoAnios + ' años'],
     ['Mensualidad Año 1',           '$' + fmt(h.mensualidadAno1)],
@@ -72,8 +103,8 @@ function writeBaasProjectionV2(ss, baasResult, opts) {
             + fmt(rng.minLeaseMensual) + ' (piso TIR) — máxima $'
             + fmt(rng.maxLeaseMensual) + ' (equilibrio cliente)'
             + (rng.valid ? '' : '  ⚠ SIN TRATO VIABLE: el piso de TIR excede el techo del cliente.'))
-    .setBackground('#ECEFF1').setFontSize(10)
-    .setFontColor(rng.valid ? '#37474F' : '#B00020').setWrap(true);
+    .setBackground(token('BG_SUBTOTAL')).setFontSize(10)
+    .setFontColor(rng.valid ? token('TEXT_PRIMARY') : token('STATUS_FAIL')).setWrap(true);
 
   // -- Projection table ---------------------------------------------------
   var tableTop = rngRow + 2;
@@ -83,7 +114,7 @@ function writeBaasProjectionV2(ss, baasResult, opts) {
                  'Ahorro\nacumulado', 'Acum %'];
   for (var c = 0; c < headers.length; c++) {
     sh.getRange(tableTop, c + 1).setValue(headers[c])
-      .setFontWeight('bold').setBackground('#E3F2FD').setWrap(true)
+      .setFontWeight('bold').setBackground(token('BG_INPUT_CELL')).setWrap(true)
       .setVerticalAlignment('middle').setHorizontalAlignment('center');
   }
   sh.setRowHeight(tableTop, 40);
@@ -124,14 +155,14 @@ function writeBaasProjectionV2(ss, baasResult, opts) {
               + baasResult.projection.filter(function (x) { return x.taxBenefit > 0; }).length
               + ' años. Confirme la aplicabilidad con el asesor fiscal del cliente; '
               + 'ARGIA no garantiza el aprovechamiento fiscal.')
-      .setBackground('#FFF3E0').setFontColor('#995700')
+      .setBackground(token('BG_CALLOUT')).setFontColor(token('STATUS_WARN'))
       .setFontStyle('italic').setFontSize(9).setWrap(true);
     sh.setRowHeight(afterTable, 44);
   } else {
     sh.getRange(afterTable, 1, 1, 12).merge()
       .setValue('Sin beneficio fiscal en esta proyección (arrendamiento PURO, '
               + 'o el cliente no puede aprovechar la deducción fiscal).')
-      .setFontStyle('italic').setFontSize(9).setFontColor('#777777').setWrap(true);
+      .setFontStyle('italic').setFontSize(9).setFontColor(token('TEXT_MUTED')).setWrap(true);
   }
 
   // -- FX assumption note -------------------------------------------------
@@ -140,11 +171,9 @@ function writeBaasProjectionV2(ss, baasResult, opts) {
     sh.getRange(fxRow, 1, 1, 12).merge()
       .setValue('Oferta considera un tipo de cambio de $' + fmt(opts.fxRate)
               + '. Cualquier variación de más del 5% resultará en un ajuste de tarifa.')
-      .setFontSize(8).setFontColor('#777777').setWrap(true);
+      .setFontSize(8).setFontColor(token('TEXT_MUTED')).setWrap(true);
   }
 
-  sh.setColumnWidth(1, 50);
-  for (var w = 2; w <= 11; w++) sh.setColumnWidth(w, 105);
 
   SpreadsheetApp.flush && SpreadsheetApp.flush();
   return { sheet: sh.getName(), rows: p.length };
