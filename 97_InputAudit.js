@@ -48,11 +48,25 @@
 // =============================================================================
 
 // ----- Default sheet lists (used when _AUDIT_CONFIG is absent) ---------------
-var AUDIT_INPUT_SHEETS  = ['INPUT_PROJECT', 'INPUT_DESIGN', 'INPUT_INSTALL', 'INPUT_CFE', 'INPUT_BESS'];
-var AUDIT_OUTPUT_SHEETS = ['BOM', 'INSTALLATION', 'FINANCE', 'MDC', 'PROJECT_CARD', 'CFE_OUTPUT',
+// NOTE: INPUT_BAAS added 2026-05-30 -- the BaaS module (live since 2026-05-29)
+// is a first-class input tab and MUST be audited. Without it the audit silently
+// drops all 14 lease-economics inputs.
+var AUDIT_INPUT_SHEETS  = ['INPUT_PROJECT', 'INPUT_DESIGN', 'INPUT_INSTALL', 'INPUT_CFE',
+                           'INPUT_BESS', 'INPUT_BAAS'];
+// Output tabs. The legacy v1 sheets (BOM, INSTALLATION, MDC, PROJECT_CARD,
+// CFE_OUTPUT) were removed when the codebase went v2-only (v3.7.5); they were
+// only generating "missing" noise, so they are dropped here. BAAS_PROJECTION_v2
+// added so the BaaS deliverable is covered.
+var AUDIT_OUTPUT_SHEETS = ['FINANCE',
                            'BOM_v2', 'INSTALLATION_v2', 'MDC_v2', 'PROJECT_CARD_v2', 'CFE_OUTPUT_v2',
+                           'BAAS_PROJECTION_v2',
                            'RFQ_PANELES_v2', 'RFQ_INVERSORES_v2', 'RFQ_ELECTRICO_v2',
                            'RFQ_ESTRUCTURA_v2', 'RFQ_BESS_v2', 'RFQ_MONITOREO_v2'];
+
+// When true, the audit auto-refreshes at the end of a successful engine run
+// (see _refreshInputAudit_ below, called from runArgiaEngine). Flip to false
+// to silence the auto-refresh (e.g. while profiling) without unwiring it.
+var AUDIT_AUTORUN = true;
 
 var AUDIT_OUTPUT_SHEET  = '_AUDIT_INPUTS';
 var AUDIT_CONFIG_SHEET  = '_AUDIT_CONFIG';
@@ -72,7 +86,10 @@ var AUDIT_DATA_START_ROW   = 6;
  * Entry point — runs the audit and writes results to _AUDIT_INPUTS.
  * Safe to invoke from the IDE Run button or a menu.
  */
-function auditInputs() {
+function auditInputs(opts) {
+  // opts.silent === true suppresses the completion alert (used by the
+  // auto-refresh hook so it doesn't stack a dialog on top of the engine's).
+  var silent = !!(opts && opts.silent);
   var ss = SpreadsheetApp.getActive();
   var startMs = Date.now();
 
@@ -158,10 +175,34 @@ function auditInputs() {
     'Config in the _AUDIT_CONFIG tab (toggle INCLUDE TRUE/FALSE to change scope).';
 
   Logger.log(summary);
+  if (!silent) {
+    try {
+      SpreadsheetApp.getUi().alert('Input Audit', summary, SpreadsheetApp.getUi().ButtonSet.OK);
+    } catch (e) {
+      // Running headless (no UI context) — the log above is enough.
+    }
+  }
+}
+
+/**
+ * Safe auto-refresh hook. Called at the end of a successful engine run so the
+ * _AUDIT_INPUTS tab never goes stale relative to the workbook. NEVER throws:
+ * an audit problem must not break the engine or hide its completion dialog.
+ * Toggle with the AUDIT_AUTORUN constant.
+ *
+ * @return {boolean} true if the audit ran, false if skipped/failed.
+ */
+function _refreshInputAudit_() {
+  if (!AUDIT_AUTORUN) return false;
   try {
-    SpreadsheetApp.getUi().alert('Input Audit', summary, SpreadsheetApp.getUi().ButtonSet.OK);
+    auditInputs({ silent: true });
+    return true;
   } catch (e) {
-    // Running headless (no UI context) — the log above is enough.
+    try {
+      var ss = SpreadsheetApp.getActive();
+      engineLog(ss, 'InputAudit', 'WARN', 'Auto-refresh failed (non-fatal): ' + e.message);
+    } catch (_) {}
+    return false;
   }
 }
 

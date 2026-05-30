@@ -625,13 +625,13 @@ function onOpen() {
     .addItem('Import Helioscope',         'importHelioscopePdf')
     .addItem('Verify Layout',             'verifyInputs')
     .addItem('Suggest BESS',              'onMenuSuggestBess')
-    .addItem('Update CFE Output',         'runUpdateCfeOutputV2')
     .addItem('Generate MDC and BOM',      'runArgiaEngine')
     .addItem('Generate Installation',     'runInstallCostStandalone')
     .addItem('Generate Project Card',     'runWriteProjectCardV2')
     .addItem('Generate RFQs',             'runWriteAllRfqsV2')
     .addItem('Generate BaaS Projection',  'runBaasProjectionMenu')
     .addSeparator()
+    .addItem('Update Input Audit',        'auditInputs')
     .addSubMenu(ui.createMenu('Exports')
       .addItem('Export MDC',                         'exportMDC')
       .addItem('Export BOM',                         'exportBOM')
@@ -650,34 +650,40 @@ function onOpen() {
       .addSeparator()
       .addItem('Export All (MDC+BOM+Install+PC)',    'exportAll'))
     .addSeparator()
-    .addSubMenu(ui.createMenu('Setup')
-      // ── Test runners ────────────────────────────────────────
-      .addItem('Run Unit Tests (fast)',                   'runUnitTests')
-      .addItem('Run Regression Tests',                    'runRegressionTests')
-      .addItem('Run Integration Tests (modifies workbook)', 'runIntegrationTests')
-      .addItem('Run ALL Tests',                           'runTests')
+    .addSubMenu(ui.createMenu('Administrator Panel')
+      // -- Test ------------------------------------------------
+      .addSubMenu(ui.createMenu('Test')
+        .addItem('Run Unit Tests (fast)',                     'runUnitTests')
+        .addItem('Run Integration Tests (modifies workbook)', 'runIntegrationTests')
+        .addItem('Run Regression Tests',                      'runRegressionTests')
+        .addItem('Run ALL Tests',                             'runTests'))
+      // -- Setup -----------------------------------------------
+      .addSubMenu(ui.createMenu('Setup')
+        .addItem('Setup Install Inputs',                'runSetupInstallInputs')
+        .addItem('Setup BESS Install \u00a76',          'setupInputBessInstallRows')
+        .addItem('Setup BESS Steady-state (BDF-11.1)',  'runSetupBessSimulationSteady')
+        .addItem('Setup INPUT_BESS Styling',            'setupInputBessStyling')
+        .addItem('Setup SOLAR Section (PV toggle)',     'runSetupInputProjectPvSection')
+        .addItem('Setup RESILIENCE Section (backup)',   'runSetupInputBessResilienceSection'))
       .addSeparator()
-      // ── One-shot template / inputs setup ────────────────────
-      .addItem('Setup Install Inputs',          'runSetupInstallInputs')
-      .addItem('Setup BESS Install \u00a76',    'setupInputBessInstallRows')
-      .addItem('Setup BESS Steady-state (BDF-11.1)', 'runSetupBessSimulationSteady')
-      .addItem('Setup INPUT_BESS Styling',      'setupInputBessStyling')
-      .addItem('Setup SOLAR Section (PV toggle)', 'runSetupInputProjectPvSection')
-      .addItem('Setup RESILIENCE Section (backup)', 'runSetupInputBessResilienceSection')
-      .addItem('Refresh BESS Strategy Dropdown', 'refreshBessStrategyDropdown')
+      // -- Repair ----------------------------------------------
+      .addItem('Repair CFE_SIM Totals',                 'runRepairCfeSimulationTotals')
+      .addItem('Repair CFE_SIM Capacidad (BDF-11)',     'runRepairCfeSimulationCapacidad')
+      .addItem('Repair: resilience collision',          'runRepairResilienceCollision')
       .addSeparator()
-      // ── Repairs for legacy / drifted workbooks ───────────────
-      .addItem('Repair CFE_SIM Totals',                  'runRepairCfeSimulationTotals')
-      .addItem('Repair CFE_SIM Capacidad (BDF-11)',      'runRepairCfeSimulationCapacidad')
-      .addItem('Repair: resilience collision',           'runRepairResilienceCollision')
+      // -- Refresh ---------------------------------------------
+      .addItem('Refresh BESS Strategy Dropdown',        'refreshBessStrategyDropdown')
+      .addItem('Refresh Logo Cache',                    'refreshArgiaLogoCache')
       .addSeparator()
-      // ── Workbook-level utilities ────────────────────────────
-      .addItem('Refresh Logo Cache',            'refreshArgiaLogoCache')
-      .addItem('Delete Legacy Tabs',            'runDeleteLegacyTabs')
+      // -- Delete ----------------------------------------------
+      .addItem('Delete Legacy Tabs',                    'runDeleteLegacyTabs')
       .addSeparator()
-      // ── Test-data fixtures ──────────────────────────────────
-      .addItem('Load CULLIGAN Fixture',         'runLoadCulliganFixture')
-      .addItem('Restore Inputs from Backup',    'runRestoreInputsFromBackup'))
+      // -- Load / fixtures -------------------------------------
+      .addItem('Load CULLIGAN Fixture',                 'runLoadCulliganFixture')
+      .addItem('Restore Inputs from Backup',            'runRestoreInputsFromBackup')
+      .addSeparator()
+      // -- Operational -----------------------------------------
+      .addItem('Update CFE Output',                     'runUpdateCfeOutputV2'))
     .addToUi();
 }
 
@@ -1121,6 +1127,10 @@ function runArgiaEngine() {
                  + sanityResult.warnings.join('\n  - ')
                  + '\n\nSee LOGS sheet for full detail.';
     }
+
+    // Keep the input/output audit in sync with this run so _AUDIT_INPUTS
+    // never drifts behind the workbook. Non-fatal: wrapped internally.
+    _refreshInputAudit_();
 
     ui.alert(
       'ARGIA ENGINE \u2014 Complete',
