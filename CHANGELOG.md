@@ -1,5 +1,53 @@
 ## [4.10.0] — 2026-05-29
 
+## [4.10.1] — 2026-05-29
+
+**Chunk 7 4B BUGFIX: capture regime enum mismatch (caught on live output).**
+
+> **PATCH.** The export-capture value ignored the interconnection regime and
+> always computed as net-metering ($0), regardless of the actual regime.
+> Found by flipping a live 4B project to SIN_EXPORTACIÓN: the main bill
+> responded but the capture block stayed at the net-metering $0. Now fixed
+> and verified across all three regimes.
+
+### Root cause
+`readBessInterconnectionFromInputCfe` returns ENGLISH enum strings
+(NET_METERING / NET_BILLING / ZERO_EXPORT), but `calcCaptureNetValue`
+(29_) only matched the SPANISH enum (MEDICION_NETA / FACTURACION_NETA /
+SIN_EXPORTACION) and used a catch-all `else` that defaulted to net-metering.
+So every regime fell through to the net-metering branch -> capture always
+$0. The original unit tests passed only because they fed the Spanish
+strings the module expected -- they didn't reflect what the engine passes.
+
+### Fixed
+- 29_CalcCaptureNetValue.js: normalize the regime, accepting BOTH the
+  English (engine) and Spanish (CFE_MODE) spellings. Replaced the catch-all
+  `else` with an explicit NET_METERING branch + an UNKNOWN branch that is
+  CONSERVATIVE (prior worth = discharge value -> nets to 0, never overstates).
+
+### Verified (live screenshot inputs: 200,000 kWh, gross $336,959)
+  NET_METERING : $0        (correct -- export already credited ~1:1)
+  NET_BILLING  : $176,959  (export was worth 0.80)
+  ZERO_EXPORT  : $336,959  (export was being wasted -> full value)
+
+### Tests
+- +3 regression tests (12 total / 32 assertions green):
+  - UNIT_CNV_ENGLISH_ENUM_FROM_ENGINE: the English enum produces correct,
+    non-defaulted results (the bug, locked).
+  - UNIT_CNV_SPANISH_ENGLISH_EQUIVALENT: both spellings give identical net
+    values.
+  - UNIT_CNV_UNKNOWN_REGIME_CONSERVATIVE: garbage regime nets to 0.
+- The existing 9 tests updated to use the ENGLISH strings the engine passes.
+
+### Note on capture gross rate
+The live gross (~1.685 MXN/kWh) reflects this project's GDMTH punta energy
+rate, not a bug -- the 3.5 figure in the design doc was an illustrative
+example, not this service's rate.
+
+### Version
+Engine 4.10.0 -> 4.10.1.
+
+---
 **Chunk 7 4B (writer): export-capture value display line.**
 
 > **PATCH/MINOR — additive, byte-identical for non-4B projects.** Renders

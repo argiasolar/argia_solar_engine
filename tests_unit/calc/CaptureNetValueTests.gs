@@ -41,7 +41,7 @@ registerTest({
   source: 'tests_unit/calc/CaptureNetValueTests.gs',
   fn: function (t) {
     t.suite('UNIT calc/capture: ZERO_EXPORT => prior worth 0 => net = gross (MAX)');
-    var r = calcCaptureNetValue(_cnvBase('SIN_EXPORTACION'));
+    var r = calcCaptureNetValue(_cnvBase('ZERO_EXPORT'));
     t.assert('prior worth 0', 0, r.priorExportWorthMxn);
     t.assert('net = gross = 100000 x 2.50 = 250,000', 250000, r.netValueMxn);
     t.assertTrue('adds value', r.addsValue === true);
@@ -54,7 +54,7 @@ registerTest({
   source: 'tests_unit/calc/CaptureNetValueTests.gs',
   fn: function (t) {
     t.suite('UNIT calc/capture: NET_BILLING => prior worth = export price => HIGH net');
-    var r = calcCaptureNetValue(_cnvBase('FACTURACION_NETA'));
+    var r = calcCaptureNetValue(_cnvBase('NET_BILLING'));
     // gross 250,000 - prior (100000 x 0.80 = 80,000) = 170,000
     t.assert('prior worth 80,000', 80000, r.priorExportWorthMxn);
     t.assert('net 170,000', 170000, r.netValueMxn);
@@ -68,7 +68,7 @@ registerTest({
   source: 'tests_unit/calc/CaptureNetValueTests.gs',
   fn: function (t) {
     t.suite('UNIT calc/capture: NET_METERING => prior worth ~retail => LOW net');
-    var r = calcCaptureNetValue(_cnvBase('MEDICION_NETA'));
+    var r = calcCaptureNetValue(_cnvBase('NET_METERING'));
     // gross 250,000 - prior (100000 x 2.40 = 240,000) = 10,000 (LOW)
     t.assert('prior worth 240,000', 240000, r.priorExportWorthMxn);
     t.assert('net 10,000 (low)', 10000, r.netValueMxn);
@@ -81,9 +81,9 @@ registerTest({
   source: 'tests_unit/calc/CaptureNetValueTests.gs',
   fn: function (t) {
     t.suite('UNIT calc/capture: ZERO_EXPORT > NET_BILLING > NET_METERING (the table)');
-    var zero  = calcCaptureNetValue(_cnvBase('SIN_EXPORTACION')).netValueMxn;
-    var bill  = calcCaptureNetValue(_cnvBase('FACTURACION_NETA')).netValueMxn;
-    var meter = calcCaptureNetValue(_cnvBase('MEDICION_NETA')).netValueMxn;
+    var zero  = calcCaptureNetValue(_cnvBase('ZERO_EXPORT')).netValueMxn;
+    var bill  = calcCaptureNetValue(_cnvBase('NET_BILLING')).netValueMxn;
+    var meter = calcCaptureNetValue(_cnvBase('NET_METERING')).netValueMxn;
     t.assertTrue('zero-export is the maximum', zero > bill);
     t.assertTrue('net-billing beats net-metering', bill > meter);
   }
@@ -96,7 +96,7 @@ registerTest({
   fn: function (t) {
     t.suite('UNIT calc/capture: INVARIANT generous NM (export worth > discharge) => net 0, not negative');
     // offsetRate 3.00 > dischargeVal 2.50 -> raw net negative -> floored to 0.
-    var r = calcCaptureNetValue(_cnvBase('MEDICION_NETA', {
+    var r = calcCaptureNetValue(_cnvBase('NET_METERING', {
       offsetEnergyRateMxnPerKwh: 3.00, dischargeValueMxnPerKwh: 2.50
     }));
     t.assert('net floored to 0 (never negative)', 0, r.netValueMxn);
@@ -112,9 +112,9 @@ registerTest({
   fn: function (t) {
     t.suite('UNIT calc/capture: addsValue true only when net > 0');
     t.assertTrue('zero-export adds value',
-                 calcCaptureNetValue(_cnvBase('SIN_EXPORTACION')).addsValue === true);
+                 calcCaptureNetValue(_cnvBase('ZERO_EXPORT')).addsValue === true);
     t.assertTrue('break-even NM does not add value',
-                 calcCaptureNetValue(_cnvBase('MEDICION_NETA', {
+                 calcCaptureNetValue(_cnvBase('NET_METERING', {
                    offsetEnergyRateMxnPerKwh: 2.50, dischargeValueMxnPerKwh: 2.50
                  })).addsValue === false);
   }
@@ -126,7 +126,7 @@ registerTest({
   source: 'tests_unit/calc/CaptureNetValueTests.gs',
   fn: function (t) {
     t.suite('UNIT calc/capture: no-value case explains the battery rests on peak-shaving');
-    var r = calcCaptureNetValue(_cnvBase('MEDICION_NETA', {
+    var r = calcCaptureNetValue(_cnvBase('NET_METERING', {
       offsetEnergyRateMxnPerKwh: 3.00
     }));
     t.assertTrue('note points to peak-shaving', r.note.indexOf('peak-shaving') >= 0);
@@ -140,7 +140,7 @@ registerTest({
   source: 'tests_unit/calc/CaptureNetValueTests.gs',
   fn: function (t) {
     t.suite('UNIT calc/capture: gross + prior worth both reported (transparency)');
-    var r = calcCaptureNetValue(_cnvBase('FACTURACION_NETA'));
+    var r = calcCaptureNetValue(_cnvBase('NET_BILLING'));
     t.assert('gross 250,000', 250000, r.grossValueMxn);
     t.assert('prior 80,000', 80000, r.priorExportWorthMxn);
     t.assert('net = gross - prior', r.grossValueMxn - r.priorExportWorthMxn, r.netValueMxn);
@@ -153,10 +153,64 @@ registerTest({
   source: 'tests_unit/calc/CaptureNetValueTests.gs',
   fn: function (t) {
     t.suite('UNIT calc/capture: no captured kWh => zero value, all regimes');
-    var regimes = ['SIN_EXPORTACION', 'FACTURACION_NETA', 'MEDICION_NETA'];
+    var regimes = ['ZERO_EXPORT', 'NET_BILLING', 'NET_METERING'];
     for (var i = 0; i < regimes.length; i++) {
       var r = calcCaptureNetValue(_cnvBase(regimes[i], { capturedKwh: 0 }));
       t.assert('regime ' + regimes[i] + ' net 0', 0, r.netValueMxn);
     }
+  }
+});
+
+
+// =============================================================================
+// REGRESSION: the enum-mismatch bug (live 2026-05-29).
+// readBessInterconnectionFromInputCfe passes ENGLISH strings
+// (NET_METERING/NET_BILLING/ZERO_EXPORT); the module originally only matched
+// SPANISH (MEDICION_NETA/...) and silently defaulted everything to net-
+// metering -> capture always showed $0 regardless of regime. These tests
+// feed BOTH spellings and assert identical, correct results.
+// =============================================================================
+registerTest({
+  id: 'UNIT_CNV_ENGLISH_ENUM_FROM_ENGINE', group: 'unit', module: 'calc/capture',
+  scenarios: [], tags: ['calc', 'capture', 'chunk7', '4b', 'regression', 'invariant'],
+  source: 'tests_unit/calc/CaptureNetValueTests.gs',
+  fn: function (t) {
+    t.suite('UNIT calc/capture: REGRESSION the ENGLISH enum the engine actually passes works');
+    // ZERO_EXPORT must give FULL value (prior worth 0), not the net-metering $0.
+    var ze = calcCaptureNetValue(_cnvBase('ZERO_EXPORT'));
+    t.assert('ZERO_EXPORT prior worth 0', 0, ze.priorExportWorthMxn);
+    t.assert('ZERO_EXPORT net = gross 250,000', 250000, ze.netValueMxn);
+    t.assertTrue('ZERO_EXPORT adds value', ze.addsValue === true);
+    // NET_BILLING must net out the export price, not default to metering.
+    var nb = calcCaptureNetValue(_cnvBase('NET_BILLING'));
+    t.assert('NET_BILLING net 170,000', 170000, nb.netValueMxn);
+  }
+});
+
+registerTest({
+  id: 'UNIT_CNV_SPANISH_ENGLISH_EQUIVALENT', group: 'unit', module: 'calc/capture',
+  scenarios: [], tags: ['calc', 'capture', 'chunk7', '4b', 'regression'],
+  source: 'tests_unit/calc/CaptureNetValueTests.gs',
+  fn: function (t) {
+    t.suite('UNIT calc/capture: Spanish and English spellings give identical results');
+    var pairs = [['ZERO_EXPORT','SIN_EXPORTACION'], ['NET_BILLING','FACTURACION_NETA'],
+                 ['NET_METERING','MEDICION_NETA']];
+    for (var i = 0; i < pairs.length; i++) {
+      var en = calcCaptureNetValue(_cnvBase(pairs[i][0]));
+      var es = calcCaptureNetValue(_cnvBase(pairs[i][1]));
+      t.assert(pairs[i][0] + ' == ' + pairs[i][1] + ' net', en.netValueMxn, es.netValueMxn);
+    }
+  }
+});
+
+registerTest({
+  id: 'UNIT_CNV_UNKNOWN_REGIME_CONSERVATIVE', group: 'unit', module: 'calc/capture',
+  scenarios: [], tags: ['calc', 'capture', 'chunk7', '4b', 'invariant'],
+  source: 'tests_unit/calc/CaptureNetValueTests.gs',
+  fn: function (t) {
+    t.suite('UNIT calc/capture: UNKNOWN regime => conservative (net 0, never overstates)');
+    var r = calcCaptureNetValue(_cnvBase('WHATEVER_GARBAGE'));
+    t.assert('unknown regime nets to 0', 0, r.netValueMxn);
+    t.assertTrue('unknown does not add value', r.addsValue === false);
   }
 });

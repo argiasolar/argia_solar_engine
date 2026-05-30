@@ -63,24 +63,46 @@ function calcCaptureNetValue(o) {
   var dischargeVal  = Math.max(0, num(o.dischargeValueMxnPerKwh, 0));
   var exportPrice   = Math.max(0, num(o.exportPriceMxnPerKwh, 0.80));
   var offsetRate    = Math.max(0, num(o.offsetEnergyRateMxnPerKwh, 0));
-  var regime = String(o.interconnMode || 'MEDICION_NETA').trim().toUpperCase();
+
+  // Normalize the regime. The engine passes the ENGLISH enum from
+  // readBessInterconnectionFromInputCfe (NET_METERING / NET_BILLING /
+  // ZERO_EXPORT), while CFE_MODE / some callers use the SPANISH enum
+  // (MEDICION_NETA / FACTURACION_NETA / SIN_EXPORTACION). Accept BOTH so a
+  // spelling mismatch can never silently fall through to a wrong default.
+  var rawRegime = String(o.interconnMode || '').trim().toUpperCase();
+  var regime;
+  if (rawRegime === 'ZERO_EXPORT' || rawRegime === 'SIN_EXPORTACION') {
+    regime = 'ZERO_EXPORT';
+  } else if (rawRegime === 'NET_BILLING' || rawRegime === 'FACTURACION_NETA') {
+    regime = 'NET_BILLING';
+  } else if (rawRegime === 'NET_METERING' || rawRegime === 'MEDICION_NETA') {
+    regime = 'NET_METERING';
+  } else {
+    regime = 'UNKNOWN';
+  }
 
   // Per-kWh prior export worth by regime.
   var priorPerKwh;
   var regimeLabel;
-  if (regime === CAPTURE_REGIMES.SIN_EXPORTACION) {
+  if (regime === 'ZERO_EXPORT') {
     priorPerKwh = 0;                       // export was lost
     regimeLabel = 'sin exportación (excedente se perdía)';
-  } else if (regime === CAPTURE_REGIMES.FACTURACION_NETA) {
+  } else if (regime === 'NET_BILLING') {
     priorPerKwh = exportPrice;             // credited at export price
     regimeLabel = 'facturación neta (excedente a ' + exportPrice + ' MXN/kWh)';
-  } else {
-    // MEDICION_NETA (default): export credited ~1:1 at the retail rate it
-    // offset. If offsetRate wasn't supplied, fall back to dischargeVal as a
-    // conservative proxy (treats NM export as ~equal to discharge value ->
-    // capture nets near 0, the honest "adds little" result).
+  } else if (regime === 'NET_METERING') {
+    // Export credited ~1:1 at the retail rate it offset. If offsetRate wasn't
+    // supplied, fall back to dischargeVal as a conservative proxy (treats NM
+    // export as ~equal to discharge value -> capture nets near 0, the honest
+    // "adds little" result).
     priorPerKwh = (offsetRate > 0) ? offsetRate : dischargeVal;
     regimeLabel = 'medición neta (excedente ya acreditado ~1:1)';
+  } else {
+    // UNKNOWN regime: be CONSERVATIVE -- assume the export was already fully
+    // valued (prior worth = discharge value) so capture nets to 0. Never
+    // overstate when we don't know the regime.
+    priorPerKwh = dischargeVal;
+    regimeLabel = 'esquema desconocido (captura no valuada por seguridad)';
   }
 
   var grossValueMxn       = capturedKwh * dischargeVal;
