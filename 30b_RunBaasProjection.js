@@ -185,7 +185,12 @@ function runBaasProjection(ss) {
   var warnings = [];
 
   // Ensure the input sheet exists (creates with defaults on first run).
-  if (typeof setupInputBaasSheet === 'function') setupInputBaasSheet(ss);
+  // IMPORTANT: call with NO arguments. setupInputBaasSheet's first arg is now
+  // `force` (it delegates to _setupOneTab). The no-arg path returns an
+  // existing sheet UNTOUCHED, or creates it if missing -- so generating the
+  // projection never rebuilds/relocates INPUT_BAAS. (Passing ss here would be
+  // read as force and silently delete+recreate the tab every run.)
+  if (typeof setupInputBaasSheet === 'function') setupInputBaasSheet();
   var inp = (typeof readInputBaas === 'function') ? readInputBaas(ss) : {};
 
   // CAPEX = BESS materials + BESS install.

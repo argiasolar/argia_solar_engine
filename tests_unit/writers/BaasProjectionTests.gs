@@ -21,13 +21,21 @@ function _baasMockSheet() {
   function mkRange() {
     var self = {
       merge: function () { return self; },
+      breakApart: function () { return self; },
       clear: function () { return self; },
       setValue: function (v) { writes.push(String(v)); return self; },
+      setValues: function () { return self; },
+      getValue: function () { return ''; },
+      getValues: function () { return [[]]; },
       setFontWeight: function () { return self; },
+      setFontFamily: function () { return self; },
       setFontSize: function () { return self; },
       setFontStyle: function () { return self; },
       setFontColor: function () { return self; },
       setBackground: function () { return self; },
+      setBorder: function () { return self; },
+      setNumberFormat: function () { return self; },
+      setNote: function () { return self; },
       setWrap: function () { return self; },
       setVerticalAlignment: function () { return self; },
       setHorizontalAlignment: function () { return self; },
@@ -37,17 +45,82 @@ function _baasMockSheet() {
   return {
     _writes: writes,
     clear: function () {},
+    clearNotes: function () {},
+    clearConditionalFormatRules: function () {},
     getRange: function () { return mkRange(); },
+    // getLastRow = 1 so loadDesignTokens short-circuits (returns empty token
+    // map) instead of scanning a non-existent _DESIGN_TOKENS data range.
+    getLastRow: function () { return 1; },
     setRowHeight: function () {},
     setColumnWidth: function () {},
+    setFrozenRows: function () {},
+    setHiddenGridlines: function () {},
+    getImages: function () { return []; },
     getName: function () { return 'BAAS_PROJECTION_v2'; }
   };
 }
 
 function _baasMockSs(sheet) {
   return {
-    getSheetByName: function () { return sheet; },
-    insertSheet: function () { return sheet; }
+    // Route any sheet lookup to the right stub. _DESIGN_TOKENS (requested by
+    // loadDesignTokens) must serve REAL token rows so token()/tokenNum()
+    // resolve -- the engine's token() fails loud on a missing key, so an
+    // empty stub is not enough; it must be seeded.
+    getSheetByName: function (name) {
+      if (name === '_DESIGN_TOKENS') return _baasDesignTokensStub();
+      return sheet;
+    },
+    insertSheet: function (name) {
+      if (name === '_DESIGN_TOKENS') return _baasDesignTokensStub();
+      return sheet;
+    }
+  };
+}
+
+// Seeded _DESIGN_TOKENS stub: getLastRow >= 2 + getValues returns the token
+// key/value pairs, so loadDesignTokens populates the cache and token() calls
+// succeed. Mirrors the pattern used by BomTemplateTests / WriteCfeOutputV2Tests.
+var _BAAS_TOKEN_ROWS = [
+  ['TEXT_PRIMARY',         '#111111'],
+  ['TEXT_SECONDARY',       '#767676'],
+  ['TEXT_MUTED',           '#B0B0B0'],
+  ['BG_PAGE',              '#FAFAF7'],
+  ['BG_INPUT_CELL',        '#FDFBF6'],
+  ['BG_SUBTOTAL',          '#F5F3EE'],
+  ['BG_CALLOUT',           '#FFF8E1'],
+  ['STATUS_WARN',          '#B88728'],
+  ['STATUS_FAIL',          '#B8404C'],
+  ['DIVIDER_STRONG',       '#111111'],
+  ['FONT_FAMILY',          'Inter'],
+  ['FONT_SIZE_TITLE',      '22'],
+  ['FONT_SIZE_BODY',       '10'],
+  ['FONT_SIZE_SMALL',      '8'],
+  ['FONT_WEIGHT_EMPHASIS', 'bold'],
+  ['ROW_H_TITLE',          '42']
+];
+function _baasDesignTokensStub() {
+  return {
+    getName: function () { return '_DESIGN_TOKENS'; },
+    getLastRow: function () { return _BAAS_TOKEN_ROWS.length + 1; },
+    getRange: function (row, col, numRows, numCols) {
+      return {
+        getValue: function () { return ''; },
+        getValues: function () {
+          // loadDesignTokens calls getRange(2, 1, lastRow-1, 2).getValues()
+          if (row === 2 && col === 1 && numCols === 2) {
+            return _BAAS_TOKEN_ROWS.slice(0, numRows);
+          }
+          return [[]];
+        },
+        setValue:  function () { return this; },
+        setValues: function () { return this; },
+        setFontWeight: function () { return this; },
+        setBackground: function () { return this; }
+      };
+    },
+    setColumnWidth: function () {},
+    setFrozenRows: function () {},
+    insertSheet: function () {}
   };
 }
 

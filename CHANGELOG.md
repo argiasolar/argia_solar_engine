@@ -1,3 +1,126 @@
+## [4.12.1] — 2026-05-29
+
+**Two bugfixes, both fallout from the v4.12.0 INPUT_BAAS / output-header work.**
+
+> **PATCH.** (1) Generating the BaaS projection rebuilt + relocated the
+> INPUT_BAAS tab every run. (2) Five BAAS unit tests aborted because their
+> mock sheets predated the writer's design-token dependency.
+
+### Fix 1 — INPUT_BAAS tab rebuilt/relocated on every projection run
+After v4.12.0 changed setupInputBaasSheet's signature to (force), the caller
+in runBaasProjection still called setupInputBaasSheet(ss). The Spreadsheet
+object landed in the `force` position; the function fell through to
+_setupOneTab, which deleted + recreated INPUT_BAAS (moving it to the end of
+the tab order and resetting its values) on every "Generate BaaS Projection".
+- 30b_RunBaasProjection.js: calls setupInputBaasSheet() with NO args
+  (ensure-exists, leave existing untouched).
+- 30a_ReadInputsBaas.js: hardened so ONLY explicit boolean `true` forces a
+  rebuild. Any other arg (no-arg, Spreadsheet object, undefined, false) =
+  ensure-only. The old setupInputBaasSheet(ss) call is now harmless.
+- Verified: no-arg+exists -> untouched; ss+exists -> untouched; true+exists
+  -> rebuild; no-arg+missing -> created.
+
+### Fix 2 — BAAS unit tests aborted on design tokens
+v4.12.0 added loadDesignTokens(ss) to writeBaasProjectionV2 (for the branded
+header), so the writer now READS design tokens. The BAAS test mocks predated
+tokens and broke in two ways:
+  (a) the mock sheet lacked methods the token sheet build calls (setValues,
+      getLastRow, breakApart, setBorder, ...);
+  (b) even once those were added, a benign empty stub left the token cache
+      empty -- and the engine's token() FAILS LOUD on a missing key, so every
+      token('FONT_FAMILY') threw.
+- The WRITER is unchanged -- it uses token()/tokenNum() exactly like the
+  passing BOM_v2 / CFE_OUTPUT_v2 writers.
+- tests_unit/writers/BaasProjectionTests.gs + tests_unit/calc/BaasWiringTests.gs:
+  upgraded the mock ranges/sheets AND added a SEEDED _DESIGN_TOKENS stub
+  (getLastRow >= 2, getValues returns real token key/value rows) so
+  loadDesignTokens populates the cache and token() resolves -- the same
+  approach BomTemplateTests / WriteCfeOutputV2Tests already use.
+- Verified with a FAITHFUL replica of the engine's token() (throws on missing
+  key): writeBaasProjectionV2 runs NO THROW against both mocks; FONT_FAMILY
+  resolves to 'Inter'; title + PROPOSAL disclaimer rendered.
+
+
+### Version
+Engine 4.12.0 -> 4.12.1.
+
+---
+## [4.12.1] — 2026-05-29
+
+**Two bugfixes, both fallout from the v4.12.0 INPUT_BAAS / output-header work.**
+
+> **PATCH.** (1) Generating the BaaS projection rebuilt + relocated the
+> INPUT_BAAS tab every run. (2) Five BAAS unit tests aborted because their
+> mock sheets predated the writer's design-token dependency.
+
+### Fix 1 — INPUT_BAAS tab rebuilt/relocated on every projection run
+After v4.12.0 changed setupInputBaasSheet's signature to (force), the caller
+in runBaasProjection still called setupInputBaasSheet(ss). The Spreadsheet
+object landed in the `force` position; the function fell through to
+_setupOneTab, which deleted + recreated INPUT_BAAS (moving it to the end of
+the tab order and resetting its values) on every "Generate BaaS Projection".
+- 30b_RunBaasProjection.js: calls setupInputBaasSheet() with NO args
+  (ensure-exists, leave existing untouched).
+- 30a_ReadInputsBaas.js: hardened so ONLY explicit boolean `true` forces a
+  rebuild. Any other arg (no-arg, Spreadsheet object, undefined, false) =
+  ensure-only. The old setupInputBaasSheet(ss) call is now harmless.
+- Verified: no-arg+exists -> untouched; ss+exists -> untouched; true+exists
+  -> rebuild; no-arg+missing -> created.
+
+### Fix 2 — BAAS unit tests aborted on design tokens
+v4.12.0 added loadDesignTokens(ss) to writeBaasProjectionV2 (for the branded
+header). loadDesignTokens -> ensureDesignTokensSheet calls setValues()/
+getLastRow() on the sheet; the BAAS test mocks (_baasMockSheet,
+_baasWireMockSs) predated tokens and lacked those methods (plus breakApart,
+setBorder), so all 5 BAAS writer/wiring tests threw before asserting.
+- The WRITER is unchanged — it uses token()/tokenNum() exactly like the
+  passing BOM_v2 / CFE_OUTPUT_v2 writers.
+- tests_unit/writers/BaasProjectionTests.gs + tests_unit/calc/BaasWiringTests.gs:
+  upgraded the mock sheets/ranges to the same benign-stub shape the passing
+  token-using writer tests already use -- added breakApart, setValues,
+  setBorder, setNumberFormat, getValues, getLastRow()=1 (so loadDesignTokens
+  short-circuits), setFrozenRows, setHiddenGridlines, getImages, and routed
+  _DESIGN_TOKENS lookups to a benign stub.
+- Verified: writeBaasProjectionV2 runs with NO THROW against both upgraded
+  mocks; title + PROPOSAL disclaimer still rendered.
+
+### Version
+Engine 4.12.0 -> 4.12.1.
+
+---
+## [4.12.1] — 2026-05-29
+
+**BUGFIX: generating the BaaS projection rebuilt + relocated the INPUT_BAAS tab every run.**
+
+> **PATCH.** After v4.12.0 changed setupInputBaasSheet's signature to
+> (force) — delegating to _setupOneTab — the existing caller in
+> runBaasProjection still called setupInputBaasSheet(ss). The Spreadsheet
+> object was read as a truthy `force`, so every "Generate BaaS Projection"
+> deleted and recreated INPUT_BAAS, moving it to the end of the tab order.
+
+### Fixed
+- 30b_RunBaasProjection.js: calls setupInputBaasSheet() with NO arguments
+  (ensure-exists, leave an existing sheet untouched).
+- 30a_ReadInputsBaas.js: hardened setupInputBaasSheet so ONLY an explicit
+  boolean `true` forces a rebuild. Any other arg (no arg, a Spreadsheet
+  object, undefined, false) means "ensure it exists, leave existing
+  untouched" -- so the old setupInputBaasSheet(ss) call (or any future
+  habitual ss-pass) can no longer delete/relocate the tab.
+
+### Verified
+- no-arg + exists -> untouched (no rebuild, no tab move)
+- ss-arg + exists -> untouched (the old buggy call is now safe)
+- force=true + exists -> rebuilds (intended)
+- no-arg + missing -> creates it
+
+### Root cause note
+v4.12.0 gave setupInputBaasSheet a signature inconsistent with the engine's
+readers (which take ss). The defensive coercion removes that foot-gun.
+
+### Version
+Engine 4.12.0 -> 4.12.1.
+
+---
 ## [4.12.0] — 2026-05-29
 
 **Formatting pass: INPUT_BAAS into INPUT_MAP (Group 1) + branded headers on two output sheets (Group 2).**

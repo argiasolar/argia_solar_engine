@@ -107,12 +107,24 @@ function readInputBaas(ss) {
 // ---------------------------------------------------------------------------
 function setupInputBaasSheet(force) {
   var ss = SpreadsheetApp.getActive();
-  // No-arg engine-run back-compat: leave an existing sheet untouched.
-  if (arguments.length < 1) {
+
+  // Coerce the argument defensively. The first arg is `force` (boolean), but
+  // a caller may habitually pass `ss` (a Spreadsheet object) the way readers
+  // take ss -- which would be truthy and could trigger an unwanted rebuild.
+  // Only an explicit boolean true forces a rebuild; anything else (no arg, a
+  // Spreadsheet object, undefined, false) means "ensure it exists, leave an
+  // existing sheet untouched". This makes the function impossible to foot-gun
+  // into deleting+relocating the tab on every engine/projection run.
+  var forceRebuild = (force === true);
+  var wantEnsureOnly = !forceRebuild;
+
+  if (wantEnsureOnly) {
     var pre = ss.getSheetByName('INPUT_BAAS');
-    if (pre) return pre;
+    if (pre) return pre;   // exists -> untouched (no delete, no tab move)
+    // missing -> fall through to create it (force stays false)
   }
-  var sh = _setupOneTab(SH.INPUT_BAAS, 'INPUT BAAS', force === true);
+
+  var sh = _setupOneTab(SH.INPUT_BAAS, 'INPUT BAAS', forceRebuild);
   _baasAppendDisclaimer(sh);
   return sh;
 }

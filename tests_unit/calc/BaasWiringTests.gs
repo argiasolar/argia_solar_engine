@@ -81,26 +81,67 @@ function _baasWireMockSs(overrides) {
   // write into headlessly (chainable no-op range).
   function stubRange() {
     var r = {};
-    ['merge','clear','setValue','setFontWeight','setFontSize','setFontStyle',
-     'setFontColor','setBackground','setWrap','setVerticalAlignment',
+    ['merge','breakApart','clear','setValue','setValues','setFontWeight',
+     'setFontFamily','setFontSize','setFontStyle','setFontColor','setBackground',
+     'setBorder','setNumberFormat','setNote','setWrap','setVerticalAlignment',
      'setHorizontalAlignment'].forEach(function (m) { r[m] = function () { return r; }; });
+    r.getValue = function () { return ''; };
+    r.getValues = function () { return [[]]; };
     return r;
   }
   function stubSheet(name) {
     return {
       getName: function () { return name; },
       clear: function () {},
+      clearNotes: function () {},
+      clearConditionalFormatRules: function () {},
       getRange: function () { return stubRange(); },
+      // getLastRow = 1 so loadDesignTokens short-circuits without scanning.
+      getLastRow: function () { return 1; },
       setRowHeight: function () {}, setColumnWidth: function () {},
+      setFrozenRows: function () {}, setHiddenGridlines: function () {},
+      getImages: function () { return []; },
       insertSheet: function () {}
+    };
+  }
+  // Seeded _DESIGN_TOKENS stub so token()/tokenNum() resolve (the engine's
+  // token() fails loud on a missing key -- an empty stub is not enough).
+  var TOKEN_ROWS = [
+    ['TEXT_PRIMARY','#111111'],['TEXT_SECONDARY','#767676'],['TEXT_MUTED','#B0B0B0'],
+    ['BG_PAGE','#FAFAF7'],['BG_INPUT_CELL','#FDFBF6'],['BG_SUBTOTAL','#F5F3EE'],
+    ['BG_CALLOUT','#FFF8E1'],['STATUS_WARN','#B88728'],['STATUS_FAIL','#B8404C'],
+    ['DIVIDER_STRONG','#111111'],['FONT_FAMILY','Inter'],['FONT_SIZE_TITLE','22'],
+    ['FONT_SIZE_BODY','10'],['FONT_SIZE_SMALL','8'],['FONT_WEIGHT_EMPHASIS','bold'],
+    ['ROW_H_TITLE','42']
+  ];
+  function designTokensStub() {
+    return {
+      getName: function () { return '_DESIGN_TOKENS'; },
+      getLastRow: function () { return TOKEN_ROWS.length + 1; },
+      getRange: function (row, col, numRows, numCols) {
+        return {
+          getValue: function () { return ''; },
+          getValues: function () {
+            if (row === 2 && col === 1 && numCols === 2) return TOKEN_ROWS.slice(0, numRows);
+            return [[]];
+          },
+          setValue: function () { return this; }, setValues: function () { return this; },
+          setFontWeight: function () { return this; }, setBackground: function () { return this; }
+        };
+      },
+      setColumnWidth: function () {}, setFrozenRows: function () {}, insertSheet: function () {}
     };
   }
   return {
     getSheetByName: function (n) {
+      if (n === '_DESIGN_TOKENS') return designTokensStub();
       if (sheets[n] !== undefined) return sheets[n];
       return null;   // INPUT_BAAS, BAAS_PROJECTION_v2 absent -> created via insertSheet
     },
-    insertSheet: function (n) { return stubSheet(n); }
+    insertSheet: function (n) {
+      if (n === '_DESIGN_TOKENS') return designTokensStub();
+      return stubSheet(n);
+    }
   };
 }
 
