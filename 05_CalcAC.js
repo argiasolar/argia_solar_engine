@@ -5,6 +5,33 @@
 // Per-inverter calculations + main feeder aggregation.
 // =============================================================================
 
+// AC-02 conductor sizing: continuous-load factor.
+// NEC 690.8(B)/310.15 (and NOM 690-8): a conductor carrying a continuous PV
+// current must be sized so that BOTH hold:
+//   (a) base ampacity >= CONTINUOUS_FACTOR x I            (125% rule, no derate)
+//   (b) base ampacity >= I / (Ft x Fag)                   (derated to the load)
+// The conductor that satisfies the GREATER required ampacity governs. The prior
+// code applied only (b), undersizing feeders whose 1.25xI exceeded I/derate.
+// Exposed as a constant so UVIE can confirm/adjust the exact rule.
+var AC_CONTINUOUS_FACTOR = 1.25;
+
+/**
+ * Required base (table) ampacity for a continuous AC current.
+ * Pure helper -- unit-testable without a workbook.
+ * @param {number} iNom        continuous current (A)
+ * @param {number} ft          temperature derating factor (<=1)
+ * @param {number} fag         grouping/agrupamiento derating factor (<=1)
+ * @param {number} [contFactor] continuous-load factor (default AC_CONTINUOUS_FACTOR)
+ * @return {number} required base ampacity (A) = max(contFactor*I, I/(ft*fag))
+ */
+function requiredAmpacity(iNom, ft, fag, contFactor) {
+  var cf      = (contFactor && contFactor > 0) ? contFactor : AC_CONTINUOUS_FACTOR;
+  var derate  = (ft > 0 && fag > 0) ? (ft * fag) : 1;
+  var byCont  = cf * iNom;          // 125% continuous, before adjustment
+  var byDerate= iNom / derate;      // load after temp/grouping adjustment
+  return Math.max(byCont, byDerate);
+}
+
 /**
  * Main AC calculation function.
  * Returns ac object with per-inverter results and main feeder results.
@@ -45,7 +72,7 @@ function calcAC(inp, panel, invBank, nom, tbls, dc) {
     const ccConductors = (inv.phase === 3) ? 3 : 2;
     const Ft_ac  = getTempFactor(ambientAC, tbls);
     const Fag_ac = getGroupingFactor(ccConductors, tbls);
-    const ampReq = iNom / (Ft_ac * Fag_ac);
+    const ampReq = requiredAmpacity(iNom, Ft_ac, Fag_ac);
     const cond   = selectConductor(ampReq, tbls);
     result.Ft_ac     = Ft_ac;
     result.Fag_ac    = Fag_ac;
@@ -127,7 +154,7 @@ function calcAC(inp, panel, invBank, nom, tbls, dc) {
   // Feeder conductor sizing
   const Ft_main   = getTempFactor(ambientAC, tbls);
   const Fag_main  = getGroupingFactor(3 * parallelRuns, tbls); // 3-phase x runs
-  const ampReqMain= iPerRun / (Ft_main * Fag_main);
+  const ampReqMain= requiredAmpacity(iPerRun, Ft_main, Fag_main);
   const condMain  = selectConductor(ampReqMain, tbls);
   ac.Ft_main     = Ft_main;
   ac.Fag_main    = Fag_main;

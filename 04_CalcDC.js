@@ -14,6 +14,46 @@
 //   inv.topology     (INV_TOPOLOGY)                      -- skip MPPT checks for OPTIMIZER
 // =============================================================================
 
+/**
+ * Resolve the temperature coefficients used for cold-Voc and hot-Vmp.
+ *
+ * Voc and Vmp have DIFFERENT temperature coefficients than Pmax, but the panel
+ * DB historically only carried PANEL_TEMP_PMAX, which was applied to BOTH the
+ * Voc-cold and Vmp-hot corrections (over-conservative, and wrong sign basis).
+ *
+ * Resolution order, per coefficient:
+ *   1. Dedicated DB column (PANEL_TEMP_VOC / PANEL_TEMP_VMP) if present & nonzero
+ *   2. User override (inp.tempCoeffOverride for Voc -- this is the existing
+ *      'tempCoeffVocOverride' input, which previously only acted as a fallback)
+ *   3. PANEL_TEMP_PMAX as a documented proxy (source flag = 'PMAX_PROXY')
+ *
+ * Pure helper -- unit-testable without a workbook.
+ * @return {{vocCoeff:number, vmpCoeff:number, vocSource:string, vmpSource:string}}
+ */
+function resolveTempCoeffs(panel, inp) {
+  panel = panel || {};
+  inp   = inp   || {};
+  var pmax = parseFloat(panel['PANEL_TEMP_PMAX']);
+  var dbVoc= parseFloat(panel['PANEL_TEMP_VOC']);
+  var dbVmp= parseFloat(panel['PANEL_TEMP_VMP']);
+  var ovr  = parseFloat(inp.tempCoeffOverride);
+  var pmaxOk = !isNaN(pmax) && pmax !== 0;
+
+  var vocCoeff, vocSource;
+  if (!isNaN(dbVoc) && dbVoc !== 0)      { vocCoeff = dbVoc; vocSource = 'DB_VOC'; }
+  else if (!isNaN(ovr) && ovr !== 0)     { vocCoeff = ovr;   vocSource = 'OVERRIDE'; }
+  else if (pmaxOk)                       { vocCoeff = pmax;  vocSource = 'PMAX_PROXY'; }
+  else                                   { vocCoeff = 0;     vocSource = 'NONE'; }
+
+  var vmpCoeff, vmpSource;
+  if (!isNaN(dbVmp) && dbVmp !== 0)      { vmpCoeff = dbVmp; vmpSource = 'DB_VMP'; }
+  else if (pmaxOk)                       { vmpCoeff = pmax;  vmpSource = 'PMAX_PROXY'; }
+  else                                   { vmpCoeff = 0;     vmpSource = 'NONE'; }
+
+  return { vocCoeff: vocCoeff, vmpCoeff: vmpCoeff,
+           vocSource: vocSource, vmpSource: vmpSource };
+}
+
 function calcDC(inp, panel, invBank, nom, tbls) {
   var dc = {};
 
@@ -23,7 +63,14 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   var vmp   = parseFloat(panel['PANEL_VMP_V'])    || 0;
   var pwr   = parseFloat(panel['PANEL_POWER_W'])  || 0;
   var biface = String(panel['PANEL_BIFACIAL'] || '').toUpperCase() === 'YES';
-  var tempCoeff = parseFloat(panel['PANEL_TEMP_PMAX']) || inp.tempCoeffOverride;
+  // Pass 4b: separate Voc / Vmp temperature coefficients (was: single Pmax
+  // coeff applied to both). Falls back to the Pmax proxy when no dedicated
+  // DB column / override exists, so behaviour is unchanged for panels that
+  // only carry PANEL_TEMP_PMAX. Sources are stashed for the MDC to surface.
+  var coeffs       = resolveTempCoeffs(panel, inp);
+  var vocCoeff     = coeffs.vocCoeff;
+  var vmpCoeff     = coeffs.vmpCoeff;
+  dc.tempCoeffMeta = coeffs;   // {vocCoeff,vmpCoeff,vocSource,vmpSource} for MDC
 
   // -- Panel area + array geometry (Pass 1/2) ---------------------------------
   // Real module footprint from the DB (PANEL_LENGTH x PANEL_WIDTH; mm or m).
@@ -119,7 +166,7 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   dc.totalDCInsArea = totalDCInsArea;
 
   // -- DC-01: Voc cold check per inverter type --------------------------------
-  var vocColdPerMod = voc * (1 + tempCoeff * (inp.minTemp - 25));
+  var vocColdPerMod = voc * (1 + vocCoeff * (inp.minTemp - 25));
   var vocColdString = vocColdPerMod * inp.modsPerString;
   dc.vocColdPerMod  = vocColdPerMod;
   dc.vocColdString  = vocColdString;
@@ -141,7 +188,7 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   // -- DC-02: Vmp hot check per inverter type ---------------------------------
   // Uses average ambient + roof adder (not max) for realistic MPPT window sizing
   var hotTemp      = ambientAvg;
-  var vmpHotPerMod = vmp * (1 + tempCoeff * (hotTemp - 25));
+  var vmpHotPerMod = vmp * (1 + vmpCoeff * (hotTemp - 25));
   var vmpHotString = vmpHotPerMod * inp.modsPerString;
   dc.vmpHotPerMod  = vmpHotPerMod;
   dc.vmpHotString  = vmpHotString;
