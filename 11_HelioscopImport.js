@@ -487,6 +487,19 @@ function parseHelioscopeData(pages) {
   // INVERTER PARSING
   for (var li2 = 0; li2 < flines.length; li2++) {
     var line2 = flines[li2];
+    // Glued single-line layout from the Drive PDF->Doc converter, e.g.
+    //   "Component Name Count Inverters SE100KUS (SolarEdge)5 (500.00 kW)"
+    // "Inverters" appears mid-line (prefixed by the table header) and the count
+    // is glued to the brand with no space. Not anchored to start; \s* between
+    // brand and qty tolerates the missing space.
+    var eGlued = line2.match(/Inverters\s+([A-Z][\w\d\-\.]+(?:\s*\(\d{2,4}V\))?)\s+\(([A-Za-z][A-Za-z\s]+)\)\s*(\d+)\s*\(([\d,\.]+)\s*kW\)/i);
+    if (eGlued) {
+      var mdlEG=eGlued[1].trim(), qtyEG=parseInt(eGlued[3]), kwEG=parseFloat(eGlued[4].replace(/,/g,''))/qtyEG;
+      if (qtyEG>0 && data.inverters.every(function(x){return x.model!==mdlEG;})) {
+        data.inverters.push({model:mdlEG,qty:qtyEG,kw:kwEG,brand:eGlued[2].trim(),stringsEstimate:0,stringsIsEstimate:false});
+        continue;
+      }
+    }
     var eInline = line2.match(/^Inverters\s+([A-Z][\w\d\-\.]+(?:\s*\(\d{2,4}V\))?)\s+\([A-Za-z][A-Za-z\s]+\)\s+(\d+)\s+\(([\d,\.]+)\s*kW\)/i);
     if (eInline) {
       var mdlEI=eInline[1].trim(), qtyEI=parseInt(eInline[2]), kwEI=parseFloat(eInline[3].replace(/,/g,''))/qtyEI;
