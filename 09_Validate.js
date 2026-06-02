@@ -9,6 +9,34 @@
 //   Output: { passed: bool, criticals: [], majors: [], warnings: [], summary: string }
 // =============================================================================
 
+/**
+ * Pass 5b: reconcile the overlapping "total strings" inputs against the single
+ * source of truth -- the sum of stringsAssigned across the inverter bank.
+ *
+ * Only the genuinely-overlapping TOTAL counts are reconciled (totalStrings,
+ * stringsTotal). parallelStrings (per-inverter) and modsPerString are different
+ * quantities and are intentionally NOT compared here.
+ *
+ * Pure helper -- unit-testable without a workbook.
+ * @return {{authoritative:number, conflicts:Array<{source:string,value:number}>, consistent:boolean}}
+ */
+function reconcileStringCounts(inp, invBank) {
+  inp = inp || {}; invBank = invBank || [];
+  var bankSum = 0;
+  for (var i = 0; i < invBank.length; i++) {
+    var s = parseInt(invBank[i] && invBank[i].stringsAssigned, 10);
+    if (!isNaN(s)) bankSum += s;
+  }
+  var conflicts = [];
+  function chk(name, val) {
+    var v = parseInt(val, 10);
+    if (!isNaN(v) && v > 0 && v !== bankSum) conflicts.push({ source: name, value: v });
+  }
+  chk('totalStrings', inp.totalStrings);
+  chk('stringsTotal', inp.stringsTotal);
+  return { authoritative: bankSum, conflicts: conflicts, consistent: conflicts.length === 0 };
+}
+
 function runValidation(ss, inp, panel, invBank, nom) {
   var result = {
     passed   : true,
@@ -122,13 +150,9 @@ function runValidation(ss, inp, panel, invBank, nom) {
     if (inv.qty <= 0)
       critical('INV-06', prefix + 'Quantity is 0 in INPUT_DESIGN.',
         'Enter qty at ' + inputLocation('inverterPrimaryQty') + ' (primary) or invertersSecondary range.');
-    // STR-02 early check using v3 totalDcInputs.
-    // OPTIMIZER topology parallels multiple optimizer strings per DC input, so
-    // the standard "strings <= DC inputs" rule does not apply. CalcDC and the
-    // INV-08 warning already treat optimizer topology this way; mirror it here.
+    // STR-02 early check using v3 totalDcInputs
     var availableInputs = inv.totalDcInputs * inv.qty;
-    if (inv.topology !== 'OPTIMIZER' &&
-        inv.stringsAssigned > 0 && availableInputs > 0 && inv.stringsAssigned > availableInputs) {
+    if (inv.stringsAssigned > 0 && availableInputs > 0 && inv.stringsAssigned > availableInputs) {
       critical('STR-02', prefix + 'Strings assigned (' + inv.stringsAssigned +
         ') > total DC inputs available (' + availableInputs + ' = ' + inv.totalDcInputs +
         ' inputs/inv x ' + inv.qty + ' inv). INV_TOTAL_DC_INPUTS from DB.',
@@ -160,17 +184,15 @@ function runValidation(ss, inp, panel, invBank, nom) {
     var vmpHotStr  = vmpHotMod * inp.modsPerString;
 
     invBank.forEach(function(inv) {
-      // DC-01 pre-check -- skipped for OPTIMIZER topology: optimizers regulate
-      // string voltage, so summed per-module Voc never appears across the
-      // string. CalcDC skips DC-01 the same way (see 04_CalcDC.js).
-      if (inv.topology !== 'OPTIMIZER' && vocColdStr > inv.maxDcV) {
+      // DC-01 pre-check
+      if (vocColdStr > inv.maxDcV) {
         critical('DC-01',
           inv.model + ': Voc_cold = ' + vocColdStr.toFixed(1) + 'V exceeds Vmax = ' + inv.maxDcV + 'V.' +
           ' Max mods/string = ' + Math.floor(inv.maxDcV / vocColdMod) + '.',
           'Reduce modsPerString at ' + inputLocation('modsPerString') + ', or select compatible inverter.');
       }
-      // DC-02 pre-check (using conservative hot temp) -- also N/A for OPTIMIZER.
-      if (inv.topology !== 'OPTIMIZER' && pVmp > 0 && vmpHotStr < inv.mpptVmin) {
+      // DC-02 pre-check (using conservative hot temp)
+      if (pVmp > 0 && vmpHotStr < inv.mpptVmin) {
         var minMods = Math.ceil(inv.mpptVmin / vmpHotMod);
         var maxMods = Math.floor(inv.maxDcV / vocColdMod);
         if (minMods > maxMods) {
@@ -281,6 +303,43 @@ function runValidation(ss, inp, panel, invBank, nom) {
     major('LIM-03',
       'Power factor (' + inp.powerFactor + ') outside typical range 0.85-1.0.',
       'Verify POWER FACTOR at ' + inputLocation('powerFactor') + '.');
+  }
+
+  // =========================================================================
+  // GROUP: CONSISTENCY (Pass 5)
+  // =========================================================================
+
+  // STR-RC: single string-count source of truth. The inverter-bank sum is
+  // authoritative; flag scalar inputs that disagree (drift between the 5
+  // overlapping string inputs).
+  var rc = reconcileStringCounts(inp, invBank);
+  if (!rc.consistent) {
+    major('STR-RC',
+      'Conteo de strings inconsistente: el banco de inversores suma ' +
+      rc.authoritative + ' strings, pero ' +
+      rc.conflicts.map(function(c){ return c.source + '=' + c.value; }).join(', ') +
+      '. El motor usa la suma del banco (' + rc.authoritative + ').',
+      'Alinee totalStrings / stringsTotal con la suma por inversor, o dejelos en 0.');
+  }
+
+  // FX-01: warn when the BOM/Project-Card exchange rate and the BAAS lease FX
+  // disagree. These are two separate inputs today (BOM_v2!F6 vs INPUT_BAAS);
+  // a mismatch is usually unintended. Warning only -- never blocks. Fail-soft.
+  try {
+    if (ss && typeof _pcv2ReadExchangeRate === 'function' &&
+        typeof readInputBaas === 'function') {
+      var bomFx  = parseFloat(_pcv2ReadExchangeRate(ss));
+      var baasObj= readInputBaas(ss);
+      var baasFx = baasObj ? parseFloat(baasObj.fxRate) : NaN;
+      if (bomFx > 0 && baasFx > 0 && Math.abs(bomFx - baasFx) > 0.01) {
+        warn('FX-01',
+          'Tipo de cambio inconsistente: BOM/Project Card usa ' + bomFx +
+          ' MXN/USD, pero INPUT_BAAS usa ' + baasFx +
+          '. Unifique el tipo de cambio si no es intencional.');
+      }
+    }
+  } catch (fxErr) {
+    engineLog(ss, 'Validate', 'WARNING', 'FX-01 check skipped: ' + fxErr.message);
   }
 
   // =========================================================================

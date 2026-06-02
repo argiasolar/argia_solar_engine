@@ -612,12 +612,15 @@ var _MAP_DESIGN = {
   },
 
   // 03 DISTANCIAS ------------------------------------------------------------
-  distCabinet: {
+  roofToInverterDropM: {
     sheet: SH.INPUT_DESIGN, row: 24, col: 3,
-    label: 'Cabinet box', type: 'number',
-    default: 0, required: false, unit: 'm',
+    label: 'Caida vertical techo->inversor', type: 'number',
+    default: 5, required: false, unit: 'm',
     section: '03 DISTANCIAS',
-    consumedBy: ['engine']
+    consumedBy: ['engine'],
+    notes: 'Vertical rise added to DC/AC run estimates. Blank/0 -> default 5 m ' +
+           '(ROOF_TO_INVERTER_DROP_M in 06_CalcLayout). Reuses the cell vacated ' +
+           'by the removed distCabinet input.'
   },
   distInverter: {
     sheet: SH.INPUT_DESIGN, row: 25, col: 3,
@@ -678,14 +681,6 @@ var _MAP_DESIGN = {
   invStations: {
     sheet: SH.INPUT_DESIGN, row: 12, col: 9,
     label: 'Estaciones de inversor', type: 'number',
-    default: 1, required: false,
-    section: '04 GEOMETRÍA',
-    consumedBy: ['engine'],
-    advanced: true
-  },
-  arrayBlocks: {
-    sheet: SH.INPUT_DESIGN, row: 13, col: 9,
-    label: 'Bloques del arreglo', type: 'number',
     default: 1, required: false,
     section: '04 GEOMETRÍA',
     consumedBy: ['engine'],
@@ -759,16 +754,6 @@ var _MAP_DESIGN = {
     advanced: true,
     notes: 'Leave blank to auto-calc.'
   },
-  layoutBlocks: {
-    sheet: SH.INPUT_DESIGN, row: 24, col: 9,
-    label: 'Bloques (override)', type: 'number',
-    default: '', required: false,
-    section: '05 LAYOUT OVERRIDE',
-    consumedBy: ['engine'],
-    advanced: true,
-    notes: 'Leave blank to auto-calc.'
-  },
-
   // 06 BOM CONFIG ------------------------------------------------------------
   supplyTransformer: {
     sheet: SH.INPUT_DESIGN, row: 27, col: 9,

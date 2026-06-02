@@ -74,7 +74,10 @@ function readInputs(ss) {
   // default: a battery on the shared PV DC bus, no extra AC busbar load).
   const bessCoupling     = resolveBessCoupling(readInput(ss, 'bessCoupling'));
 
-  const distCabinet      = readInput(ss, 'distCabinet');
+  // Pass 5a: vertical roof->inverter cable drop (m). Optional INPUT_DESIGN
+  // field; when blank/0 the layout calc falls back to ROOF_TO_INVERTER_DROP_M.
+  const roofToInverterDropM = readInput(ss, 'roofToInverterDropM');
+
   const distInverter     = readInput(ss, 'distInverter');
   const distAcProt       = readInput(ss, 'distAcProt');
   const distGrid         = readInput(ss, 'distGrid');
@@ -84,7 +87,6 @@ function readInputs(ss) {
   const availableSpace   = readInput(ss, 'availableSpace');
   const aspectRatio      = readInput(ss, 'aspectRatio');
   const invStations      = readInput(ss, 'invStations');
-  const arrayBlocks      = readInput(ss, 'arrayBlocks');
   const rowPitch         = readInput(ss, 'rowPitch');
   const walkwayFactor    = readInput(ss, 'walkwayFactor');
   const dcSpareFactor    = readInput(ss, 'dcSpareFactor');
@@ -98,7 +100,6 @@ function readInputs(ss) {
 
   const layoutRows       = readInput(ss, 'layoutRows');
   const layoutCols       = readInput(ss, 'layoutCols');
-  const layoutBlocks     = readInput(ss, 'layoutBlocks');
 
   // Mid/end distances: deprecated in new layout. Default to 0. (Was legacy
   // INPUT_DESIGN!N42/N43 — removed in new layout. Engine fallback behaviour
@@ -190,11 +191,11 @@ function readInputs(ss) {
     bessCoupling,
 
     // Distances (metres)
-    distCabinet, distInverter, distAcProt, distGrid, groundingLen,
+    distInverter, distAcProt, distGrid, groundingLen, roofToInverterDropM,
 
     // Layout
     areaRequired, availableSpace, aspectRatio,
-    invStations, arrayBlocks, layoutRows, layoutCols, layoutBlocks,
+    invStations, layoutRows, layoutCols,
     rowPitch, walkwayFactor, dcSpareFactor, acSpareFactor,
     feederExtraM, stationCorridorM,
     layoutMidDist, layoutEndDist,
