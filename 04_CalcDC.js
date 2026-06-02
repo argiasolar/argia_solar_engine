@@ -184,6 +184,17 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   //   totalDcInputs = MPPT_count x inputs_per_MPPT (e.g. 7 x 3 = 21 for SUN2000-150K-MG0)
   // Secondary check: strings_per_MPPT <= inputs_per_MPPT  (MAJOR warning if uneven)
   dc.str02Results = invBank.map(function(inv) {
+    if (inv.topology === 'OPTIMIZER') {
+      // Optimizer topology parallels multiple strings per DC input, so the
+      // "strings <= DC inputs" rule does not apply (mirrors 09_Validate.js and
+      // the STR-01/STR-03 skips). Mark N/A so it neither fails nor drags the
+      // overall DC result down.
+      return { invModel: inv.model, stringsAssigned: inv.stringsAssigned,
+               stringsAvailable: 0, totalDcInputs: inv.totalDcInputs,
+               totalMppts: 0, mpptOverload: false, unevenLoading: false,
+               pass: true, skipped: true, rule: 'STR-02',
+               note: 'OPTIMIZER topology -- conteo de entradas DC N/A' };
+    }
     var totalInputs  = inv.totalDcInputs * inv.qty;           // e.g. 21 x 3 = 63
     var totalMppts   = inv.mpptCount     * inv.qty;           // e.g.  7 x 3 = 21
     var pass         = inv.stringsAssigned <= totalInputs;
@@ -232,7 +243,10 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   // Required: Isc * bifFactor * stringsPerMppt <= iOpPerMppt
   dc.str03Results = invBank.map(function(inv) {
     if (inv.topology === 'OPTIMIZER') {
+      // N/A for optimizer topology. Set passOp/passSc so the DC-09 derivation
+      // below (which reads r.passSc) also resolves to pass, not undefined.
       return { invModel: inv.model, pass: true, skipped: true,
+               passOp: true, passSc: true,
                note: 'OPTIMIZER topology -- MPPT current check N/A', rule: 'STR-03' };
     }
     var totalMppts       = inv.mpptCount * inv.qty;

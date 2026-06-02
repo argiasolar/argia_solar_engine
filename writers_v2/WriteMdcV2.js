@@ -62,16 +62,18 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
     if (raw === null || raw === undefined) return null;
     var s = String(raw).trim();
     if (!s) return null;
-    if (/^[✅⚠❌]/.test(s)) return s;
+    if (/^[✅⚠❌\u2139]/.test(s)) return s;
     var category;
-    if (/FAIL|BLOQUEADO/i.test(s))                              category = 'FAIL';
+    if (/\[N\/A\]|NO APLICA|NOT APPLICABLE|\bN\/A\b/i.test(s))  category = 'NA';
+    else if (/FAIL|BLOQUEADO/i.test(s))                         category = 'FAIL';
     else if (/REVIEW|OBSERVATIONS|REVISAR|PASS\+OBS/i.test(s))  category = 'REVIEW';
     else if (/\[OK\]|^OK\b|PASS|EMITTABLE/i.test(s))            category = 'PASS';
     else return s;
-    var clean = s.replace(/\[(PASS|FAIL|REVIEW|OK|PASS\+OBS)\]/gi, '').trim();
+    var clean = s.replace(/\[(PASS|FAIL|REVIEW|OK|PASS\+OBS|N\/A)\]/gi, '').trim();
     clean = clean.replace(/^[—\-:\s]+/, '').trim();
     var prefix = category === 'PASS' ? '✅ PASS' :
                  category === 'REVIEW' ? '⚠ REVIEW' :
+                 category === 'NA' ? '\u2139\uFE0F N/A' :
                  '❌ FAIL';
     return clean ? prefix + ' — ' + clean : prefix;
   }
@@ -258,6 +260,7 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
       'DC-01: Voc_cold <= Vmax_inv para CADA tipo de inversor  |  DC-02: Vmp_hot >= MPPT_min para CADA tipo',
       windowStatus);
   var dcLimitDetail = dc.str02Results.map(function(r) {
+    if (r.skipped) return r.invModel + ': ' + r.note;
     var line = r.invModel + ': ' + r.stringsAssigned + ' asig / ' + r.stringsAvailable +
       ' disp (' + r.totalDcInputs + ' inputs/inv x ' + r.qty + ' inv)' +
       ' | MPPT: ' + n(r.strPerMppt,2) + ' str/MPPT (max=' + r.mpptCapacity + ')' +
@@ -268,9 +271,13 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
     }
     return line;
   }).join('\n');
-  var dcLimitStatus = dc.str02Pass ? '[PASS]' :
-    (dc.str02Results.some(function(r){return r.mpptOverload;}) ? '[FAIL] Sobrecarga MPPT' : '[FAIL]');
-  if (dc.str02Pass && dc.str02UnevenWarnings && dc.str02UnevenWarnings.length > 0) {
+  var str02Skipped = dc.str02Results.length > 0 &&
+    dc.str02Results.every(function(r){ return r.skipped; });
+  var dcLimitStatus = str02Skipped
+      ? '[N/A] OPTIMIZER -- conteo de entradas DC no aplica'
+    : dc.str02Pass ? '[PASS]'
+    : (dc.str02Results.some(function(r){return r.mpptOverload;}) ? '[FAIL] Sobrecarga MPPT' : '[FAIL]');
+  if (!str02Skipped && dc.str02Pass && dc.str02UnevenWarnings && dc.str02UnevenWarnings.length > 0) {
     dcLimitStatus = '[PASS+OBS] Carga desigual entre MPPTs -- ver detalle';
   }
   row(MDC_ROW.CHECK_DC_LIMIT, dcLimitDetail,
@@ -284,7 +291,11 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
     return r.invModel + ': I_op=' + n(r.iDesignIntoMppt,1) + 'A <= ' + r.iOpLimit + 'A [' + (r.passOp?'PASS':'FAIL') + ']' +
       '  |  I_sc=' + n(r.iScIntoMppt,1) + 'A <= ' + r.iScLimit + 'A [' + (r.passSc?'PASS':'FAIL') + ']';
   }).join('\n');
-  var str03Status = (dc.str03Pass && dc.dc09Pass) ? '[PASS]' : '[FAIL]';
+  var str03Skipped = dc.str03Results.length > 0 &&
+    dc.str03Results.every(function(r){ return r.skipped; });
+  var str03Status = str03Skipped
+      ? '[N/A] OPTIMIZER -- verificacion de corriente MPPT no aplica'
+    : (dc.str03Pass && dc.dc09Pass) ? '[PASS]' : '[FAIL]';
   row(MDC_ROW.STR03_MPPT, str03Detail,
       PROV.AUTO_CALC,
       'NOM STR-03/DC-09: INV_MAX_OPERATING/SHORT_CIRCUIT_CURRENT_PER_MPPT_A',
