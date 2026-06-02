@@ -122,9 +122,13 @@ function runValidation(ss, inp, panel, invBank, nom) {
     if (inv.qty <= 0)
       critical('INV-06', prefix + 'Quantity is 0 in INPUT_DESIGN.',
         'Enter qty at ' + inputLocation('inverterPrimaryQty') + ' (primary) or invertersSecondary range.');
-    // STR-02 early check using v3 totalDcInputs
+    // STR-02 early check using v3 totalDcInputs.
+    // OPTIMIZER topology parallels multiple optimizer strings per DC input, so
+    // the standard "strings <= DC inputs" rule does not apply. CalcDC and the
+    // INV-08 warning already treat optimizer topology this way; mirror it here.
     var availableInputs = inv.totalDcInputs * inv.qty;
-    if (inv.stringsAssigned > 0 && availableInputs > 0 && inv.stringsAssigned > availableInputs) {
+    if (inv.topology !== 'OPTIMIZER' &&
+        inv.stringsAssigned > 0 && availableInputs > 0 && inv.stringsAssigned > availableInputs) {
       critical('STR-02', prefix + 'Strings assigned (' + inv.stringsAssigned +
         ') > total DC inputs available (' + availableInputs + ' = ' + inv.totalDcInputs +
         ' inputs/inv x ' + inv.qty + ' inv). INV_TOTAL_DC_INPUTS from DB.',
@@ -156,15 +160,17 @@ function runValidation(ss, inp, panel, invBank, nom) {
     var vmpHotStr  = vmpHotMod * inp.modsPerString;
 
     invBank.forEach(function(inv) {
-      // DC-01 pre-check
-      if (vocColdStr > inv.maxDcV) {
+      // DC-01 pre-check -- skipped for OPTIMIZER topology: optimizers regulate
+      // string voltage, so summed per-module Voc never appears across the
+      // string. CalcDC skips DC-01 the same way (see 04_CalcDC.js).
+      if (inv.topology !== 'OPTIMIZER' && vocColdStr > inv.maxDcV) {
         critical('DC-01',
           inv.model + ': Voc_cold = ' + vocColdStr.toFixed(1) + 'V exceeds Vmax = ' + inv.maxDcV + 'V.' +
           ' Max mods/string = ' + Math.floor(inv.maxDcV / vocColdMod) + '.',
           'Reduce modsPerString at ' + inputLocation('modsPerString') + ', or select compatible inverter.');
       }
-      // DC-02 pre-check (using conservative hot temp)
-      if (pVmp > 0 && vmpHotStr < inv.mpptVmin) {
+      // DC-02 pre-check (using conservative hot temp) -- also N/A for OPTIMIZER.
+      if (inv.topology !== 'OPTIMIZER' && pVmp > 0 && vmpHotStr < inv.mpptVmin) {
         var minMods = Math.ceil(inv.mpptVmin / vmpHotMod);
         var maxMods = Math.floor(inv.maxDcV / vocColdMod);
         if (minMods > maxMods) {
