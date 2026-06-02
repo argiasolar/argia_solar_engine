@@ -140,32 +140,33 @@ function listFiles(dir, exts) {
   return out;
 }
 
-// Source files in dependency-friendly order. 00_Main must load before files
-// that reference its constants (SH, MC, PROV, MDC_ROW, BOM_ROW, BOM_COL).
-var SOURCE_FILES_ORDERED = [
-  '00_Main.js', '00a_Version.js',
-  '01_ReadInputs.js', '01a_ReadInputsBess.js', '01b_RunBessStep.js',
-  '02_LoadDB.js', '02a_DesignTokens.js', '02b_LayoutPrimitives.js',
-  '02c_InputMap.js', '02d_InputIO.js', '02e_InputSetup.js',
-  '02f_RepairCostRanges.js', '02g_RepairCfeSimulationTotals.js',
-  '02h_RepairCfeSimulationCapacidad.js', '02i_SetupBessSimulationSteady.js',
-  '03_ElecTables.js', '04_CalcDC.js', '04a_CalcCFEBill.js',
-  '05_CalcAC.js', '06_CalcLayout.js', '09_Validate.js', '09b_OutputValidate.js',
-  '09c_InstallCostSanity.js',         // NEW in 3.7.8 (install guardrails)
-  '10_Logger.js', '11_HelioscopImport.js', '12_ExportPDF.js',
-  '13_CalcInstallCost.js', '17_CalcBessSizing.js', '18_CalcBessCircuit.js',
-  '19_RunBessSuggestion.js', '19b_WriteBessRecommendations.js',
-  '20_CalcHourlySimulation.js', '20a_RunHourlySimulation.js',
-  '21_BessPickerWiring.js', '22_CalcBessBosQuantities.js',
-  '23_CalcBessVoltageDrop.js', '24_CalcBessNomChecks.js',
-  '97_InputAudit.js'
-];
+// Source files are AUTO-DISCOVERED from the repo root so the rig can never
+// silently fall behind the codebase (the old hardcoded list went stale and
+// skipped 25-30b/00c/01c/01d/20b, turning their tests into "not defined"
+// ERRORs). Two files are order-critical and pinned first: 00_Main defines the
+// shared constants (SH, MC, PROV, MDC_ROW, BOM_ROW, BOM_COL) and 00a_Version
+// is referenced early. Everything else loads in lexical order, which matches
+// the numbered-prefix dependency convention (lower number = earlier).
+var LOAD_FIRST = ['00_Main.js', '00a_Version.js'];
+
+var rootSources = fs.readdirSync(ROOT, { withFileTypes: true })
+  .filter(function(e) { return e.isFile() && path.extname(e.name) === '.js'; })
+  .map(function(e) { return e.name; })
+  .filter(function(n) { return LOAD_FIRST.indexOf(n) === -1; })
+  .sort();
+
+var SOURCE_FILES_ORDERED = LOAD_FIRST
+  .filter(function(n) { return fs.existsSync(path.join(ROOT, n)); })
+  .concat(rootSources);
 
 var sourceFiles = SOURCE_FILES_ORDERED
   .map(function(n) { return path.join(ROOT, n); })
   .filter(function(p) { return fs.existsSync(p); })
   .concat(listFiles(path.join(ROOT, 'templates'),  ['.js']))
   .concat(listFiles(path.join(ROOT, 'writers_v2'), ['.js']));
+
+console.log('Root source modules discovered: ' + SOURCE_FILES_ORDERED.length +
+            ' (auto-discovered, ' + LOAD_FIRST.length + ' pinned first)');
 
 var testFiles = []
   .concat(listFiles(path.join(ROOT, 'test'),                ['.gs', '.js']))
