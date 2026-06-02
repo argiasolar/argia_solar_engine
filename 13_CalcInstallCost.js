@@ -1007,6 +1007,10 @@ function calcInstallCost(instLib, drivers) {
       result.otherMxn     = pct * drivers.installSubtotal;
     }
     result.totalMxn = result.otherMxn;
+    // Pass 6b: rebuild the trace now that the subtotal basis is known. computeOneItem
+    // built it in stage A when laborEquipSubtotal/installSubtotal were still undefined
+    // (-> "$0"); without this rebuild the row shows a $0 trace despite a correct value.
+    result.formulaTrace = _buildFormulaTrace(item, result, drivers);
 
     indirectOther += result.otherMxn;
     if (!sectionTotals['INDIRECT']) sectionTotals['INDIRECT'] = {labor:0,equip:0,other:0,total:0};
@@ -1348,7 +1352,12 @@ function applyKwpBenchmarks(ss, result, drivers) {
         }
       }
       r.totalMxn      = r.laborMxn + r.equipMxn + r.otherMxn;
-      r.formulaTrace += ' ║ days re-derived: ' + oldDays + '→' + newDays +
+      // Pass 6b: REBUILD the trace from the new driver instead of appending to the
+      // stale stage-C line. The append-only version left the main line showing the
+      // pre-benchmark day count (e.g. "24 days") and its cost while the value was
+      // correctly recomputed at newDays -- the "day-doubling" trace mismatch.
+      r.formulaTrace  = _buildFormulaTrace(item, r, drivers) +
+                        ' \u2551 days re-derived: ' + oldDays + '\u2192' + newDays +
                         ' (post-benchmark, productive MH=' + newProductiveMH.toFixed(0) + ')';
     });
   }
@@ -1565,6 +1574,23 @@ function runInstallCostStandalone() {
 
     _setArgiaProgress(3, 5, 'Calculating install cost\u2026');
     var result = runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult);
+
+    // Render INSTALLATION_v2 (+ 95_INSTALL_DRIVER_MAP_v2). runInstallCost only
+    // COMPUTES the result; the writer was moved into the full engine's Step 12,
+    // so the standalone "Generate Installation" menu path must render the sheet
+    // itself -- otherwise it silently produces no INSTALLATION_v2. Mirrors
+    // runArgiaEngine Step 12-v2; try/catch isolates sheet-I/O failures.
+    if (result) {
+      _setArgiaProgress(4, 5, 'Writing INSTALLATION_v2\u2026');
+      try {
+        setupInstallationTemplate(ss);
+        writeInstallationV2(ss, result, result.drivers);
+        writeInstallationDriverMapV2(ss, result.drivers, result);
+      } catch (wErr) {
+        engineLog(ss, 'InstallCost', 'WARNING',
+          'INSTALLATION_v2 write failed: ' + wErr.message + '\n' + (wErr.stack || ''));
+      }
+    }
 
     _setArgiaProgress(5, 5, '\u2705 Done!');
     Utilities.sleep(1400);
