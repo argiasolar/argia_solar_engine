@@ -106,11 +106,15 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
       bom.getRange(r, c).setValue(val);
     }
   }
-  // wp(row, priceMxn, priceUsd):
+  // wp(row, priceMxn, priceUsd, priceInfo):
   //   priceUsd > 0 → direct USD unit price written to col E
   //   priceMxn > 0 → MXN unit price written as =mxn/$F$<EXCHANGE_RATE> to col E
   //   Either way: col F gets =C*E, col G gets =F*$F$<EXCHANGE_RATE>
-  function wp(r, priceMxn, priceUsd) {
+  //   priceInfo (optional): {provenance|sourceTag|manualOverride} -> Pass 6a
+  //   per-line price status note. Lines that are not a firm CATALOG_PRICE get a
+  //   note so anything needing a quote is visible BOM-wide. Backward-compatible:
+  //   when priceInfo is omitted the status is derived from the prices alone.
+  function wp(r, priceMxn, priceUsd, priceInfo) {
     if (priceUsd && priceUsd > 0) {
       bom.getRange(r, BOM_COL.UNIT_PRICE).setValue(priceUsd).setNumberFormat('#,##0.00');
     } else if (priceMxn && priceMxn > 0) {
@@ -120,6 +124,23 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     }
     bom.getRange(r, BOM_COL.TOTAL_USD).setFormula('=C' + r + '*E' + r).setNumberFormat('#,##0.00');
     bom.getRange(r, BOM_COL.TOTAL_MXN).setFormula('=F' + r + '*$F$' + BOM_ROW.EXCHANGE_RATE).setNumberFormat('#,##0');
+
+    // Pass 6a: per-line price-status note (skip clean catalog prices to reduce noise).
+    try {
+      var info = priceInfo || {};
+      if (info.priceUsd === undefined) info.priceUsd = priceUsd;
+      if (info.priceMxn === undefined) info.priceMxn = priceMxn;
+      var status = classifyBomLinePriceStatus(info);
+      if (status !== 'CATALOG_PRICE') {
+        var LABEL = {
+          SUPPLIER_QUOTED : 'Estado precio: SUPPLIER_QUOTED (cotizado por proveedor)',
+          ESTIMATED       : 'Estado precio: ESTIMATED (estimado -- confirmar con cotizacion)',
+          MANUAL_OVERRIDE : 'Estado precio: MANUAL_OVERRIDE (precio ingresado a mano)',
+          MISSING_PRICE   : 'Estado precio: MISSING_PRICE (pendiente de cotizacion)'
+        };
+        note(r, BOM_COL.UNIT_PRICE, LABEL[status] || ('Estado precio: ' + status));
+      }
+    } catch (_pcErr) { /* status note is advisory; never break the BOM write */ }
   }
   // Subtotal: SUM(F<r1>:F<r2>) into col F, MXN-mirror into col G.
   function ws(r, r1, r2, label) {
@@ -756,7 +777,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
           bosLine.productSpec && bosLine.productSpec.batteryId) {
         var priceInfo = rdBatteryPrice(bosLine.productSpec.batteryId);
         if (priceInfo && priceInfo.priceMxn > 0) {
-          wp(rowIdx, priceInfo.priceMxn, null);
+          wp(rowIdx, priceInfo.priceMxn, null, { provenance: priceInfo.provenance });
           if (priceInfo.provenance === 'CAPEX_FALLBACK') {
             note(rowIdx, BOM_COL.UNIT_PRICE,
               'Precio derivado de Installed_CAPEX_MXN (fallback). ' +

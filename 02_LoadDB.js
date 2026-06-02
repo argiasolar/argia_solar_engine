@@ -40,10 +40,66 @@ function getAllPanels(ss) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// SKU normalization (Pass 6c). Makes product lookups robust to whitespace and
+// separator-spacing differences WITHOUT fuzzy matching -- "JAM72D40 - 545 / LB"
+// resolves to "JAM72D40-545/LB", but genuinely different SKUs (e.g. HVH vs
+// HVHF) stay distinct, so we never silently match the wrong product. Used by
+// lookupPanel / lookupInverter / lookupBattery on BOTH sides of the compare.
+// ---------------------------------------------------------------------------
+function normalizeSku(s) {
+  return String(s == null ? '' : s)
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ')               // collapse internal whitespace
+    .replace(/\s*([\/\-])\s*/g, '$1');  // drop spaces around '/' and '-'
+}
+
+// ---------------------------------------------------------------------------
+// BOM per-line price status (Pass 6a). Classifies how trustworthy a line's
+// price is, so the BOM can flag lines that still need a quote. Pure & testable.
+//
+// Resolution order:
+//   1. explicit per-line source tag (future PRICE_SOURCE column / manual flag)
+//        CATALOG -> CATALOG_PRICE, SUPPLIER/QUOTED -> SUPPLIER_QUOTED,
+//        ESTIMATE(D) -> ESTIMATED, MANUAL/OVERRIDE -> MANUAL_OVERRIDE
+//   2. BESS provenance from lookupBatteryPrice:
+//        BESS_PRICE_PER_UNIT -> SUPPLIER_QUOTED, CAPEX_FALLBACK -> ESTIMATED,
+//        NO_DATA/NO_BATTERY  -> MISSING_PRICE
+//   3. plain price presence: a positive product-DB price is treated as
+//        CATALOG_PRICE; absence is MISSING_PRICE.
+//
+// NOTE: distinguishing CATALOG vs SUPPLIER vs ESTIMATED for the non-BESS
+// product DBs needs a PRICE_SOURCE column in 11M/12M/13M; until then a present
+// DB price defaults to CATALOG_PRICE (override via info.sourceTag).
+// @return {'CATALOG_PRICE'|'SUPPLIER_QUOTED'|'ESTIMATED'|'MANUAL_OVERRIDE'|'MISSING_PRICE'}
+function classifyBomLinePriceStatus(info) {
+  info = info || {};
+  var TAG = {
+    CATALOG:'CATALOG_PRICE', CATALOGUE:'CATALOG_PRICE',
+    SUPPLIER:'SUPPLIER_QUOTED', QUOTED:'SUPPLIER_QUOTED', QUOTE:'SUPPLIER_QUOTED',
+    ESTIMATE:'ESTIMATED', ESTIMATED:'ESTIMATED', EST:'ESTIMATED',
+    MANUAL:'MANUAL_OVERRIDE', OVERRIDE:'MANUAL_OVERRIDE'
+  };
+  var tag = String(info.sourceTag || '').trim().toUpperCase();
+  if (TAG[tag]) return TAG[tag];
+  if (info.manualOverride === true) return 'MANUAL_OVERRIDE';
+
+  var prov = String(info.provenance || '').trim().toUpperCase();
+  if (prov === 'BESS_PRICE_PER_UNIT') return 'SUPPLIER_QUOTED';
+  if (prov === 'CAPEX_FALLBACK')      return 'ESTIMATED';
+  if (prov === 'NO_DATA' || prov === 'NO_BATTERY') return 'MISSING_PRICE';
+
+  var usd = parseFloat(info.priceUsd);
+  var mxn = parseFloat(info.priceMxn);
+  if ((!isNaN(usd) && usd > 0) || (!isNaN(mxn) && mxn > 0)) return 'CATALOG_PRICE';
+  return 'MISSING_PRICE';
+}
+
 function lookupPanel(ss, modelName) {
-  var key = String(modelName).trim().toUpperCase();
+  var key = normalizeSku(modelName);
   var found = getAllPanels(ss).find(function(p) {
-    return String(p['PANEL_MODEL'] || '').trim().toUpperCase() === key;
+    return normalizeSku(p['PANEL_MODEL']) === key;
   });
   if (!found) throw new Error(
     'Panel not found in ' + SH.PANELS_MIRROR + ': "' + modelName + '".\n' +
@@ -70,9 +126,9 @@ function getAllInverters(ss) {
 }
 
 function lookupInverter(ss, modelName) {
-  var key = String(modelName).trim().toUpperCase();
+  var key = normalizeSku(modelName);
   return getAllInverters(ss).find(function(inv) {
-    return String(inv['INV_MODEL'] || '').trim().toUpperCase() === key;
+    return normalizeSku(inv['INV_MODEL']) === key;
   }) || null;
 }
 
@@ -178,10 +234,10 @@ function getAllBatteryProducts(ss) {
 // Returns the header-keyed object, or null when the id is not in the DB
 // (includes the case where the DB is still loading -> getAll returns []).
 function lookupBattery(ss, batteryId) {
-  var key = String(batteryId || '').trim().toUpperCase();
+  var key = normalizeSku(batteryId);
   if (key === '') return null;
   return getAllBatteryProducts(ss).find(function(b) {
-    return String(b['Battery_ID'] || '').trim().toUpperCase() === key;
+    return normalizeSku(b['Battery_ID']) === key;
   }) || null;
 }
 
