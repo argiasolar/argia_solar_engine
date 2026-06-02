@@ -32,6 +32,90 @@ function bessItemGatedToZero(item, driverQtyVal) {
 }
 
 // ---------------------------------------------------------------------------
+// INSTALL_TARGET_MH_PER_KWP  (Pass 3 calibration)
+// Total productive field-labour target, in man-hours per kWp, for the whole
+// install. The old per-section MH/kWp benchmarks in INPUT_DESIGN squashed the
+// job to ~1 MH/kWp; this single global target replaces that. It is intentionally
+// a code constant so it is trivial to tune and lives in version control. A
+// per-project override can be set in the optional INPUT_INSTALL cell
+// benchTotalMhKwp (read in applyKwpBenchmarks); when that cell is blank this
+// default is used. Set to 0 to fall back to the legacy per-section benchmarks.
+// ---------------------------------------------------------------------------
+var INSTALL_TARGET_MH_PER_KWP = 3.0;
+
+// ---------------------------------------------------------------------------
+// applyTotalMhTarget(result, kWp, targetMhPerKwp) -> {applied, scale, ...}
+// PURE. Scales every productive LABOR item proportionally so the sum of their
+// man-hours equals targetMhPerKwp x kWp, preserving item-level proportions.
+// Equipment / other / INDIRECT (percent) costs are untouched; day-driven items
+// are re-derived by the caller afterwards. No spreadsheet access, so it is
+// unit-testable. Returns a summary for logging.
+// ---------------------------------------------------------------------------
+function applyTotalMhTarget(result, kWp, targetMhPerKwp) {
+  var targetMH = targetMhPerKwp * kWp;
+  var isLabor = function (r) {
+    return r.item.section !== 'INDIRECT' &&
+           r.item.costType.indexOf('LABOR') !== -1 && r.mhComputed > 0;
+  };
+  var matched  = (result.items || []).filter(isLabor);
+  var beforeMH = matched.reduce(function (s, r) { return s + r.mhComputed; }, 0);
+  if (!(beforeMH > 0) || !(targetMH > 0)) {
+    return { applied: false, scale: 1, targetMH: targetMH, beforeMH: beforeMH, afterMH: beforeMH };
+  }
+  var scale = targetMH / beforeMH;
+  matched.forEach(function (res) {
+    var oldMH = res.mhComputed;
+    res.mhComputed = oldMH * scale;
+    res.laborMxn   = res.mhComputed * res.roleRateVal;
+    res.totalMxn   = res.laborMxn + res.equipMxn + res.otherMxn;
+    res.formulaTrace += ' \u2551 total bench: ' + targetMhPerKwp + ' MH/kWp \u00d7 ' +
+      kWp.toFixed(0) + ' kWp \u2192 ' + targetMH.toFixed(1) + ' MH total (\u00d7' +
+      scale.toFixed(2) + ' from DB ' + oldMH.toFixed(1) + ' MH)';
+  });
+  var afterMH = matched.reduce(function (s, r) { return s + r.mhComputed; }, 0);
+  return { applied: true, scale: scale, targetMH: targetMH, beforeMH: beforeMH, afterMH: afterMH };
+}
+
+// ---------------------------------------------------------------------------
+// deriveInstallQuantities(raw, ctx) -> {anchorCount, conduitM, trayM, derived}
+// PURE. Fills quantity drivers that would otherwise default to 0 (and silently
+// delete their labour) from geometry/structure. An explicit, positive value in
+// `raw` always wins -- we only derive when the field is blank/0. `derived`
+// flags which fields were auto-filled (for the trace / audit).
+//   conduitM  <- layout-derived DC + AC conduit runs.
+//   trayM     <- main cable-tray spine along the array length.
+//   anchorCount <- module count, structure-aware: attached/rail ~1 per 2
+//                  modules; ballasted/membrane ~1 per 8 (wind tie-downs only).
+// ---------------------------------------------------------------------------
+function deriveInstallQuantities(raw, ctx) {
+  raw = raw || {}; ctx = ctx || {};
+  var out = {
+    anchorCount: Number(raw.anchorCount) || 0,
+    conduitM   : Number(raw.conduitM)    || 0,
+    trayM      : Number(raw.trayM)       || 0,
+    derived    : {}
+  };
+  var modules = Number(ctx.panelQty) || 0;
+  var s  = String(ctx.structure || '').toUpperCase();
+  var rf = String(ctx.roofType  || '').toUpperCase();
+  var ballasted = /BALLAST|RM10|EVO|LASTRE|PESO/.test(s) || /TPO|PVC|MEMBRAN/.test(rf);
+
+  if (!(out.anchorCount > 0) && modules > 0) {
+    out.anchorCount = ballasted ? Math.ceil(modules / 8) : Math.ceil(modules / 2);
+    out.derived.anchorCount = true;
+  }
+  if (!(out.conduitM > 0)) {
+    out.conduitM = Math.ceil((Number(ctx.dcConduitM) || 0) + (Number(ctx.acConduitM) || 0));
+    if (out.conduitM > 0) out.derived.conduitM = true;
+  }
+  if (!(out.trayM > 0)) {
+    out.trayM = Math.ceil(Number(ctx.arrayLength) || 0);
+    if (out.trayM > 0) out.derived.trayM = true;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // SHEET NAME CONSTANTS (install-specific library tables; not the output
 // tabs -- those live in V2_SHEETS via templates/TemplateRegistry.js).
 // ---------------------------------------------------------------------------
@@ -211,6 +295,22 @@ function readInstallDrivers(ss, inp, invBank, dc, ac, lay, bessResult) {
   var interconnectionPts = readInput(ss, 'interconnectionPts');
   var trayM              = readInput(ss, 'trayM');
   var conduitM           = readInput(ss, 'conduitM');
+
+  // Pass 3: auto-derive blank quantity drivers from geometry/structure instead
+  // of letting them default to 0 (which silently deletes anchoring, conduit and
+  // tray labour). An explicit INPUT_INSTALL value always wins. Pure helper so
+  // the rule is unit-testable; see deriveInstallQuantities().
+  var _derivedQ = deriveInstallQuantities(
+    { anchorCount: anchorCount, conduitM: conduitM, trayM: trayM },
+    { panelQty   : inp.panelQty,
+      structure  : inp.structure,
+      roofType   : inp.roofType,
+      dcConduitM : (lay && lay.dcConduitM) || 0,
+      acConduitM : (lay && lay.acConduitM) || 0,
+      arrayLength: (lay && lay.arrayLength) || 0 });
+  anchorCount = _derivedQ.anchorCount;
+  conduitM    = _derivedQ.conduitM;
+  trayM       = _derivedQ.trayM;
 
   // supplyTransformer lives on INPUT_DESIGN per INPUT_MAP (map key is on
   // DESIGN, not INSTALL, since it's a BOM-config flag not an install driver).
@@ -1096,6 +1196,29 @@ function applyKwpBenchmarks(ss, result, drivers) {
     return (v > 0) ? v : null;
   }
 
+  // TOTAL install-labour target (Pass 3). A single MH/kWp number for ALL
+  // productive labour, which supersedes the per-section benchmarks below. The
+  // old per-section cells squashed the job to ~1 MH/kWp; this scales every
+  // labour item proportionally so the sum hits the target. Per-project override
+  // in the optional INPUT_INSTALL cell benchTotalMhKwp; blank -> the code
+  // constant INSTALL_TARGET_MH_PER_KWP. Set the effective target to 0 to fall
+  // back to the legacy per-section benchmarks.
+  var totalTarget = readBench('benchTotalMhKwp');
+  if (totalTarget == null) totalTarget = INSTALL_TARGET_MH_PER_KWP;
+
+  var anyApplied = false;
+
+  if (totalTarget > 0) {
+    var _tr = applyTotalMhTarget(result, kWp, totalTarget);
+    anyApplied = _tr.applied;
+    if (_tr.applied) {
+      engineLog(ss, 'InstallCost', 'INFO',
+        'kWp bench TOTAL: ' + totalTarget + ' MH/kWp \u00d7 ' + kWp.toFixed(1) +
+        ' kWp = ' + _tr.targetMH.toFixed(1) + ' MH target | DB was ' +
+        _tr.beforeMH.toFixed(1) + ' MH | scale \u00d7' + _tr.scale.toFixed(2));
+    }
+  } else {
+  // ----- legacy per-section benchmarks (only when total target disabled) -----
   // Map each benchmark to the items it controls
   var benchDefs = [
     {
@@ -1129,8 +1252,6 @@ function applyKwpBenchmarks(ss, result, drivers) {
     },
   ];
 
-  var anyApplied = false;
-
   benchDefs.forEach(function(bd) {
     if (!bd.mhPerKwp) return;
     var targetMH = bd.mhPerKwp * kWp;
@@ -1159,6 +1280,7 @@ function applyKwpBenchmarks(ss, result, drivers) {
         ', $' + Math.round(oldCost).toLocaleString() + ')';
     });
   });
+  } // end legacy per-section benchmarks (else)
 
   if (!anyApplied) return result;
 
