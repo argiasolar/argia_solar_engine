@@ -10,6 +10,18 @@
 // =============================================================================
 
 /**
+ * Optimizer topology skips the standard string-inverter voltage/current checks.
+ * For SolarEdge-style optimizers the module-level electronics regulate string
+ * voltage, so raw Voc_cold (DC-01), hot Vmp (DC-02) and strings-vs-DC-inputs
+ * (STR-02) are not applicable and must NOT block the engine. The INV-08 warning
+ * and the INV-09 (REVIEW) major remain as the manual-verification flags.
+ * Single source of truth, reused by every guarded rule. Pure & unit-testable.
+ */
+function optimizerTopologySkipsStringChecks(inv) {
+  return !!(inv && String(inv.topology).toUpperCase() === 'OPTIMIZER');
+}
+
+/**
  * Pass 5b: reconcile the overlapping "total strings" inputs against the single
  * source of truth -- the sum of stringsAssigned across the inverter bank.
  *
@@ -150,9 +162,11 @@ function runValidation(ss, inp, panel, invBank, nom) {
     if (inv.qty <= 0)
       critical('INV-06', prefix + 'Quantity is 0 in INPUT_DESIGN.',
         'Enter qty at ' + inputLocation('inverterPrimaryQty') + ' (primary) or invertersSecondary range.');
-    // STR-02 early check using v3 totalDcInputs
+    // STR-02 early check using v3 totalDcInputs. Skipped for OPTIMIZER topology
+    // (optimizer-regulated strings do not map to standard DC inputs); INV-08 warns.
     var availableInputs = inv.totalDcInputs * inv.qty;
-    if (inv.stringsAssigned > 0 && availableInputs > 0 && inv.stringsAssigned > availableInputs) {
+    if (!optimizerTopologySkipsStringChecks(inv) &&
+        inv.stringsAssigned > 0 && availableInputs > 0 && inv.stringsAssigned > availableInputs) {
       critical('STR-02', prefix + 'Strings assigned (' + inv.stringsAssigned +
         ') > total DC inputs available (' + availableInputs + ' = ' + inv.totalDcInputs +
         ' inputs/inv x ' + inv.qty + ' inv). INV_TOTAL_DC_INPUTS from DB.',
@@ -184,6 +198,9 @@ function runValidation(ss, inp, panel, invBank, nom) {
     var vmpHotStr  = vmpHotMod * inp.modsPerString;
 
     invBank.forEach(function(inv) {
+      // OPTIMIZER topology regulates string voltage at the module level, so the
+      // raw Voc_cold/Vmp_hot string-window checks do not apply. Skip (INV-08 warns).
+      if (optimizerTopologySkipsStringChecks(inv)) return;
       // DC-01 pre-check
       if (vocColdStr > inv.maxDcV) {
         critical('DC-01',
