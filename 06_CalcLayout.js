@@ -9,10 +9,13 @@ function calcLayout(inp, dc, ac) {
 
   // ── Array geometry ─────────────────────────────────────────────────────────
   // Total module area (m²) = panel area × qty
-  // panelAreaM2 is currently hardcoded to 0 in readInputs (deprecated legacy col H).
-  // Fallback of 2.2 m² per module is industry-standard for ~650W modules.
-  // Future: pull from panel DB PANEL_AREA_M2 column when that field is populated.
-  const panelAreaM2   = inp.panelAreaM2 > 0 ? inp.panelAreaM2 : 2.2;
+  // Panel area precedence: real module dimensions from the panel DB (computed
+  // by calcDC as PANEL_LENGTH x PANEL_WIDTH and stashed on dc) > explicit
+  // inp.panelAreaM2 override > 2.2 m² last-resort fallback. The old code always
+  // hit 2.2 because inp.panelAreaM2 is hardcoded 0 upstream, understating area
+  // ~20% for modern >=600W modules and shrinking every area-derived quantity.
+  const panelAreaM2   = (dc && dc.panelAreaM2 > 0) ? dc.panelAreaM2
+                      : (inp.panelAreaM2 > 0 ? inp.panelAreaM2 : 2.2);
   const grossArea     = panelAreaM2 * inp.panelQty * inp.walkwayFactor;
   lay.grossArea       = grossArea;
 
@@ -58,8 +61,12 @@ function calcLayout(inp, dc, ac) {
   });
   lay.totalACCableM = totalACCableM;
 
-  // Main feeder cable: from AC panel to grid
-  const feederCableM = ac.feederLen * 3 * inp.acSpareFactor; // 3 phase conductors
+  // Main feeder cable: from AC panel to grid. Three phase conductors PER
+  // parallel run. calcAC already sizes the conductor/conduit for
+  // ac.parallelRuns; the cable QUANTITY must include the same multiplier or the
+  // most expensive copper in the BOM is undercounted by the run factor.
+  const parallelRuns = ac.parallelRuns || 1;
+  const feederCableM = ac.feederLen * 3 * parallelRuns * inp.acSpareFactor;
   lay.feederCableM   = feederCableM;
 
   // ── Conduit lengths (scaled) ───────────────────────────────────────────────
@@ -99,7 +106,7 @@ function calcLayout(inp, dc, ac) {
     mainEgc         : ac.egcMain,
     mainConduit     : ac.conduitMain,
     mainFeederCableM: Math.ceil(feederCableM),
-    mainEgcM        : Math.ceil(ac.feederLen * inp.acSpareFactor),
+    mainEgcM        : Math.ceil(ac.feederLen * (ac.parallelRuns || 1) * inp.acSpareFactor),
     transformer     : ac.transformer,
 
     // Layout check

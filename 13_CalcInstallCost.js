@@ -16,6 +16,22 @@
 // =============================================================================
 
 // ---------------------------------------------------------------------------
+// bessItemGatedToZero(item, driverQtyVal) -> bool
+// True when an install line must be forced to zero because it is a BESS item
+// (driverKey starts with 'BESS_') whose driver resolved to 0 -- i.e. the
+// battery is disabled or that BESS quantity is genuinely zero. Used by
+// computeOneItem to stop the fixed-cost paths (OTHER_FIXED / LABOR_FIXED_MH)
+// from flooring the quantity to minQty/1 and billing for storage that is not
+// in the project. Kept at module scope (not nested) so it is unit-testable
+// without a live workbook. See tests_regression: Pass 1 quantity guards.
+// ---------------------------------------------------------------------------
+function bessItemGatedToZero(item, driverQtyVal) {
+  return !!(item && item.driverKey &&
+            item.driverKey.indexOf('BESS_') === 0 &&
+            driverQtyVal === 0);
+}
+
+// ---------------------------------------------------------------------------
 // SHEET NAME CONSTANTS (install-specific library tables; not the output
 // tabs -- those live in V2_SHEETS via templates/TemplateRegistry.js).
 // ---------------------------------------------------------------------------
@@ -707,6 +723,18 @@ function calcInstallCost(instLib, drivers) {
     };
 
     if (!result.applies) return result;
+
+    // BESS gating. When the battery is disabled (or a BESS quantity is genuinely
+    // zero) every BESS_* driver is 0. Without this guard the fixed-cost paths
+    // (OTHER_FIXED case B and LABOR_FIXED_MH) floor the quantity to minQty/1 and
+    // bill for storage equipment that is not in the project -- the ~71k MXN leak
+    // seen on battery=NO via BESS-I-03/15/17. Decision is in a top-level pure
+    // helper (bessItemGatedToZero) so it is unit-testable without a workbook.
+    if (bessItemGatedToZero(item, result.driverQtyVal)) {
+      result.formulaTrace =
+        'BESS_* driver = 0 (battery disabled / zero qty) -> item gated to 0';
+      return result;
+    }
 
     var drv = result.driverQtyVal;
     var cf  = result.factorResult.combined;

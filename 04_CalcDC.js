@@ -265,5 +265,16 @@ function calcDC(inp, panel, invBank, nom, tbls) {
       :                   '[PASS] Seccion DC OK')
     : '[FAIL] Seccion DC -- ver banderas 4.0';
 
+  // -- Physical module area, stashed for calcLayout ---------------------------
+  // calcLayout used to fall back to a flat 2.2 m²/module (inp.panelAreaM2 is
+  // hardcoded 0 upstream), understating gross area ~20% for modern >=600W
+  // modules. Carry the real area from the panel DB instead. PANEL_LENGTH /
+  // PANEL_WIDTH are stored in mm (e.g. 2465 x 1134); guard against any row that
+  // happens to be stored in metres (a side < 10 is treated as metres).
+  var _pl = parseFloat(panel['PANEL_LENGTH']);
+  var _pw = parseFloat(panel['PANEL_WIDTH']);
+  var _toM = function (v) { return v >= 10 ? v / 1000 : v; };
+  dc.panelAreaM2 = (_pl > 0 && _pw > 0) ? (_toM(_pl) * _toM(_pw)) : 0;
+
   return dc;
 }
