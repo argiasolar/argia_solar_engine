@@ -4,33 +4,88 @@
 // Derives cable lengths, conduit runs, and quantities from layout geometry.
 // =============================================================================
 
+// ---------------------------------------------------------------------------
+// Pass 2 / Pass 4 shared, PURE geometry + BOM helpers. Defined at module scope
+// so calcDC (04) and calcAC (05) can use them too -- the run lengths must be
+// geometry-aware in those files for the voltage-drop sizing, not only in the
+// BOM. No spreadsheet access, so all four are unit-testable.
+// ---------------------------------------------------------------------------
+
+// Vertical rise from the array plane to the inverter / electrical room. The old
+// flat distance model ignored it entirely. Code default; promote to a per-
+// project INPUT_DESIGN field (roofToInverterDropM) in a later pass if needed --
+// it is already honoured here when present on inp.
+var ROOF_TO_INVERTER_DROP_M = 5;
+
+// Optimizers (MLPE) per module for OPTIMIZER-topology inverters. SolarEdge
+// commercial is commonly 1 optimizer per module; some S-series cover 2. Tune to
+// the selected optimizer model.
+var OPTIMIZER_MODULES_PER_UNIT = 1;
+
+// Array footprint and dimensions from the real module area. Single source of
+// truth used by calcDC (stash), calcAC and calcLayout.
+function estimateArrayGeometry(inp, panelAreaM2) {
+  var area      = (panelAreaM2 > 0) ? panelAreaM2 : 2.2;
+  var grossArea = area * (Number(inp.panelQty) || 0) * (Number(inp.walkwayFactor) || 1);
+  var arrayLength, arrayWidth;
+  if (inp.layoutRows > 0 && inp.layoutCols > 0 && inp.rowPitch > 0) {
+    arrayLength = inp.layoutRows * inp.rowPitch;          // rows x pitch
+    arrayWidth  = arrayLength > 0 ? grossArea / arrayLength : 0;
+  } else {
+    arrayLength = Math.sqrt(grossArea / (Number(inp.aspectRatio) || 1));
+    arrayWidth  = arrayLength > 0 ? grossArea / arrayLength : 0;
+  }
+  return { grossArea: grossArea, arrayLength: arrayLength, arrayWidth: arrayWidth,
+           perimeterM: 2 * (arrayWidth + arrayLength) };
+}
+
+// Average DC string home-run length (m): flat to-inverter/corridor base + the
+// vertical rise + the average in-array cabling distance, which scales with
+// array size. The old model was a flat distInverter + stationCorridorM that
+// ignored both, so far strings on a large roof were badly under-measured.
+function estimateDcRunM(inp, geo) {
+  var base    = (Number(inp.distInverter) || 0) + (Number(inp.stationCorridorM) || 0);
+  var drop    = (inp.roofToInverterDropM > 0) ? Number(inp.roofToInverterDropM) : ROOF_TO_INVERTER_DROP_M;
+  var walkway = (Number(inp.walkwayFactor) || 1);
+  var inArray = (((geo.arrayLength || 0) + (geo.arrayWidth || 0)) / 4) * walkway;
+  return base + drop + inArray;
+}
+
+// Average AC branch length per inverter (m): inverter->AC panel base + vertical
+// rise + a spread term (inverter stations are distributed across the array, so
+// the average branch grows with array length and shrinks with station count).
+function estimateAcRunM(inp, geo) {
+  var base     = (Number(inp.distInverter) || 0) + (Number(inp.distAcProt) || 0);
+  var drop     = (inp.roofToInverterDropM > 0) ? Number(inp.roofToInverterDropM) : ROOF_TO_INVERTER_DROP_M;
+  var stations = Math.max(Number(inp.invStations) || 1, 1);
+  var spread   = ((geo.arrayLength || 0) / 2) * (Number(inp.walkwayFactor) || 1) / stations;
+  return base + drop + spread;
+}
+
+// Optimizer (MLPE) unit count for the BOM. 0 unless an OPTIMIZER-topology
+// inverter is present; otherwise ceil(modules / modulesPerUnit).
+function computeOptimizerUnits(hasOptimizer, panelQty, modulesPerUnit) {
+  if (!hasOptimizer) return 0;
+  var per = (modulesPerUnit > 0) ? modulesPerUnit : 1;
+  return Math.ceil((Number(panelQty) || 0) / per);
+}
+
 function calcLayout(inp, dc, ac) {
   const lay = {};
 
   // ── Array geometry ─────────────────────────────────────────────────────────
   // Total module area (m²) = panel area × qty
-  // Panel area precedence: real module dimensions from the panel DB (computed
-  // by calcDC as PANEL_LENGTH x PANEL_WIDTH and stashed on dc) > explicit
-  // inp.panelAreaM2 override > 2.2 m² last-resort fallback. The old code always
-  // hit 2.2 because inp.panelAreaM2 is hardcoded 0 upstream, understating area
-  // ~20% for modern >=600W modules and shrinking every area-derived quantity.
-  const panelAreaM2   = (dc && dc.panelAreaM2 > 0) ? dc.panelAreaM2
-                      : (inp.panelAreaM2 > 0 ? inp.panelAreaM2 : 2.2);
-  const grossArea     = panelAreaM2 * inp.panelQty * inp.walkwayFactor;
-  lay.grossArea       = grossArea;
-
-  // Array dimensions from aspect ratio W/L
-  // If layoutRows/Cols are filled, use them directly to compute actual dimensions
-  let arrayWidth, arrayLength;
-  if (inp.layoutRows > 0 && inp.layoutCols > 0 && inp.rowPitch > 0) {
-    // Rows × pitch = length; Cols × panel_width ≈ width (estimate 1m per col)
-    arrayLength = inp.layoutRows * inp.rowPitch;
-    arrayWidth  = grossArea / arrayLength;
-  } else {
-    // Derive from aspect ratio
-    arrayLength = Math.sqrt(grossArea / inp.aspectRatio);
-    arrayWidth  = grossArea / arrayLength;
-  }
+  // Array geometry: prefer the values computed once in calcDC (single source of
+  // truth, built from the real panel area). Fall back to a local estimate for
+  // any caller that doesn't stash geometry on dc.
+  const _geo = (dc && dc.arrayLength > 0)
+    ? { grossArea: dc.grossArea, arrayLength: dc.arrayLength, arrayWidth: dc.arrayWidth }
+    : estimateArrayGeometry(inp, (dc && dc.panelAreaM2 > 0) ? dc.panelAreaM2
+                                 : (inp.panelAreaM2 > 0 ? inp.panelAreaM2 : 2.2));
+  const grossArea  = _geo.grossArea;
+  const arrayLength = _geo.arrayLength;
+  const arrayWidth  = _geo.arrayWidth;
+  lay.grossArea   = grossArea;
   lay.arrayWidth  = arrayWidth;
   lay.arrayLength = arrayLength;
 
@@ -87,6 +142,8 @@ function calcLayout(inp, dc, ac) {
     dcOcpdUnits     : inp.stringsTotal,  // 1 OCPD per string
     mc4Pairs        : inp.stringsTotal,  // 1 pair per string end
     rsdRequired     : inp.projectType === 'ROOF',
+    optimizerUnits  : computeOptimizerUnits(dc && dc.hasOptimizerTopology,
+                                            inp.panelQty, OPTIMIZER_MODULES_PER_UNIT),
 
     // AC per inverter type
     acPerInverterBOM: ac.perInverter.map(inv => ({

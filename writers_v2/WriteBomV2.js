@@ -402,6 +402,25 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
       'Precio referencia $2,500 USD/unidad \u2014 confirmar con proveedor.\n' +
       'NOM 690.12 requiere RSD en instalaciones de azotea.');
   }
+
+  // OPTIMIZERS / MLPE (Pass 4). Reserved DC row 33 (between DC_RSD and
+  // SUBTOTAL_DC, so it is captured by the DC subtotal SUM). Rendered only when
+  // an OPTIMIZER-topology inverter is present (e.g. SolarEdge). Quantity comes
+  // from calcLayout (lay.bom.optimizerUnits). Price left to the BOM owner: the
+  // optimizer model varies, so we flag it rather than fabricate a unit cost.
+  var _optRow = BOM_ROW.DC_RSD + 1;          // reserved row 33
+  var optQty  = (lay.bom && lay.bom.optimizerUnits) || 0;
+  if (optQty > 0) {
+    w(_optRow, BOM_COL.ITEM, itemNo++);
+    w(_optRow, BOM_COL.DESCRIPTION, 'Optimizador de potencia (MLPE) por modulo');
+    w(_optRow, BOM_COL.QTY, optQty);
+    w(_optRow, BOM_COL.UNIT, 'pcs');
+    w(_optRow, BOM_COL.REFERENCE, 'Inversor topologia OPTIMIZER');
+    note(_optRow, BOM_COL.UNIT_PRICE,
+      'Cantidad = modulos / optimizador (' + optQty + ' pcs). ' +
+      'Confirmar modelo y precio del optimizador con el proveedor.');
+  }
+
   ws(BOM_ROW.SUBTOTAL_DC,
      BOM_ROW.DC_CABLE, BOM_ROW.SUBTOTAL_DC - 1,
      'SUBTOTAL ELECTRICO DC');

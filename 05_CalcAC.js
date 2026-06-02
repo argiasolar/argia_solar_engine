@@ -60,8 +60,13 @@ function calcAC(inp, panel, invBank, nom, tbls, dc) {
     result.egcAreaMm2 = egc.cuAreaMm2;
 
     // AC-04: Voltage drop per inverter to AC protection panel
-    // Distance: distCabinet + distAcProt (inverter -> AC panel)
-    const acLenInv = inp.distInverter + inp.distAcProt;
+    // Geometry-based branch length (Pass 2): inverter->AC panel base + vertical
+    // rise + spread across distributed inverter stations. Replaces the old flat
+    // distInverter + distAcProt. dc carries the array geometry from calcDC.
+    const acLenInv = estimateAcRunM(inp, {
+      arrayLength: (dc && dc.arrayLength) || 0,
+      arrayWidth : (dc && dc.arrayWidth)  || 0
+    });
     var RperM_ac = nom.cuResistivity / cond.cuAreaMm2; // Cu resistivity from NOM_DB
     // For 3-phase: Vdrop = SQRT3 x L x R x I / V_line; for 1-phase: 2 x L x R x I / V
     const vdropAC = (inv.phase === 3)

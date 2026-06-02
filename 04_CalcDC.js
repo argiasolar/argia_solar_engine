@@ -25,6 +25,21 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   var biface = String(panel['PANEL_BIFACIAL'] || '').toUpperCase() === 'YES';
   var tempCoeff = parseFloat(panel['PANEL_TEMP_PMAX']) || inp.tempCoeffOverride;
 
+  // -- Panel area + array geometry (Pass 1/2) ---------------------------------
+  // Real module footprint from the DB (PANEL_LENGTH x PANEL_WIDTH; mm or m).
+  // Stashed on dc as the single source of truth for area-derived BOM quantities
+  // (calcLayout) and for the geometry-based run lengths below. Falls back to
+  // 2.2 m2 (inside estimateArrayGeometry) when dimensions are absent.
+  var _pl = parseFloat(panel['PANEL_LENGTH']);
+  var _pw = parseFloat(panel['PANEL_WIDTH']);
+  var _toM = function (v) { return v >= 10 ? v / 1000 : v; };
+  var panelAreaM2 = (_pl > 0 && _pw > 0) ? (_toM(_pl) * _toM(_pw)) : 0;
+  var geo = estimateArrayGeometry(inp, panelAreaM2);
+  dc.panelAreaM2 = panelAreaM2;
+  dc.grossArea   = geo.grossArea;
+  dc.arrayLength = geo.arrayLength;
+  dc.arrayWidth  = geo.arrayWidth;
+
   // -- DC-03: Design current -- all factors from NOM_DB ----------------------
   var bifFactor   = biface ? nom.bifacialFactor : 1.0;
   var isc125      = isc * nom.currentFactor1;                   // NOM 690.8(a)
@@ -80,7 +95,11 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   // -- DC-07: Voltage drop ----------------------------------------------------
   var RperM_dc = nom.cuResistivity / condDC.cuAreaMm2;
   var vString  = vmp * inp.modsPerString;
-  var dcLength = inp.distInverter + inp.stationCorridorM;
+  // Geometry-based average string home-run (Pass 2): flat to-inverter/corridor
+  // base + vertical rise + average in-array distance (scales with array size).
+  // Replaces the old flat distInverter + stationCorridorM that under-measured
+  // far strings. dc.dcLength also drives the DC cable BOM in calcLayout.
+  var dcLength = estimateDcRunM(inp, geo);
   var vdropDC  = (2 * dcLength * RperM_dc * dc.iDesignPerStr) / vString;
 
   dc.RperM_dc    = RperM_dc;
@@ -265,16 +284,14 @@ function calcDC(inp, panel, invBank, nom, tbls) {
       :                   '[PASS] Seccion DC OK')
     : '[FAIL] Seccion DC -- ver banderas 4.0';
 
-  // -- Physical module area, stashed for calcLayout ---------------------------
-  // calcLayout used to fall back to a flat 2.2 m²/module (inp.panelAreaM2 is
-  // hardcoded 0 upstream), understating gross area ~20% for modern >=600W
-  // modules. Carry the real area from the panel DB instead. PANEL_LENGTH /
-  // PANEL_WIDTH are stored in mm (e.g. 2465 x 1134); guard against any row that
-  // happens to be stored in metres (a side < 10 is treated as metres).
-  var _pl = parseFloat(panel['PANEL_LENGTH']);
-  var _pw = parseFloat(panel['PANEL_WIDTH']);
-  var _toM = function (v) { return v >= 10 ? v / 1000 : v; };
-  dc.panelAreaM2 = (_pl > 0 && _pw > 0) ? (_toM(_pl) * _toM(_pw)) : 0;
+  // -- Optimizer topology flag for the BOM (Pass 4) ---------------------------
+  // True when any inverter in the bank is OPTIMIZER topology (e.g. SolarEdge).
+  // calcLayout uses it to add the optimizer (MLPE) line to the DC BOM, the same
+  // signal 09_Validate and the DC checks already use. (Panel area + geometry
+  // are stashed on dc earlier in this function.)
+  dc.hasOptimizerTopology = invBank.some(function (inv) {
+    return String(inv.topology || '').toUpperCase() === 'OPTIMIZER';
+  });
 
   return dc;
 }
