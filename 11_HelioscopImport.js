@@ -289,7 +289,7 @@ function extractPages(driveFile, ss) {
 function parseHelioscopeData(pages) {
   var data = {
     projectName:0, projectAddress:'', designerName:'', designerEmail:'',
-    stringWireName:'', stringWireLengthM:0,
+    stringWireName:'', stringWireLengthM:0, stringWireDebug:'',
     dcNameplateKw:0, acNameplateKw:0, loadRatio:0, annualGwh:0,
     monthly:[], panelBrand:'', panelModel:'', panelWp:0, totalModules:0,
     inverters:[], totalStrings:0, modsPerString:0, mixedStrings:false,
@@ -563,17 +563,32 @@ function parseHelioscopeData(pages) {
     }
   }
 
-  // STRING WIRE
+  // STRING WIRE -- layout-proof. Helioscope's Components table prints
+  // "Strings <gauge> (<material>)" then "<qty> (<X> m)", but the exact line split
+  // varies by PDF text extractor (this is why the old 2-line lookahead missed it
+  // on some exports). Strategy: for any line starting with "Strings", scan a
+  // 7-line window for the first "(<num> m)"; whole-text fallback anchored on the
+  // word "Strings" if no per-line hit. Diagnostics stashed on data for the LOGS.
+  var swDbgIdx = -1;
   for (var swi = 0; swi < flines.length; swi++) {
-    var swLine = flines[swi];
-    if (!swLine.match(/^Strings\s/i)) continue;
-    var swM = swLine.match(/^Strings\s+(.+?)\s+(\d[\d,]*)\s+\(([\d,\.]+)\s*m\)/i);
-    if (swM) { data.stringWireName=swM[1].trim(); data.stringWireLengthM=parseFloat(swM[3].replace(/,/g,'')); break; }
-    var swName=swLine.replace(/^Strings\s+/i,'').trim();
-    var swCtx=(flines[swi+1]||'')+' '+(flines[swi+2]||'');
-    var swM2=swCtx.match(/(\d[\d,]*)\s+\(([\d,\.]+)\s*m\)/i);
-    if (swM2 && swName) { data.stringWireName=swName; data.stringWireLengthM=parseFloat(swM2[2].replace(/,/g,'')); break; }
+    if (!/^Strings\b/i.test(flines[swi])) continue;
+    if (swDbgIdx < 0) swDbgIdx = swi;
+    var swName = flines[swi].replace(/^Strings\s*/i, '').trim();
+    var swWin  = flines.slice(swi, swi + 7).join(' ');
+    var swHit  = swWin.match(/\(([\d,]+(?:\.\d+)?)\s*m\)/i);
+    if (swHit) {
+      data.stringWireName    = swName || '10 AWG';
+      data.stringWireLengthM = parseFloat(swHit[1].replace(/,/g, ''));
+      break;
+    }
   }
+  if (!(data.stringWireLengthM > 0)) {
+    var swAll = all.match(/Strings\b[\s\S]{0,200}?\(([\d,]+(?:\.\d+)?)\s*m\)/i);
+    if (swAll) data.stringWireLengthM = parseFloat(swAll[1].replace(/,/g, ''));
+  }
+  data.stringWireDebug = (swDbgIdx >= 0)
+    ? 'ctx=' + JSON.stringify(flines.slice(swDbgIdx, swDbgIdx + 5))
+    : 'NO line starting with "Strings" found in extracted text';
 
   // TOTAL STRINGS & MODS PER STRING
   var strSizes = [];
@@ -971,6 +986,9 @@ function writeToInputDesign(ss, data) {
       warnings.push('PV/CABLE: Helioscope no reporto longitud de cableado DC -- ' +
                     'el BOM usara estimacion geometrica. Ver ' + inputLocation('dcStringWireM'));
     }
+    engineLog(ss, 'HelioImport', 'INFO',
+      'StringWire parse -> ' + Math.round(data.stringWireLengthM || 0) + ' m | ' +
+      (data.stringWireDebug || 'no debug'));
   } catch(e) { engineLog(ss, 'HelioImport', 'WARNING', 'dcStringWireM: ' + e.message); }
 
   // -- ROW PITCH (I14) -------------------------------------------------------
