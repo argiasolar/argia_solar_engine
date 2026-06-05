@@ -951,6 +951,28 @@ function writeToInputDesign(ss, data) {
     }
   } catch(e) { engineLog(ss, 'HelioImport', 'WARNING', 'string config: ' + e.message); }
 
+  // -- DC STRING WIRE LENGTH (C29) -------------------------------------------
+  // Authoritative total conductor length from the Helioscope Components table
+  // ("Strings ... (X m)"). The BOM consumes it directly (x waste) instead of the
+  // geometry estimate, which over-counts on dispersed rooftop layouts. Writes the
+  // value to C29 and a description to E29; only when Helioscope reported it.
+  try {
+    if (data.stringWireLengthM > 0) {
+      writeInput(ss, 'dcStringWireM', Math.round(data.stringWireLengthM));
+      var _dcwM = INPUT_MAP.dcStringWireM;
+      if (_dcwM) {
+        sh.getRange(_dcwM.row, _dcwM.col + 2)   // E29: description column
+          .setValue('Distancia tomada de Helioscope (' + (data.stringWireName || '10 AWG') + ')');
+      }
+      setKeyNote('dcStringWireM',
+        'Cableado DC total de Helioscope: ' + data.stringWireLengthM.toFixed(1) +
+        ' m. El BOM lo usa directamente x factor de merma.');
+    } else {
+      warnings.push('PV/CABLE: Helioscope no reporto longitud de cableado DC -- ' +
+                    'el BOM usara estimacion geometrica. Ver ' + inputLocation('dcStringWireM'));
+    }
+  } catch(e) { engineLog(ss, 'HelioImport', 'WARNING', 'dcStringWireM: ' + e.message); }
+
   // -- ROW PITCH (I14) -------------------------------------------------------
   try {
     writeInput(ss, 'rowPitch', data.rowPitchM);

@@ -650,6 +650,17 @@ var _MAP_DESIGN = {
     section: '03 DISTANCIAS',
     consumedBy: ['engine', 'bom']
   },
+  dcStringWireM: {
+    sheet: SH.INPUT_DESIGN, row: 29, col: 3,
+    label: 'Cableado DC (Helioscope)', type: 'number',
+    default: 0, required: false, unit: 'm',
+    section: '03 DISTANCIAS',
+    consumedBy: ['engine', 'bom'],
+    notes: 'Longitud total del conductor de strings (m) importada de Helioscope ' +
+           '(tabla Components -> "Strings ... (X m)"). El BOM la usa directamente ' +
+           'x factor de merma; 0 o vacio -> estimacion geometrica (estimateDcRunM). ' +
+           'Auto-llenada por el importador; descripcion en E29.'
+  },
 
   // ==========================================================================
   // TOP SECTION — RIGHT COLUMN (cols H-K, values in col I = 9)

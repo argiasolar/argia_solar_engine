@@ -323,6 +323,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
 
   // PV WIRE for DC homeruns
   var pvWireObj = _bomV2_bosPriceObj(bosDb, 'CONDUCTORS', 'PV WIRE', dc.conductorDC + ' AWG');
+  var dcBasis = (lay.bom && lay.bom.dcCableBasis) ? lay.bom.dcCableBasis : 'ESTIMATE';
   w(BOM_ROW.DC_CABLE, BOM_COL.ITEM, itemNo++);
   w(BOM_ROW.DC_CABLE, BOM_COL.DESCRIPTION,
     'Cable DC ' + dc.conductorDC + ' ' + rdConductorUnit(dc.conductorDC) +
@@ -330,8 +331,14 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.DC_CABLE, BOM_COL.QTY, lay.bom.dcCableM);
   w(BOM_ROW.DC_CABLE, BOM_COL.UNIT, 'm');
   w(BOM_ROW.DC_CABLE, BOM_COL.REFERENCE,
-    'DC-05 / NOM 690.8(b)' + (pvWireObj && pvWireObj.id ? ' | ' + pvWireObj.id : ''));
+    'DC-05 / NOM 690.8(b) [' + dcBasis + ']' +
+    (pvWireObj && pvWireObj.id ? ' | ' + pvWireObj.id : ''));
   wp(BOM_ROW.DC_CABLE, null, pvWireObj ? pvWireObj.price : null);
+  if (dcBasis === 'ESTIMATE') {
+    note(BOM_ROW.DC_CABLE, BOM_COL.DESCRIPTION,
+         'Longitud DC ESTIMADA (geometria, sin import Helioscope). ' +
+         'Importar el reporte Helioscope para usar la longitud real del cableado.');
+  }
   if (!pvWireObj) {
     note(BOM_ROW.DC_CABLE, BOM_COL.UNIT_PRICE,
          'PV WIRE ' + dc.conductorDC + ' ' + rdConductorUnit(dc.conductorDC) +

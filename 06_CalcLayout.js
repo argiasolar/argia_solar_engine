@@ -22,6 +22,11 @@ var ROOF_TO_INVERTER_DROP_M = 5;
 // the selected optimizer model.
 var OPTIMIZER_MODULES_PER_UNIT = 1;
 
+// Procurement waste/slack applied to the Helioscope-measured DC wire length when
+// it is used directly for the BOM (cuts, terminations, routing not in the model).
+// Tunable like the constants above; promote to an INPUT field later if needed.
+var DC_WIRE_WASTE_FACTOR = 1.05;
+
 // Array footprint and dimensions from the real module area. Single source of
 // truth used by calcDC (stash), calcAC and calcLayout.
 function estimateArrayGeometry(inp, panelAreaM2) {
@@ -89,14 +94,28 @@ function calcLayout(inp, dc, ac) {
   lay.arrayWidth  = arrayWidth;
   lay.arrayLength = arrayLength;
 
-  // ── DC cable lengths (scaled) ──────────────────────────────────────────────
-  // DC string homerun = distance from string junction to inverter
-  // Estimated: station-to-corridor + inverter-to-cabinet distances
-  // Total DC cable = strings × 2 conductors × avg string run × spare factor
-  const avgStringRunM  = dc.dcLength; // as computed in calcDC
-  const totalDCCableM  = inp.stringsTotal * 2 * avgStringRunM * inp.dcSpareFactor;
+  // ── DC string / PV-wire length ─────────────────────────────────────────────
+  // PREFERRED: total conductor length measured by Helioscope (inp.dcStringWireM,
+  //   from C29). It already reflects the real array geometry, stringing strategy
+  //   and inverter placement — which the geometry estimate cannot capture on
+  //   dispersed layouts. It is the TOTAL conductor (return path included), so it
+  //   is used directly × a small waste factor — NOT × 2 and NOT × stringsTotal.
+  // FALLBACK (no Helioscope wire length): geometry estimate, flagged ESTIMATE.
+  //   strings × 2 × estimateDcRunM × spare. dc.dcLength is estimateDcRunM(inp,geo)
+  //   from calcDC, left unchanged so voltage-drop / Pass 2 behaviour is preserved.
+  const avgStringRunM  = dc.dcLength; // estimateDcRunM — drives vdrop + fallback
+  let totalDCCableM, dcCableBasis;
+  if (inp.dcStringWireM > 0) {
+    totalDCCableM = inp.dcStringWireM * DC_WIRE_WASTE_FACTOR;
+    dcCableBasis  = 'HELIOSCOPE';
+  } else {
+    totalDCCableM = inp.stringsTotal * 2 * avgStringRunM * inp.dcSpareFactor;
+    dcCableBasis  = 'ESTIMATE';
+  }
   lay.avgStringRunM    = avgStringRunM;
   lay.totalDCCableM    = totalDCCableM;
+  lay.dcCableBasis     = dcCableBasis;
+  lay.dcWireSourceM    = inp.dcStringWireM || 0;
 
   // DC grounding cable: perimeter of array × spare factor
   const perimeterM     = 2 * (arrayWidth + arrayLength);
@@ -137,6 +156,7 @@ function calcLayout(inp, dc, ac) {
   lay.bom = {
     // DC
     dcCableM        : Math.ceil(totalDCCableM),
+    dcCableBasis    : dcCableBasis,        // 'HELIOSCOPE' | 'ESTIMATE'
     dcGroundingM    : Math.ceil(lay.groundingDCM),
     dcConduitM      : Math.ceil(dcConduitM),
     dcOcpdUnits     : inp.stringsTotal,  // 1 OCPD per string

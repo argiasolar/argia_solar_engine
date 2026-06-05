@@ -493,9 +493,11 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
        n(lay.arrayWidth,0) + ' m',  'De geometria: area / largo'],
     [MDC_ROW.ARRAY_L,         'Largo equivalente del arreglo',
        n(lay.arrayLength,0) + ' m', 'De geometria con pitch=' + inp.rowPitch + 'm y filas=' + (inp.layoutRows || '(auto)')],
-    [MDC_ROW.CABLE_DC_TOTAL,  'Cable DC total escalado',
+    [MDC_ROW.CABLE_DC_TOTAL,  'Cable DC total' + (lay.bom.dcCableBasis === 'HELIOSCOPE' ? ' (Helioscope)' : ' (estimado)'),
        lay.bom.dcCableM + ' m',
-       'N_strings x 2cond x L_DC x factor_spare = ' + inp.stringsTotal + ' x 2 x ' + n(dc.dcLength,0) + ' x ' + inp.dcSpareFactor],
+       (lay.bom.dcCableBasis === 'HELIOSCOPE'
+         ? 'Cableado real de Helioscope: ' + n(lay.dcWireSourceM,0) + ' m x merma ' + (lay.bom.dcCableM/Math.max(lay.dcWireSourceM,1)).toFixed(2)
+         : 'ESTIMADO: N_strings x 2cond x L_DC x spare = ' + inp.stringsTotal + ' x 2 x ' + n(dc.dcLength,0) + ' x ' + inp.dcSpareFactor)],
     [MDC_ROW.CABLE_AC_TOTAL,  'Cable AC total escalado',
        lay.bom.mainFeederCableM + ' m (feeder)',
        'L_feeder x 3F x spare = ' + n(ac.feederLen,0) + ' x 3 x ' + inp.acSpareFactor],

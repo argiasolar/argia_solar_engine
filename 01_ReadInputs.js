@@ -77,6 +77,7 @@ function readInputs(ss) {
   // Pass 5a: vertical roof->inverter cable drop (m). Optional INPUT_DESIGN
   // field; when blank/0 the layout calc falls back to ROOF_TO_INVERTER_DROP_M.
   const roofToInverterDropM = readInput(ss, 'roofToInverterDropM');
+  const dcStringWireM    = readInput(ss, 'dcStringWireM');
 
   const distInverter     = readInput(ss, 'distInverter');
   const distAcProt       = readInput(ss, 'distAcProt');
@@ -191,7 +192,7 @@ function readInputs(ss) {
     bessCoupling,
 
     // Distances (metres)
-    distInverter, distAcProt, distGrid, groundingLen, roofToInverterDropM,
+    distInverter, distAcProt, distGrid, groundingLen, roofToInverterDropM, dcStringWireM,
 
     // Layout
     areaRequired, availableSpace, aspectRatio,
