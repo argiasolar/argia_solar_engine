@@ -73,32 +73,31 @@ function calcAC(inp, panel, invBank, nom, tbls, dc) {
     const Ft_ac  = getTempFactor(ambientAC, tbls);
     const Fag_ac = getGroupingFactor(ccConductors, tbls);
     const ampReq = requiredAmpacity(iNom, Ft_ac, Fag_ac);
-    const cond   = selectConductor(ampReq, tbls);
+    // Run length up-front so the conductor is sized for BOTH ampacity and vdrop.
+    const acLenInv = estimateAcRunM(inp, {
+      arrayLength: (dc && dc.arrayLength) || 0,
+      arrayWidth : (dc && dc.arrayWidth)  || 0
+    });
+    const kAC  = (inv.phase === 3) ? SQRT3 : 2;
+    const cond = selectConductorForVdrop(ampReq,
+      { k: kAC, lengthM: acLenInv, rho: nom.cuResistivity,
+        iA: iNom, voltageV: inv.voltage, limitFrac: nom.acVdropTarget }, tbls);
     result.Ft_ac     = Ft_ac;
     result.Fag_ac    = Fag_ac;
     result.ampReqAC  = ampReq;
     result.conductor = cond.size;
     result.cuAreaMm2 = cond.cuAreaMm2;
     result.insAreaMm2= cond.insAreaMm2;
+    result.condGovernedBy = cond.governedBy;
 
     // AC-03: EGC for inverter AC branch
     const egc = getEgcSize(ocpd, tbls);
     result.egc        = egc.egcSize;
     result.egcAreaMm2 = egc.cuAreaMm2;
 
-    // AC-04: Voltage drop per inverter to AC protection panel
-    // Geometry-based branch length (Pass 2): inverter->AC panel base + vertical
-    // rise + spread across distributed inverter stations. Replaces the old flat
-    // distInverter + distAcProt. dc carries the array geometry from calcDC.
-    const acLenInv = estimateAcRunM(inp, {
-      arrayLength: (dc && dc.arrayLength) || 0,
-      arrayWidth : (dc && dc.arrayWidth)  || 0
-    });
-    var RperM_ac = nom.cuResistivity / cond.cuAreaMm2; // Cu resistivity from NOM_DB
-    // For 3-phase: Vdrop = SQRT3 x L x R x I / V_line; for 1-phase: 2 x L x R x I / V
-    const vdropAC = (inv.phase === 3)
-      ? (SQRT3 * acLenInv * RperM_ac * iNom) / inv.voltage
-      : (2   * acLenInv * RperM_ac * iNom) / inv.voltage;
+    // AC-04: Voltage drop per inverter (conductor already sized for it above).
+    var RperM_ac = nom.cuResistivity / cond.cuAreaMm2;
+    const vdropAC = cond.vdrop;
     result.acLenInv    = acLenInv;
     result.vdropAC     = vdropAC;
     result.vdropACPct  = vdropAC * 100;
@@ -155,12 +154,18 @@ function calcAC(inp, panel, invBank, nom, tbls, dc) {
   const Ft_main   = getTempFactor(ambientAC, tbls);
   const Fag_main  = getGroupingFactor(3 * parallelRuns, tbls); // 3-phase x runs
   const ampReqMain= requiredAmpacity(iPerRun, Ft_main, Fag_main);
-  const condMain  = selectConductor(ampReqMain, tbls);
+  // Feeder length + voltage up-front so the conductor is sized for vdrop too.
+  const feederLen   = inp.distAcProt + inp.distGrid + inp.feederExtraM;
+  const mainVoltage = invBank.reduce((best, inv) => Math.max(best, inv.voltage), 0);
+  const condMain  = selectConductorForVdrop(ampReqMain,
+      { k: SQRT3, lengthM: feederLen, rho: nom.cuResistivity,
+        iA: iPerRun, voltageV: mainVoltage, limitFrac: nom.acVdropTarget }, tbls);
   ac.Ft_main     = Ft_main;
   ac.Fag_main    = Fag_main;
   ac.ampReqMain  = ampReqMain;
   ac.condMain    = condMain.size;
   ac.condMainInsufficient = !!condMain.insufficient;  // true => no table conductor meets ampReqMain
+  ac.condMainGovernedBy   = condMain.governedBy;
   ac.areaConMain = condMain.cuAreaMm2;
   ac.insAreaMain = condMain.insAreaMm2;
 
@@ -169,12 +174,9 @@ function calcAC(inp, panel, invBank, nom, tbls, dc) {
   ac.egcMain    = egcMain.egcSize;
   ac.egcMainArea= egcMain.cuAreaMm2;
 
-  // AC-04: Main feeder voltage drop (to grid interconnection)
-  const feederLen   = inp.distAcProt + inp.distGrid + inp.feederExtraM;
-  var RperM_main = nom.cuResistivity / condMain.cuAreaMm2; // Cu resistivity from NOM_DB
-  // Use primary inverter voltage for feeder (assume 480V 3-phase for main)
-  const mainVoltage = invBank.reduce((best, inv) => Math.max(best, inv.voltage), 0);
-  const vdropFeeder = (SQRT3 * feederLen * RperM_main * iPerRun) / mainVoltage;
+  // AC-04: Main feeder voltage drop (conductor already sized for it above).
+  var RperM_main = nom.cuResistivity / condMain.cuAreaMm2;
+  const vdropFeeder = condMain.vdrop;
   ac.feederLen      = feederLen;
   ac.vdropFeeder    = vdropFeeder;
   ac.vdropFeederPct = vdropFeeder * 100;

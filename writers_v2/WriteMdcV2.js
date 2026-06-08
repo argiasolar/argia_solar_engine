@@ -197,7 +197,7 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
   row(MDC_ROW.COND_DC, dc.conductorDC + ' AWG',
       PROV.AUTO_CALC, 'Tabla ampacidades 15M',
       'Min calibre con ampacidad >= ' + n(dc.ampReqDC,2) + ' A  |  ' + dc.conductorDC + ' AWG -> ' +
-      n(dc.ampReqDC,0) + ' A OK  |  ' + cellRef('15M_ELEC_TABLES','COPPER CONDUCTORS'), null);
+      n(dc.ampReqDC,0) + ' A OK [gobernado por ' + (dc.condGovernedBy || 'AMPACITY') + ']  |  ' + cellRef('15M_ELEC_TABLES','COPPER CONDUCTORS'), null);
   row(MDC_ROW.AREA_DC, n(dc.areaConDC, 2),
       PROV.DB, '15M_ELEC_TABLES',
       'Area Cu = ' + n(dc.areaConDC,2) + ' mm2 para ' + dc.conductorDC + ' AWG  |  ' +
@@ -377,7 +377,7 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
   row(MDC_ROW.COND_MAIN, ac.condMain + ' AWG',
       PROV.AUTO_CALC, '15M_ELEC_TABLES ampacidades',
       'Req=' + n(ac.ampReqMain,2) + 'A  |  Ft=' + n(ac.Ft_main,3) + '  Fag=' + n(ac.Fag_main,2) +
-      '  |  Req_c = ' + n(ac.iPerRun,1) + '/('+n(ac.Ft_main,3)+'x'+n(ac.Fag_main,2)+')=' + n(ac.ampReqMain,2) + 'A  |  ' + ac.condMain + ' AWG OK', null);
+      '  |  Req_c = ' + n(ac.iPerRun,1) + '/('+n(ac.Ft_main,3)+'x'+n(ac.Fag_main,2)+')=' + n(ac.ampReqMain,2) + 'A  |  ' + ac.condMain + ' OK [gobernado por ' + (ac.condMainGovernedBy || 'AMPACITY') + ']', null);
   row(MDC_ROW.AREA_MAIN, n(ac.areaConMain, 2),
       PROV.DB, '15M_ELEC_TABLES', 'Area Cu para ' + ac.condMain + ' AWG', null);
   row(MDC_ROW.EGC_MAIN, ac.egcMain,

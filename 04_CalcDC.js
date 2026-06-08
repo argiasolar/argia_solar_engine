@@ -134,7 +134,13 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   var dcConductorCount = Math.min(inp.parallelStrings * 2, 6);
   var Fag_dc = getGroupingFactor(dcConductorCount, tbls);
   var ampReqDC = dc.iDesignPerStr / (Ft_dc * Fag_dc);
-  var condDC   = selectConductor(ampReqDC, tbls);
+  // DC-07 inputs up-front so the string conductor is sized for vdrop, not only ampacity.
+  var vString  = vmp * inp.modsPerString;
+  var dcLength = estimateDcRunM(inp, geo);          // geometry run -> BOM conduit + fallback
+  var _vd      = dcVdropConductorLength(inp, dcLength);
+  var condDC   = selectConductorForVdrop(ampReqDC,
+      { k: 1, lengthM: _vd.lenM, rho: nom.cuResistivity,
+        iA: dc.iDesignPerStr, voltageV: vString, limitFrac: nom.dcVdropTarget }, tbls);
 
   dc.Ft_dc       = Ft_dc;
   dc.Fag_dc      = Fag_dc;
@@ -142,6 +148,7 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   dc.conductorDC = condDC.size;
   dc.areaConDC   = condDC.cuAreaMm2;
   dc.insAreaDC   = condDC.insAreaMm2;
+  dc.condGovernedBy = condDC.governedBy;
 
   // -- DC-04: OCPD per string -------------------------------------------------
   var ocpdDC = nextBreaker(dc.iDesignPerStr, tbls);
@@ -157,20 +164,13 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   dc.egcDC     = egcDC.egcSize;
   dc.egcDCArea = egcDC.cuAreaMm2;
 
-  // -- DC-07: Voltage drop ----------------------------------------------------
+  // -- DC-07: Voltage drop (string conductor already sized for it in DC-05) ----
   var RperM_dc = nom.cuResistivity / condDC.cuAreaMm2;
-  var vString  = vmp * inp.modsPerString;
-  // Geometry-based average string home-run (Pass 2): flat to-inverter/corridor
-  // base + vertical rise + average in-array distance (scales with array size).
-  // Replaces the old flat distInverter + stationCorridorM that under-measured
-  // far strings. dc.dcLength also drives the DC cable BOM in calcLayout.
-  var dcLength = estimateDcRunM(inp, geo);   // geometry run -> BOM conduit + fallback
-  var _vd      = dcVdropConductorLength(inp, dcLength);
-  var vdropDC  = (_vd.lenM * RperM_dc * dc.iDesignPerStr) / vString;
+  var vdropDC  = condDC.vdrop;
 
   dc.RperM_dc    = RperM_dc;
   dc.vString     = vString;
-  dc.dcLength    = dcLength;
+  dc.dcLength    = dcLength;        // geometry run -> BOM conduit + fallback
   dc.vdropLenM   = _vd.lenM;        // round-trip conductor length used for vdrop
   dc.vdropBasis  = _vd.basis;       // OVERRIDE-LONGEST | HELIOSCOPE-AVG | ESTIMATE
   dc.vdropDC     = vdropDC;

@@ -160,6 +160,40 @@ function selectConductor(requiredA, tbls) {
                        { insufficient: true, requiredA: requiredA });
 }
 
+/**
+ * Select the smallest conductor satisfying BOTH the ampacity floor AND the
+ * voltage-drop limit (size for the worst case). vdropCtx = { k, lengthM, rho,
+ * iA, voltageV, limitFrac }: vdrop = (k * L * (rho/A) * I) / V. Pass k=Math.sqrt(3)
+ * for 3-phase AC, 2 for 1-phase, or a DC string's already-round-trip length with k=1.
+ * Returns { size, cuAreaMm2, insAreaMm2, ampacity, vdrop, minAreaVdrop,
+ *           governedBy:'VDROP'|'AMPACITY', insufficient }. Pure helper.
+ */
+function selectConductorForVdrop(ampReqA, vdropCtx, tbls) {
+  var minArea = 0;
+  if (vdropCtx && vdropCtx.limitFrac > 0 && vdropCtx.voltageV > 0) {
+    minArea = (vdropCtx.k * vdropCtx.lengthM * vdropCtx.rho * vdropCtx.iA) /
+              (vdropCtx.voltageV * vdropCtx.limitFrac);
+  }
+  var sorted = [...tbls.conductors].sort(function (a, b) { return a.ampacity - b.ampacity; });
+  var byAmp = null;
+  for (var i = 0; i < sorted.length; i++) {
+    if (sorted[i].ampacity >= ampReqA) { byAmp = sorted[i]; break; }
+  }
+  var chosen = null;
+  for (var j = 0; j < sorted.length; j++) {
+    if (sorted[j].ampacity >= ampReqA && sorted[j].cuAreaMm2 >= minArea) { chosen = sorted[j]; break; }
+  }
+  var insufficient = false;
+  if (!chosen) { chosen = sorted[sorted.length - 1]; insufficient = true; }
+  var vdrop = (vdropCtx && vdropCtx.voltageV > 0)
+    ? (vdropCtx.k * vdropCtx.lengthM * (vdropCtx.rho / chosen.cuAreaMm2) * vdropCtx.iA) / vdropCtx.voltageV
+    : 0;
+  var governedBy = (byAmp && chosen.cuAreaMm2 > byAmp.cuAreaMm2) ? 'VDROP' : 'AMPACITY';
+  return { size: chosen.size, cuAreaMm2: chosen.cuAreaMm2, insAreaMm2: chosen.insAreaMm2,
+           ampacity: chosen.ampacity, vdrop: vdrop, minAreaVdrop: minArea,
+           governedBy: governedBy, insufficient: insufficient, ampReq: ampReqA };
+}
+
 /** Returns EGC size string for given OCPD amperage. */
 function getEgcSize(ocpdA, tbls) {
   const sorted = [...tbls.groundTable].sort((a, b) => a.ocpdMaxA - b.ocpdMaxA);
