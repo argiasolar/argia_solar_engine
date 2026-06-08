@@ -211,10 +211,14 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
       'EGC_DC segun OCPD=' + dc.ocpdDC + 'A  |  Tabla 250-122  |  ' + cellRef('15M_ELEC_TABLES','GROUND CONDUCTOR'), null);
   row(MDC_ROW.VDROP_DC, pct(dc.vdropDC),
       PROV.AUTO_CALC, 'ARGIA policy / NOM_DB: project_dc_voltage_drop',
-      'Vdrop% = (2 x L x rho/A x I) / V_string' +
-      ' = (2 x ' + n(dc.dcLength,0) + 'm x ' + n(nom.cuResistivity,4) + '/' + n(dc.areaConDC,2) + ' x ' + n(dc.iDesignPerStr,2) + ') / ' + n(dc.vString,1) +
+      'Vdrop% = (L_cond x rho/A x I) / V_string' +
+      ' = (' + n(dc.vdropLenM,1) + 'm x ' + n(nom.cuResistivity,4) + '/' + n(dc.areaConDC,2) + ' x ' + n(dc.iDesignPerStr,2) + ') / ' + n(dc.vString,1) +
       ' = ' + pct(dc.vdropDC) +
-      '  |  Limite: ' + pct(nom.dcVdropTarget) + ' objetivo / ' + pct(nom.dcVdropHard) + ' max  |  L=' + inputLocation('distInverter') + '+' + inputLocation('stationCorridorM') + ' auto',
+      '  |  Limite: ' + pct(nom.dcVdropTarget) + ' objetivo / ' + pct(nom.dcVdropHard) + ' max' +
+      '  |  L_cond/string [' + dc.vdropBasis + ']' +
+      (dc.vdropBasis === 'HELIOSCOPE-AVG'    ? ' = Helioscope ' + n(inp.dcStringWireM,0) + 'm / ' + inp.stringsTotal + ' strings (promedio -- capturar el tramo mas largo para peor caso)'
+       : dc.vdropBasis === 'OVERRIDE-LONGEST' ? ' = 2 x ' + n(inp.longestStringRunM,0) + 'm (tramo mas largo, peor caso)'
+       :                                        ' = 2 x ' + n(dc.dcLength,0) + 'm (estimacion geometrica)'),
       null);
   row(MDC_ROW.CONDUIT_DC, dc.conduitDC + '"',
       PROV.AUTO_CALC, 'NOM Ch9 Table 1 / 64_NOM_CONDUIT_FILL',

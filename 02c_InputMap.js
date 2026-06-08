@@ -662,6 +662,18 @@ var _MAP_DESIGN = {
            'Auto-llenada por el importador; descripcion en E29.'
   },
 
+  longestStringRunM: {
+    sheet: SH.INPUT_DESIGN, row: 30, col: 3,
+    label: '\u26a0 Tramo string mas largo (1 via)', type: 'number',
+    default: 0, required: false, unit: 'm',
+    section: '03 DISTANCIAS',
+    consumedBy: ['engine'],
+    notes: 'CRITICO -- VERIFICAR CADA CORRIDA. Longitud de UNA via del home-run del ' +
+           'string MAS LARGO (peor caso) para la caida de tension DC. 0 o vacio -> ' +
+           'se usa el promedio Helioscope (cable total / N strings). Capturar el real ' +
+           'desde el layout Helioscope para dimensionar al peor string.'
+  },
+
   // ==========================================================================
   // TOP SECTION — RIGHT COLUMN (cols H-K, values in col I = 9)
   // ==========================================================================

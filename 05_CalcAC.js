@@ -160,6 +160,7 @@ function calcAC(inp, panel, invBank, nom, tbls, dc) {
   ac.Fag_main    = Fag_main;
   ac.ampReqMain  = ampReqMain;
   ac.condMain    = condMain.size;
+  ac.condMainInsufficient = !!condMain.insufficient;  // true => no table conductor meets ampReqMain
   ac.areaConMain = condMain.cuAreaMm2;
   ac.insAreaMain = condMain.insAreaMm2;
 

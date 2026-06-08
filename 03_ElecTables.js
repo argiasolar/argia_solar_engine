@@ -153,7 +153,11 @@ function selectConductor(requiredA, tbls) {
   for (const c of sorted) {
     if (c.ampacity >= requiredA) return c;
   }
-  return sorted[sorted.length - 1]; // largest in table
+  // Nothing meets the requirement. Return the largest but FLAG it insufficient so
+  // the caller never silently ships an under-ampacity conductor (latent feeder bug:
+  // the table used to stop at 400 kcmil / 380 A vs a 413 A requirement).
+  return Object.assign({}, sorted[sorted.length - 1],
+                       { insufficient: true, requiredA: requiredA });
 }
 
 /** Returns EGC size string for given OCPD amperage. */

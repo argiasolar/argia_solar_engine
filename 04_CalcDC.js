@@ -54,6 +54,24 @@ function resolveTempCoeffs(panel, inp) {
            vocSource: vocSource, vmpSource: vmpSource };
 }
 
+/**
+ * DC voltage-drop conductor length per string (round-trip metres) + its basis.
+ * Pure helper -- unit-testable without a workbook. Priority:
+ *   1) longest string run (one-way manual worst case)      -> x2 (round trip)
+ *   2) Helioscope average = total measured wire / strings   -> already round trip
+ *   3) geometry estimate (legacy; uses roof-drop input)     -> x2 (round trip)
+ * Sizing on the AVERAGE (case 2) is honest vs the old single array-to-inverter
+ * distance applied to every string, but the worst string can be longer; capture
+ * longestStringRunM for a code-correct worst-case.
+ */
+function dcVdropConductorLength(inp, dcLengthGeo) {
+  if (inp.longestStringRunM > 0)
+    return { lenM: 2 * inp.longestStringRunM, basis: 'OVERRIDE-LONGEST' };
+  if (inp.dcStringWireM > 0 && inp.stringsTotal > 0)
+    return { lenM: inp.dcStringWireM / inp.stringsTotal, basis: 'HELIOSCOPE-AVG' };
+  return { lenM: 2 * (Number(dcLengthGeo) || 0), basis: 'ESTIMATE' };
+}
+
 function calcDC(inp, panel, invBank, nom, tbls) {
   var dc = {};
 
@@ -146,12 +164,15 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   // base + vertical rise + average in-array distance (scales with array size).
   // Replaces the old flat distInverter + stationCorridorM that under-measured
   // far strings. dc.dcLength also drives the DC cable BOM in calcLayout.
-  var dcLength = estimateDcRunM(inp, geo);
-  var vdropDC  = (2 * dcLength * RperM_dc * dc.iDesignPerStr) / vString;
+  var dcLength = estimateDcRunM(inp, geo);   // geometry run -> BOM conduit + fallback
+  var _vd      = dcVdropConductorLength(inp, dcLength);
+  var vdropDC  = (_vd.lenM * RperM_dc * dc.iDesignPerStr) / vString;
 
   dc.RperM_dc    = RperM_dc;
   dc.vString     = vString;
   dc.dcLength    = dcLength;
+  dc.vdropLenM   = _vd.lenM;        // round-trip conductor length used for vdrop
+  dc.vdropBasis  = _vd.basis;       // OVERRIDE-LONGEST | HELIOSCOPE-AVG | ESTIMATE
   dc.vdropDC     = vdropDC;
   dc.vdropDCPct  = vdropDC * 100;
   dc.vdropDCPass   = vdropDC <= nom.dcVdropTarget;
