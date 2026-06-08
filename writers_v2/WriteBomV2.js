@@ -63,12 +63,62 @@
 //   _bomV2_loadBosDb, and lookupBatteryUnitPrice so unit tests can drive
 //   the writer without real sheets.
 // -----------------------------------------------------------------------------
+/**
+ * Read 15M_PRODUCTS_OPTIMIZERS into plain objects. Returns [] if absent.
+ */
+function _bomV2_loadOptimizerDb(ss) {
+  var sh = ss.getSheetByName('15M_PRODUCTS_OPTIMIZERS');
+  if (!sh) return [];
+  var vals = sh.getDataRange().getValues();
+  if (vals.length < 2) return [];
+  var H = {}; vals[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+  var col = function (row, key) { return H.hasOwnProperty(key) ? row[H[key]] : null; };
+  var out = [];
+  for (var r = 1; r < vals.length; r++) {
+    if (!col(vals[r], 'OPT_ID')) continue;
+    out.push({
+      id:             String(col(vals[r], 'OPT_ID')).trim(),
+      brand:          String(col(vals[r], 'OPT_BRAND') || '').trim(),
+      model:          String(col(vals[r], 'OPT_MODEL') || '').trim(),
+      type:           String(col(vals[r], 'OPT_TYPE') || '').trim(),
+      modulesPerUnit: Number(col(vals[r], 'OPT_MODULES_PER_UNIT')) || 1,
+      maxInputW:      Number(col(vals[r], 'OPT_MAX_INPUT_POWER_W')) || 0,
+      priceMxn:       Number(col(vals[r], 'OPT_PRICE_PER_UNIT_MXN')) || 0,
+      rsdIncluded:    String(col(vals[r], 'OPT_RAPID_SHUTDOWN_INCLUDED') || '').toUpperCase() === 'YES',
+      status:         String(col(vals[r], 'OPT_STATUS') || 'ACTIVE').trim()
+    });
+  }
+  return out;
+}
+
+/**
+ * Cheapest optimizer compatible with the inverter + module. Compatible =
+ * brand matches the inverter brand (case-insensitive) AND, when a module
+ * wattage is known, maxInputW >= moduleWp, AND status ACTIVE. A SolarEdge
+ * inverter only takes SolarEdge optimizers, so brand match is mandatory.
+ * Returns the cheapest by priceMxn, or null. Pure helper.
+ */
+function _bomV2_selectOptimizer(optRows, inverterBrand, moduleWp) {
+  var brand = String(inverterBrand || '').toUpperCase().trim();
+  if (!brand) return null;
+  var wp = Number(moduleWp) || 0;
+  var ok = (optRows || []).filter(function (o) {
+    return String(o.brand || '').toUpperCase().trim() === brand &&
+           (wp <= 0 || Number(o.maxInputW) >= wp) &&
+           String(o.status || 'ACTIVE').toUpperCase() === 'ACTIVE';
+  });
+  if (!ok.length) return null;
+  ok.sort(function (a, b) { return Number(a.priceMxn) - Number(b.priceMxn); });
+  return ok[0];
+}
+
 function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _testOpts) {
   ss = ss || SpreadsheetApp.getActive();
   _testOpts = _testOpts || {};
   var readInputFn          = _testOpts.readInputFn          || null;  // resolved via fallback below
   var loadStructureDbFn    = _testOpts.loadStructureDbFn    || _bomV2_loadStructureDb;
   var loadBosDbFn          = _testOpts.loadBosDbFn          || _bomV2_loadBosDb;
+  var loadOptimizerDbFn    = _testOpts.loadOptimizerDbFn    || _bomV2_loadOptimizerDb;
   var lookupBatteryPriceFn = _testOpts.lookupBatteryPriceFn || null;  // resolved via fallback below
   var readElecTablesFn     = _testOpts.readElecTablesFn     || null;  // resolved via fallback in _resolveBessBosPrice
   var selectConduitFn      = _testOpts.selectConduitFn      || null;
@@ -185,6 +235,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.PANEL_PRIMARY, BOM_COL.QTY, inp.panelQty);
   w(BOM_ROW.PANEL_PRIMARY, BOM_COL.UNIT, 'pcs');
   w(BOM_ROW.PANEL_PRIMARY, BOM_COL.REFERENCE, panel['PROD_ID'] || '');
+  w(BOM_ROW.PANEL_PRIMARY, BOM_COL.MEMORIA, inp.panelQty + ' modulos del diseno (importado de Helioscope / INPUT_DESIGN)');
   wp(BOM_ROW.PANEL_PRIMARY, null, panelUsdUnit);
   if (!panelUsdUnit) {
     note(BOM_ROW.PANEL_PRIMARY, BOM_COL.UNIT_PRICE,
@@ -221,6 +272,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
       inv.model + ' ' + inv.acKw + 'kW -- ' + inv.voltage + 'V ' +
       (inv.phase === 3 ? '3F' : '1F'));
     w(r, BOM_COL.QTY, inv.qty);
+    w(r, BOM_COL.MEMORIA, inv.qty + ' inversores ' + (inv.model||'') + ' del diseno (Helioscope)');
     w(r, BOM_COL.UNIT, 'pcs');
     w(r, BOM_COL.REFERENCE, inv.invId || '');
     var priceUsd = (inv.priceUsd && inv.priceUsd > 0) ? inv.priceUsd : null;
@@ -249,6 +301,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.ITEM, itemNo++);
   w(BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.DESCRIPTION, strDisplay);
   w(BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.QTY, inp.panelQty);
+  w(BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.MEMORIA, inp.panelQty + ' modulos -> 1 montaje por modulo');
   w(BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.UNIT, 'pcs');
   w(BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.REFERENCE, strRefText);
   if (strUsdTotal) {
@@ -423,8 +476,11 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     }
   }
 
-  // RSD (Rapid Shutdown Device)
-  var rsdQty = lay.bom.rsdRequired ? Math.ceil(inp.stringsTotal / 5) : 0;
+  // RSD (Rapid Shutdown Device). OPTIMIZER vs RSD are mutually exclusive: a
+  // SolarEdge/optimizer system already satisfies NOM 690.12 via the optimizers,
+  // so a separate RSD line would be double-spend. Suppress it for OPTIMIZER topology.
+  var rsdSuppressedByOpt = !!(dc && dc.hasOptimizerTopology);
+  var rsdQty = (lay.bom.rsdRequired && !rsdSuppressedByOpt) ? Math.ceil(inp.stringsTotal / 5) : 0;
   w(BOM_ROW.DC_RSD, BOM_COL.ITEM, itemNo++);
   w(BOM_ROW.DC_RSD, BOM_COL.DESCRIPTION, 'Dispositivo apagado rapido RSD (ROOF)');
   w(BOM_ROW.DC_RSD, BOM_COL.QTY, rsdQty > 0 ? rsdQty : '');
@@ -433,8 +489,15 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   if (rsdQty > 0) {
     wp(BOM_ROW.DC_RSD, null, 2500);
     note(BOM_ROW.DC_RSD, BOM_COL.UNIT_PRICE,
-      'Precio referencia $2,500 USD/unidad \u2014 confirmar con proveedor.\n' +
-      'NOM 690.12 requiere RSD en instalaciones de azotea.');
+      'Precio referencia $2,500 USD/unidad \u2014 cotizar de 14M_PRODUCTS_BOS.\n' +
+      'NOM 690.12 requiere RSD en instalaciones de azotea con inversor string.');
+    w(BOM_ROW.DC_RSD, BOM_COL.MEMORIA,
+      'RSD en azotea (NOM 690.12): ceil(' + inp.stringsTotal + ' strings / 5) = ' + rsdQty +
+      ' pcs. Sin optimizadores en este diseno.');
+  } else if (rsdSuppressedByOpt) {
+    w(BOM_ROW.DC_RSD, BOM_COL.MEMORIA,
+      'Sin RSD por separado: el diseno usa optimizadores (topologia OPTIMIZER) que ' +
+      'ya proveen apagado rapido NOM 690.12. RSD y optimizadores son mutuamente excluyentes.');
   }
 
   // OPTIMIZERS / MLPE (Pass 4). Reserved DC row 33 (between DC_RSD and
@@ -445,14 +508,34 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   var _optRow = BOM_ROW.DC_RSD + 1;          // reserved row 33
   var optQty  = (lay.bom && lay.bom.optimizerUnits) || 0;
   if (optQty > 0) {
+    var _optInv   = invBank.filter(function (i) {
+      return String(i.topology || '').toUpperCase() === 'OPTIMIZER';
+    })[0] || {};
+    var _moduleWp = 0;
+    ['PANEL_PMAX_W','PANEL_POWER_W','PANEL_WATTAGE_W','PANEL_PSTC_W','PANEL_WP']
+      .forEach(function (k) { if (!_moduleWp) _moduleWp = Number(panel && panel[k]) || 0; });
+    var _optSel = _bomV2_selectOptimizer(loadOptimizerDbFn(ss), _optInv.brand, _moduleWp);
     w(_optRow, BOM_COL.ITEM, itemNo++);
-    w(_optRow, BOM_COL.DESCRIPTION, 'Optimizador de potencia (MLPE) por modulo');
+    w(_optRow, BOM_COL.DESCRIPTION,
+      'Optimizador de potencia (MLPE) por modulo' +
+      (_optSel ? ' \u2014 ' + _optSel.brand + ' ' + _optSel.model : ''));
     w(_optRow, BOM_COL.QTY, optQty);
     w(_optRow, BOM_COL.UNIT, 'pcs');
-    w(_optRow, BOM_COL.REFERENCE, 'Inversor topologia OPTIMIZER');
-    note(_optRow, BOM_COL.UNIT_PRICE,
-      'Cantidad = modulos / optimizador (' + optQty + ' pcs). ' +
-      'Confirmar modelo y precio del optimizador con el proveedor.');
+    w(_optRow, BOM_COL.REFERENCE, 'Inversor topologia OPTIMIZER' + (_optSel ? ' | ' + _optSel.id : ''));
+    if (_optSel && _optSel.priceMxn > 0) {
+      wp(_optRow, _optSel.priceMxn, null);     // DB price is MXN
+    } else {
+      note(_optRow, BOM_COL.UNIT_PRICE,
+        'Sin optimizador compatible con precio en 15M_PRODUCTS_OPTIMIZERS para marca "' +
+        (_optInv.brand || '?') + '". Verificar catalogo.');
+    }
+    w(_optRow, BOM_COL.MEMORIA,
+      '1 optimizador por modulo (PEOR CASO) = ' + optQty + ' pcs; si el cliente permite ' +
+      '1 por 2 modulos -> ' + Math.ceil(optQty / 2) + ' (revisar y reducir despues). ' +
+      'Topologia OPTIMIZER (SolarEdge en diseno Helioscope). ' +
+      (_optSel ? 'Mas barato compatible: ' + _optSel.brand + ' ' + _optSel.model +
+                 ' ($' + _optSel.priceMxn + ' MXN/u, incluye apagado rapido NOM 690.12).'
+               : 'Sin modelo compatible en DB.'));
   }
 
   ws(BOM_ROW.SUBTOTAL_DC,

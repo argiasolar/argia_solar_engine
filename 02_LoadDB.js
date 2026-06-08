@@ -812,6 +812,7 @@ function buildInverterBank(ss, inverterBankRaw) {
       model    : entry.model,
       invId    : String(db['INV_ID'] || '').trim(),
       topology : String(db['INV_TOPOLOGY'] || 'STRING').toUpperCase().trim(),
+      brand    : String(db['INV_BRAND'] || '').trim(),
       mdcReady : mdcReady,
       datasheetNotes: String(db['DATASHEET_CHECK_NOTES'] || '').trim(),
 
