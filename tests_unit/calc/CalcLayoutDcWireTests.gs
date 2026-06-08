@@ -33,7 +33,7 @@ function _layoutDcWireFixture(dcStringWireM) {
     perInverter: [{ model: 'SE100KUS', qty: 5, acLenInv: 200, ocpd: 175,
                     conductor: '1/0', egc: '6', conduit: '2 1/2' }],
     parallelRuns: 1, feederLen: 100, mainBreaker: 800, condMain: '400 kcmil',
-    egcMain: '1/0', conduitMain: '4', transformer: 750
+    egcMain: '1/0', conduitMain: '4', transformer: 750, iTotalAC: 601.4
   };
   return { inp: inp, dc: dc, ac: ac };
 }
@@ -57,6 +57,22 @@ registerTest({
     t.assert('dcWireSourceM preserved', 5820, lay.dcWireSourceM);
     // Guard against the geometry over-count reappearing on this dispersed job.
     t.assertTrue('measured well below geometry estimate', lay.bom.dcCableM < 8000);
+
+    // MEMORIA / CÁLCULO trace layer: every derived line must carry real arithmetic.
+    t.suite('calcLayout BOM trace (MEMORIA / CÁLCULO)');
+    t.assertTrue('trace.dcCable cites Helioscope source m',
+                 lay.bom.trace.dcCable.indexOf('5820') >= 0);
+    t.assertTrue('trace.dcCable cites computed total m',
+                 lay.bom.trace.dcCable.indexOf(String(lay.bom.dcCableM)) >= 0);
+    t.assertTrue('trace.feeder cites feeder length',
+                 lay.bom.trace.feeder.indexOf('100') >= 0 &&
+                 lay.bom.trace.feeder.indexOf(String(lay.bom.mainFeederCableM)) >= 0);
+    t.assertTrue('trace.mainBreaker shows I_total x 1.25 -> standard',
+                 lay.bom.trace.mainBreaker.indexOf('601') >= 0 &&
+                 lay.bom.trace.mainBreaker.indexOf('751.75') >= 0 &&
+                 lay.bom.trace.mainBreaker.indexOf('800') >= 0);
+    t.assertTrue('per-inverter trace cites cable m + OCPD',
+                 lay.bom.acPerInverterBOM[0].trace.indexOf('OCPD') >= 0);
   }
 });
 

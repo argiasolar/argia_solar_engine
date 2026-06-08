@@ -162,7 +162,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     ' | ' + inp.panelQty + ' mod x ' + panel['PANEL_POWER_W'] +
     'W = ' + dc.dcKwp.toFixed(2) + ' kWp / ' + dc.acKwTotal + ' kWac');
 
-  ['#','DESCRIPCION','QTY','UNIDAD','PRECIO U (USD)','TOTAL (USD)','TOTAL (MXN)','REFERENCIA']
+  ['#','DESCRIPCION','QTY','UNIDAD','PRECIO U (USD)','TOTAL (USD)','TOTAL (MXN)','REFERENCIA','MEMORIA / C\u00c1LCULO']
     .forEach(function(h, i) { w(BOM_ROW.HEADERS, i+1, h); });
 
   w(BOM_ROW.EXCHANGE_RATE, BOM_COL.UNIT_PRICE, 'TC USD/MXN:');
@@ -329,6 +329,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     'Cable DC ' + dc.conductorDC + ' ' + rdConductorUnit(dc.conductorDC) +
     ' PV WIRE Cu (string homeruns)');
   w(BOM_ROW.DC_CABLE, BOM_COL.QTY, lay.bom.dcCableM);
+  w(BOM_ROW.DC_CABLE, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.dcCable) || '');
   w(BOM_ROW.DC_CABLE, BOM_COL.UNIT, 'm');
   w(BOM_ROW.DC_CABLE, BOM_COL.REFERENCE,
     'DC-05 / NOM 690.8(b) [' + dcBasis + ']' +
@@ -353,6 +354,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.DC_GROUNDING, BOM_COL.DESCRIPTION,
     'Cable tierra DC ' + dc.egcDC + ' ' + rdConductorUnit(dc.egcDC) + ' Cu desnudo');
   w(BOM_ROW.DC_GROUNDING, BOM_COL.QTY, lay.bom.dcGroundingM);
+  w(BOM_ROW.DC_GROUNDING, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.dcGrounding) || '');
   w(BOM_ROW.DC_GROUNDING, BOM_COL.UNIT, 'm');
   w(BOM_ROW.DC_GROUNDING, BOM_COL.REFERENCE,
     'DC-06 / NOM 690.45' + (egcDcObj && egcDcObj.id ? ' | ' + egcDcObj.id : ''));
@@ -367,6 +369,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.DC_MC4, BOM_COL.DESCRIPTION,
     'Conector MC4 par ' + dc.conductorDC + ' ' + rdConductorUnit(dc.conductorDC));
   w(BOM_ROW.DC_MC4, BOM_COL.QTY, lay.bom.mc4Pairs);
+  w(BOM_ROW.DC_MC4, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.mc4) || '');
   w(BOM_ROW.DC_MC4, BOM_COL.UNIT, 'par');
   w(BOM_ROW.DC_MC4, BOM_COL.REFERENCE,
     'String termination' + (mc4Obj && mc4Obj.id ? ' | ' + mc4Obj.id : ''));
@@ -379,6 +382,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.DC_OCPD, BOM_COL.DESCRIPTION,
     'OCPD DC string ' + dc.ocpdDC + 'A (fusible 10x38mm)');
   w(BOM_ROW.DC_OCPD, BOM_COL.QTY, lay.bom.dcOcpdUnits);
+  w(BOM_ROW.DC_OCPD, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.dcOcpd) || '');
   w(BOM_ROW.DC_OCPD, BOM_COL.UNIT, 'pcs');
   w(BOM_ROW.DC_OCPD, BOM_COL.REFERENCE,
     'DC-04 / NOM 690.9' + (dcFuseObj && dcFuseObj.id ? ' | ' + dcFuseObj.id : ''));
@@ -398,6 +402,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     w(BOM_ROW.DC_CONDUIT, BOM_COL.DESCRIPTION,
       'Charola tipo escalera (DC homerun horizontal) ' + trayM + 'm');
     w(BOM_ROW.DC_CONDUIT, BOM_COL.QTY, trayTramosDC);
+    w(BOM_ROW.DC_CONDUIT, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.dcConduit) || '');
     w(BOM_ROW.DC_CONDUIT, BOM_COL.UNIT, 'tramo');
     w(BOM_ROW.DC_CONDUIT, BOM_COL.REFERENCE,
       'DC-08-TRAY' + (trayObjDC && trayObjDC.id ? ' | ' + trayObjDC.id : ''));
@@ -408,6 +413,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     w(BOM_ROW.DC_CONDUIT, BOM_COL.DESCRIPTION,
       'Conduit IMC ' + _bomV2_conduitSizeLabel(dc.conduitDC) + '" x 3m (DC)');
     w(BOM_ROW.DC_CONDUIT, BOM_COL.QTY, condSticksDC);
+    w(BOM_ROW.DC_CONDUIT, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.dcConduit) || '');
     w(BOM_ROW.DC_CONDUIT, BOM_COL.UNIT, 'pza');
     w(BOM_ROW.DC_CONDUIT, BOM_COL.REFERENCE,
       'DC-08 / Ch9 Table 1' + (condObjDC && condObjDC.id ? ' | ' + condObjDC.id : ''));
@@ -465,6 +471,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     'Cable alimentador principal ' + ac.condMain + ' ' +
     rdConductorUnit(ac.condMain) + ' THHW Cu');
   w(BOM_ROW.AC_FEEDER, BOM_COL.QTY, lay.bom.mainFeederCableM);
+  w(BOM_ROW.AC_FEEDER, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.feeder) || '');
   w(BOM_ROW.AC_FEEDER, BOM_COL.UNIT, 'm');
   w(BOM_ROW.AC_FEEDER, BOM_COL.REFERENCE,
     'AC-02 / main feeder' + (mCableObj && mCableObj.id ? ' | ' + mCableObj.id : ''));
@@ -483,6 +490,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     'Cable tierra principal ' + ac.egcMain + ' ' +
     rdConductorUnit(ac.egcMain) + ' Cu desnudo');
   w(BOM_ROW.AC_EGC, BOM_COL.QTY, lay.bom.mainEgcM);
+  w(BOM_ROW.AC_EGC, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.mainEgc) || '');
   w(BOM_ROW.AC_EGC, BOM_COL.UNIT, 'm');
   w(BOM_ROW.AC_EGC, BOM_COL.REFERENCE,
     'AC-03 / NOM 250.122' + (mEgcObj && mEgcObj.id ? ' | ' + mEgcObj.id : ''));
@@ -500,6 +508,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.AC_BREAKER, BOM_COL.DESCRIPTION,
     'Breaker principal I-LINE ' + ac.mainBreaker + 'A 3P');
   w(BOM_ROW.AC_BREAKER, BOM_COL.QTY, 1);
+  w(BOM_ROW.AC_BREAKER, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.mainBreaker) || '');
   w(BOM_ROW.AC_BREAKER, BOM_COL.UNIT, 'pcs');
   w(BOM_ROW.AC_BREAKER, BOM_COL.REFERENCE,
     'AC-01 / main' + (mBrkResult && mBrkResult.id ? ' | ' + mBrkResult.id : ''));
@@ -573,6 +582,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
       label + ' \u2014 Cable ' + invBom.conductorSize + ' ' +
       rdConductorUnit(invBom.conductorSize) + ' THHW Cu (' + invBom.cableM + 'm)');
     w(base, BOM_COL.QTY, invBom.cableM);
+    w(base, BOM_COL.MEMORIA, invBom.trace || '');
     w(base, BOM_COL.UNIT, 'm');
     w(base, BOM_COL.REFERENCE,
       'AC-01 / NOM 690.8' + (cableObj && cableObj.id ? ' | ' + cableObj.id : ''));

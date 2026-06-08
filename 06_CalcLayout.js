@@ -192,6 +192,41 @@ function calcLayout(inp, dc, ac) {
     areaPass        : inp.availableSpace >= inp.areaRequired || inp.areaRequired === 0,
   };
 
+  // ── Derivation traces (MEMORIA / CÁLCULO) ──────────────────────────────────
+  // Human-readable "why this number" per derived BOM line, mirroring the MDC
+  // formula column. Built here where every intermediate is in scope so the BOM
+  // writer renders real arithmetic, not hand-waving.
+  function _r(x) { return Math.round((Number(x) || 0) * 100) / 100; }
+  lay.bom.trace = {
+    dcCable: (dcCableBasis === 'HELIOSCOPE')
+      ? 'Helioscope ' + _r(inp.dcStringWireM) + ' m × ' + DC_WIRE_WASTE_FACTOR +
+        ' merma = ' + Math.ceil(totalDCCableM) + ' m'
+      : inp.stringsTotal + ' strings × 2 × ' + _r(avgStringRunM) + ' m/run × ' +
+        inp.dcSpareFactor + ' merma = ' + Math.ceil(totalDCCableM) +
+        ' m (geometría — sin import Helioscope)',
+    dcGrounding: (inp.groundingLen > 0)
+      ? 'Puesta a tierra INPUT_DESIGN = ' + inp.groundingLen + ' m (override)'
+      : 'Perímetro 2×(' + _r(arrayWidth) + '+' + _r(arrayLength) + ') m × ' +
+        inp.dcSpareFactor + ' merma = ' + Math.ceil(groundingDCM) + ' m',
+    mc4:    inp.stringsTotal + ' strings → 1 par MC4 por string',
+    dcOcpd: inp.stringsTotal + ' strings → 1 fusible por string',
+    dcConduit: _r(avgStringRunM) + ' m/run × ' + inp.invStations + ' estación(es) × ' +
+        inp.dcSpareFactor + ' merma = ' + Math.ceil(dcConduitM) + ' m → ÷ 3 m/tramo',
+    feeder: 'L_feeder ' + _r(ac.feederLen) + ' m × 3 fases × ' + parallelRuns +
+        ' corrida(s) × ' + inp.acSpareFactor + ' merma = ' + Math.ceil(feederCableM) + ' m',
+    mainEgc: 'L_feeder ' + _r(ac.feederLen) + ' m × ' + parallelRuns +
+        ' corrida(s) × ' + inp.acSpareFactor + ' merma = ' + Math.ceil(lay.bom.mainEgcM) + ' m',
+    mainBreaker: (ac.iTotalAC > 0)
+      ? 'I_total ' + _r(ac.iTotalAC) + ' A × 1.25 = ' + _r(ac.iTotalAC * 1.25) +
+        ' A → estándar ' + ac.mainBreaker + ' A'
+      : 'Estándar ≥ I_total × 1.25 = ' + ac.mainBreaker + ' A',
+  };
+  lay.bom.acPerInverterBOM.forEach(function (b) {
+    var lInv = _r(b.cableM / ((b.qty || 1) * 3 * (inp.acSpareFactor || 1)));
+    b.trace = b.qty + ' inv × 3 fases × ' + lInv + ' m/inv × ' + inp.acSpareFactor +
+              ' merma = ' + b.cableM + ' m  |  OCPD ' + b.ocpdA + ' A (I_AC × 1.25 → estándar)';
+  });
+
   // ── Scaling status ─────────────────────────────────────────────────────────
   const areaOk = lay.bom.areaPass;
   lay.statusScaling = areaOk

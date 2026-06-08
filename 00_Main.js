@@ -374,6 +374,7 @@ var BOM_COL = {
   TOTAL_USD:   6,   // F — line total USD (formula: =C*E)
   TOTAL_MXN:   7,   // G — line total MXN (formula: =F*$F$<EXCHANGE_RATE> where EXCHANGE_RATE=BOM_ROW.EXCHANGE_RATE, row 6)
   REFERENCE:   8,   // H — DB ref / NOM citation / note
+  MEMORIA:     9,   // I — derivation / "why this number" (mirrors MDC formula column)
 };
 
 // ---------------------------------------------------------------------------
