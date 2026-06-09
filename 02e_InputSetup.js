@@ -608,34 +608,45 @@ function _resolveArgiaLogoDataUri_(ss) {
     return null;
   }
 
-  // ---- Cache hit? -----------------------------------------------------
-  var cache;
-  try { cache = CacheService.getScriptCache(); } catch (_) { cache = null; }
-  if (cache) {
-    try {
-      var cachedFolder = cache.get(LOGO_CACHE_KEY_FOLDER);
-      var cachedB64    = cache.get(LOGO_CACHE_KEY_B64);
-      var cachedMime   = cache.get(LOGO_CACHE_KEY_MIME);
-      if (cachedFolder === folderId && cachedB64 && cachedMime) {
-        return 'data:' + cachedMime + ';base64,' + cachedB64;
-      }
-    } catch (_) { /* fall through */ }
-  }
-
-  // ---- Live read from Drive ------------------------------------------
+  // ---- Locate the logo file + read its last-modified time -------------
+  // FRESHNESS FIX (2026-06-09): the cache used to be keyed by folder ID
+  // ALONE, so replacing argia_logo_dark.png in Drive kept serving the OLD
+  // base64 for up to the 6h TTL -- and any setup/template re-stamp (which a
+  // test run triggers) pasted the stale logo. We now build a version token
+  // from folderId + file.getLastUpdated(), so a replaced file AUTO-busts the
+  // cache. One cheap metadata lookup per resolve; the expensive getBlob +
+  // base64 only runs on a real miss (first call or after the file changes).
   var folder;
   try { folder = DriveApp.getFolderById(folderId); }
   catch (e) {
     Logger.log('_resolveArgiaLogoDataUri_: folder ID "' + folderId + '" not accessible: ' + e.message);
     return null;
   }
-
   var files = folder.getFilesByName(LOGO_FILENAME);
   if (!files.hasNext()) {
     Logger.log('_resolveArgiaLogoDataUri_: "' + LOGO_FILENAME + '" not found in folder ' + folderId);
     return null;
   }
   var file = files.next();
+  var stamp = '';
+  try { stamp = String(file.getLastUpdated().getTime()); } catch (_) { stamp = ''; }
+  var token = folderId + ':' + stamp;   // cache validity = folder + file version
+
+  // ---- Cache hit? (validated by folder + file-version token) ----------
+  var cache;
+  try { cache = CacheService.getScriptCache(); } catch (_) { cache = null; }
+  if (cache && stamp) {
+    try {
+      var cachedTok  = cache.get(LOGO_CACHE_KEY_FOLDER);   // stores the token now
+      var cachedB64  = cache.get(LOGO_CACHE_KEY_B64);
+      var cachedMime = cache.get(LOGO_CACHE_KEY_MIME);
+      if (cachedTok === token && cachedB64 && cachedMime) {
+        return 'data:' + cachedMime + ';base64,' + cachedB64;
+      }
+    } catch (_) { /* fall through to live read */ }
+  }
+
+  // ---- Live read (cache miss or the file changed) ---------------------
   var blob;
   try { blob = file.getBlob(); }
   catch (e) {
@@ -652,17 +663,14 @@ function _resolveArgiaLogoDataUri_(ss) {
     return null;
   }
 
-  // ---- Cache the encoded blob (best-effort) --------------------------
-  // CacheService rejects values >100 KB with an exception. If our base64
-  // is over the limit, skip caching -- the function still works, just
-  // slower on subsequent calls.
-  if (cache && b64.length < 95 * 1024) {
+  // ---- Cache the encoded blob under the version token (best-effort) ---
+  if (cache && stamp && b64.length < 95 * 1024) {
     try {
-      cache.put(LOGO_CACHE_KEY_FOLDER, folderId, LOGO_CACHE_TTL_SEC);
-      cache.put(LOGO_CACHE_KEY_B64,    b64,      LOGO_CACHE_TTL_SEC);
-      cache.put(LOGO_CACHE_KEY_MIME,   mime,     LOGO_CACHE_TTL_SEC);
+      cache.put(LOGO_CACHE_KEY_FOLDER, token, LOGO_CACHE_TTL_SEC);
+      cache.put(LOGO_CACHE_KEY_B64,    b64,   LOGO_CACHE_TTL_SEC);
+      cache.put(LOGO_CACHE_KEY_MIME,   mime,  LOGO_CACHE_TTL_SEC);
     } catch (_) { /* non-fatal */ }
-  } else if (cache) {
+  } else if (cache && b64.length >= 95 * 1024) {
     Logger.log('_resolveArgiaLogoDataUri_: logo too large to cache (' +
                b64.length + ' bytes base64); will re-read from Drive each call.');
   }
