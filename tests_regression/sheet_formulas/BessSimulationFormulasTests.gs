@@ -63,8 +63,9 @@
 //   group -- they verify sheet behavior, not engine behavior, and
 //   require explicit recalc triggers.
 //
-// FILE-SCOPE HELPERS (11)
-//   _p4r_snapshotInputs, _p4r_restoreInputs (sheet backup)
+// FILE-SCOPE HELPERS (9)
+//   (sheet backup now delegated to 00d_InputSnapshot.gs:
+//    snapshotInputSheets / restoreInputSheets -- resilient, shared)
 //   _p4r_writeFixture (TESTPROJ_PEAK_001 -> input sheets)
 //   _p4r_testNoErrorCells (Test 1)
 //   _p4r_testBatteryInvariants (Test 2)
@@ -113,7 +114,7 @@ registerTest({
 
     var snap = null;
     try {
-      snap = _p4r_snapshotInputs(ss);
+      snap = snapshotInputSheets(ss);   // shared resilient helper (00d_InputSnapshot.gs)
       _p4r_writeFixture(ss);
       SpreadsheetApp.flush();   // force CFE_SIM + BESS_SIM recalc
 
@@ -129,7 +130,7 @@ registerTest({
     } finally {
       if (snap) {
         try {
-          _p4r_restoreInputs(ss, snap);
+          restoreInputSheets(ss, snap);   // shared resilient helper (never throws)
           SpreadsheetApp.flush();
           t.info('cleanup', 'input sheets restored to pre-test state');
         } catch (e2) {
@@ -143,48 +144,14 @@ registerTest({
 
 
 // ===========================================================================
-// SNAPSHOT / RESTORE -- protect the user's real project data.
-// Snapshots full used range of each input sheet (formulas + values).
-// Restore writes back with formula precedence (formula wins; if empty,
-// use value). This differs from Pass 15's copyTo strategy -- needed for
-// INPUT_CFE's array formulas which don't survive copyTo cleanly.
+// SNAPSHOT / RESTORE
+//   Delegated (rev 2) to the shared resilient helpers in 00d_InputSnapshot.gs
+//   (snapshotInputSheets / restoreInputSheets). The former file-local
+//   _p4r_snapshotInputs / _p4r_restoreInputs used a single bulk setValues()
+//   which threw "Service error: Spreadsheets" once a rich real project (e.g.
+//   PROLOGIS) was preserved across the run -- the shared restore is per-tab +
+//   cell-by-cell and never throws, so this test's cleanup no longer fails.
 // ===========================================================================
-
-function _p4r_snapshotInputs(ss) {
-  var names = ['INPUT_CFE', 'INPUT_BESS', 'INPUT_PROJECT', 'INPUT_DESIGN'];
-  var snap = {};
-  for (var i = 0; i < names.length; i++) {
-    var sh = ss.getSheetByName(names[i]);
-    var r = Math.max(sh.getLastRow(), 1);
-    var c = Math.max(sh.getLastColumn(), 1);
-    snap[names[i]] = {
-      rows: r, cols: c,
-      formulas: sh.getRange(1, 1, r, c).getFormulas(),
-      values:   sh.getRange(1, 1, r, c).getValues()
-    };
-  }
-  return snap;
-}
-
-
-function _p4r_restoreInputs(ss, snap) {
-  var names = ['INPUT_CFE', 'INPUT_BESS', 'INPUT_PROJECT', 'INPUT_DESIGN'];
-  for (var i = 0; i < names.length; i++) {
-    var sh = ss.getSheetByName(names[i]);
-    var s = snap[names[i]];
-    var rng = sh.getRange(1, 1, s.rows, s.cols);
-    var out = [];
-    for (var r = 0; r < s.rows; r++) {
-      var row = [];
-      for (var c = 0; c < s.cols; c++) {
-        var f = s.formulas[r][c];
-        row.push(f !== '' ? f : s.values[r][c]);
-      }
-      out.push(row);
-    }
-    rng.setValues(out);
-  }
-}
 
 
 // ===========================================================================
