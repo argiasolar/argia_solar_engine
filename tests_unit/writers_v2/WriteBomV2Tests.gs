@@ -883,3 +883,54 @@ registerTest({
       gtMxn && gtMxn.indexOf('F' + BOM_ROW.GRAND_TOTAL) !== -1);
   }
 });
+
+
+// =============================================================================
+// TEST [B-2]: empty INPUT_DESIGN structure must be FLAGGED, not silently $0
+// -----------------------------------------------------------------------------
+//   When no roof structure is selected (INPUT_DESIGN!C15 empty), the resolver
+//   returns null, no price is written, and the structure subtotal lands at
+//   $0.00 -- which a client reads as "structure is free". The writer must:
+//     - make the primary structure DESCRIPTION a loud "NO SELECCIONADA" flag
+//     - flag the SUBTOTAL ESTRUCTURA label as "SIN COTIZAR / PRELIMINAR"
+//   Control: the default fixture (resolved + priced, like CULLIGAN) keeps the
+//   plain label and brand/model description, so the locked baseline is safe.
+// =============================================================================
+registerTest({
+  id      : 'UNIT_WRITERS_V2_BOM_EMPTY_STRUCTURE_FLAG',
+  group   : 'unit',
+  module  : 'writers_v2/bom',
+  scenarios: [],
+  tags    : ['writers_v2', 'bom', 'structure', 'regression', 'chunk4'],
+  source  : 'tests_unit/writers_v2/WriteBomV2Tests.gs',
+  fn: function (t, ctx) {
+    t.suite('UNIT writers_v2/bom [B-2]: empty structure flagged, not $0');
+
+    // ---- Empty structure: INPUT_DESIGN!C15 not selected ---------------------
+    var f = _makeBomFixtures();
+    f.inp.structure  = '';   // nothing selected
+    f.inp.structure2 = '';   // no secondary either
+    var ss = _makeBomMockSpreadsheet({ inputs: { trayM: 0 } });
+    writeBomV2(ss, f.inp, f.panel, f.invBank, f.dc, f.ac, f.lay,
+               f.nom, f.bessResult, _makeBomTestOpts());
+    var w = ss._bom._writes;
+
+    var strDesc = String(_writeAtBom(w, BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.DESCRIPTION) || '');
+    var subLbl  = String(_writeAtBom(w, BOM_ROW.SUBTOTAL_STRUCTURE, BOM_COL.DESCRIPTION) || '');
+    t.assertContains('empty structure -> primary desc flags NO SELECCIONADA', strDesc, 'NO SELECCIONADA');
+    t.assertContains('empty structure -> subtotal label flags SIN COTIZAR',   subLbl, 'SIN COTIZAR');
+
+    // ---- Control: resolved + priced structure keeps plain label/desc --------
+    var f2 = _makeBomFixtures();   // default structure resolves (STR_004, $8.50)
+    var ss2 = _makeBomMockSpreadsheet({ inputs: { trayM: 0 } });
+    writeBomV2(ss2, f2.inp, f2.panel, f2.invBank, f2.dc, f2.ac, f2.lay,
+               f2.nom, f2.bessResult, _makeBomTestOpts());
+    var w2 = ss2._bom._writes;
+    t.assert('priced structure -> plain subtotal label (baseline-safe)',
+      'SUBTOTAL ESTRUCTURA',
+      _writeAtBom(w2, BOM_ROW.SUBTOTAL_STRUCTURE, BOM_COL.DESCRIPTION));
+    t.assert('priced structure -> brand/model description (unchanged)',
+      'CLIP&RAIL KR18 CLIP',
+      _writeAtBom(w2, BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.DESCRIPTION));
+  }
+});

@@ -292,9 +292,15 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   var strInfo     = _bomV2_resolveStructure(structureDb, strRaw);
   var strPriceUsd = strInfo ? strInfo.priceUsd : null;
   var strUsdTotal = strPriceUsd ? strPriceUsd * inp.panelQty : null;
+  // [B-2] Empty INPUT_DESIGN!C15 = no structure selected at all. Make that
+  // loud in the BOM line itself -- a client must not see a bland "Estructura
+  // de montaje" row that then silently totals $0.
+  var strSelected = String(strRaw).trim() !== '';
   var strDisplay  = strInfo
     ? (strInfo.brand + ' ' + strInfo.model)
-    : (strRaw || 'Estructura de montaje (ver INPUT_DESIGN)');
+    : (strSelected
+        ? strRaw
+        : '\u26A0 ESTRUCTURA NO SELECCIONADA \u2014 definir en INPUT_DESIGN!C15');
   var strRefText  = 'INPUT_DESIGN:C15 / 13M_PRODUCTS_STRUCTURES' +
                     (strInfo ? ' / ' + strInfo.strId : '');
 
@@ -366,9 +372,16 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     .setFormula('=F' + BOM_ROW.STRUCTURE_INVERTER + '*$F$' + BOM_ROW.EXCHANGE_RATE)
     .setNumberFormat('#,##0');
 
+  // [B-2] If the roof-mount structure has no price the structure subtotal is
+  // effectively $0 (only the always-to-quote inverter mount remains). Flag the
+  // subtotal label so a $0/preliminary structure cost can't be mistaken for
+  // "structure is free". Priced structure (e.g. CULLIGAN) keeps the plain
+  // label, so the locked baseline is unchanged.
   ws(BOM_ROW.SUBTOTAL_STRUCTURE,
      BOM_ROW.STRUCTURE_PRIMARY, BOM_ROW.STRUCTURE_INVERTER,
-     'SUBTOTAL ESTRUCTURA');
+     strUsdTotal
+       ? 'SUBTOTAL ESTRUCTURA'
+       : 'SUBTOTAL ESTRUCTURA  \u26A0 ESTRUCTURA DE AZOTEA SIN COTIZAR \u2014 TOTAL PRELIMINAR');
 
   // ====================================================================
   // §4 ELECTRICO DC
