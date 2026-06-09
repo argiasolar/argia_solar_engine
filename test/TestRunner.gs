@@ -24,9 +24,11 @@
 //
 // INPUT PROTECTION (Track A / A1, 2026)
 //   Any run that includes an integration or regression test snapshots all
-//   INPUT_* tabs before the run and ALWAYS restores them afterwards (or
-//   rebuilds DEFAULT layout if restore fails). See 00d_InputSnapshot.gs.
-//   This is why running the suite no longer wipes the working project.
+//   INPUT_* tabs before the run and ALWAYS restores them afterwards. The
+//   restore is RESILIENT (per-tab + cell-by-cell fallback in
+//   00d_InputSnapshot.gs) -- a fragile cell can never abort it, so the suite
+//   can no longer wipe the working project. DEFAULT rebuild is a manual
+//   admin action only (A3); it is never triggered automatically by a run.
 //
 // LEGACY COMPATIBILITY
 //   The legacy runTests() in 99_TestRunner.gs was deleted in Pass 23.
@@ -200,14 +202,23 @@ function _tr_runFiltered(filterFn, label) {
     });
   } finally {
     // Restore inputs to their pre-run state no matter what happened above.
+    // restoreInputSheets is resilient (per-tab + cell-by-cell fallback) and
+    // does NOT throw on per-cell trouble, so a fragile cell can never trigger
+    // a DEFAULT wipe of the loaded project (the rev-1 failure mode).
     if (inputSnap) {
       try {
-        restoreInputSheets(ss, inputSnap);
+        var restoreReport = restoreInputSheets(ss, inputSnap);
+        if (restoreReport && restoreReport.fallback.length
+            && typeof Logger !== 'undefined' && Logger.log) {
+          Logger.log('TestRunner: inputs restored, fallback used on: '
+                     + restoreReport.fallback.join(' | '));
+        }
       } catch (restoreErr) {
-        rebuildInputsToDefault_(ss);
+        // Should not happen (restore is resilient). If it does, log and leave
+        // inputs as-is -- do NOT auto-rebuild DEFAULT (that wipes loaded work).
         if (typeof Logger !== 'undefined' && Logger.log) {
-          Logger.log('TestRunner: input restore failed; rebuilt DEFAULT layout: '
-                     + restoreErr.message);
+          Logger.log('TestRunner: input restore raised unexpectedly (inputs '
+                     + 'left as-is): ' + restoreErr.message);
         }
       }
     }

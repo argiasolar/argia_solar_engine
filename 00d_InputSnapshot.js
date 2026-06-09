@@ -1,28 +1,34 @@
 // =============================================================================
-// ARGIA ENGINE -- 00d_InputSnapshot.gs   (Track A · chunk A1)
+// ARGIA ENGINE -- 00d_InputSnapshot.gs   (Track A · chunk A1, rev 2)
 // -----------------------------------------------------------------------------
 // Formula-aware, all-six-tab snapshot/restore of the INPUT_* sheets, plus a
-// DEFAULT-layout rebuild fallback. Wired into TestRunner so a test run can
-// NEVER leave the workbook's inputs wiped.
+// DEFAULT-layout rebuild helper. Wired into TestRunner so a test run can NEVER
+// leave the workbook's inputs wiped.
 //
 // WHY THIS APPROACH (not copyTo)
-//   This generalises the PROVEN strategy already used by the Phase-4
-//   regression test (_p4r_snapshotInputs / _p4r_restoreInputs in
-//   tests_regression/sheet_formulas/BessSimulationFormulasTests.gs):
+//   Generalises the PROVEN strategy already used by the Phase-4 regression
+//   test (_p4r_snapshotInputs / _p4r_restoreInputs):
 //       snapshot = getFormulas() + getValues() over each tab's used range
 //       restore  = setValues() with FORMULA PRECEDENCE (write the formula
 //                  string where one existed, else the literal value)
-//   That is the strategy that survives INPUT_CFE's array formulas, unlike the
+//   That strategy survives INPUT_CFE's per-cell array formulas, unlike the
 //   copyTo + clearContents approach in test/TestSheetBackup.gs (retired in
-//   chunk A2). Here it is promoted to a shared helper covering ALL SIX input
-//   tabs -- including INPUT_INSTALL and INPUT_BAAS, which copyTo omitted.
+//   chunk A2). Here it covers ALL SIX input tabs -- including INPUT_INSTALL
+//   and INPUT_BAAS, which copyTo omitted.
+//
+// REV 2 -- RESILIENT RESTORE (fixes the rev-1 wipe)
+//   Rev 1 used a single bulk setValues() per tab. On INPUT_INSTALL / INPUT_BAAS
+//   that threw "Service error: Spreadsheets" (merge-heavy range), which made
+//   the runner fall back to a DEFAULT rebuild and RESET the loaded project.
+//   Rev 2: bulk setValues() is the fast path, but if a tab throws we write
+//   that tab cell-by-cell (skipping empties / merge non-anchors, each guarded).
+//   restoreInputSheets NEVER throws and NEVER triggers a DEFAULT wipe; it
+//   returns a small report naming any tab that needed the fallback.
 //
 // SCOPE NOTE (interim until A2/A3)
-//   Restore is layout-faithful WITHIN A SINGLE RUN (same session, same layout,
-//   seconds apart) -- there is no layout drift to worry about. Keyed restore +
-//   persisted cross-session recovery land in A2/A3. The snapshot is held in
-//   memory only; a hard 6-minute Apps Script timeout mid-run would lose it
-//   (a normal full run is well under that).
+//   Restore is layout-faithful WITHIN A SINGLE RUN (same session/layout). Keyed
+//   restore + persisted cross-session recovery land in A2/A3. The snapshot is
+//   held in memory only; a hard timeout mid-run would lose it.
 // =============================================================================
 
 
@@ -63,19 +69,27 @@ function snapshotInputSheets(ss) {
 
 
 /**
- * Restore every snapshotted tab with formula precedence: where a cell held a
- * formula at snapshot time, write the formula back; otherwise write the literal
- * value. One setValues() per tab. Throws if snap is empty.
+ * Restore every snapshotted tab with formula precedence. RESILIENT: a tab whose
+ * bulk setValues() throws is written cell-by-cell instead, so one fragile tab
+ * (merged region, validation, transient service error) can never abort the
+ * whole restore. NEVER throws on per-cell/per-tab trouble.
+ *
  * @param {Spreadsheet} ss
  * @param {Object} snap  result of snapshotInputSheets()
+ * @return {Object} report { restored:[names], fallback:[notes], failedCells:n }
  */
 function restoreInputSheets(ss, snap) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   if (!snap) throw new Error('restoreInputSheets: empty snapshot');
+
+  var report = { restored: [], fallback: [], failedCells: 0 };
+
   Object.keys(snap).forEach(function (name) {
     var sh = ss.getSheetByName(name);
     if (!sh) return;
     var s = snap[name];
+
+    // Build the formula-or-value grid once (used by both paths).
     var out = [];
     for (var r = 0; r < s.rows; r++) {
       var row = [];
@@ -85,19 +99,62 @@ function restoreInputSheets(ss, snap) {
       }
       out.push(row);
     }
-    sh.getRange(1, 1, s.rows, s.cols).setValues(out);
+
+    try {
+      // FAST PATH: one setValues for the whole tab.
+      sh.getRange(1, 1, s.rows, s.cols).setValues(out);
+      report.restored.push(name);
+    } catch (e) {
+      // RESILIENT FALLBACK: write each non-empty cell on its own. Empties
+      // (incl. merge non-anchors, which return '' from both getValues and
+      // getFormulas) are skipped so we never "change part of a merged cell".
+      var skipped = _restoreInputsCellByCell_(sh, s);
+      report.failedCells += skipped;
+      report.fallback.push(name + ' (' + String(e.message || e).slice(0, 48)
+                           + '; ' + skipped + ' cell(s) skipped)');
+    }
   });
+
+  return report;
 }
 
 
 /**
- * Last-resort fallback: rebuild every INPUT_* tab to its DEFAULT layout from
- * INPUT_MAP + the existing setup functions. Best-effort and guarded -- one
- * tab failing must not abort the rest, because this only runs when a snapshot
- * restore has ALREADY failed and we are trying to leave the workbook usable.
+ * Per-cell restore fallback for a single tab. Writes only non-empty cells
+ * (formula if one existed, else value), each guarded. Returns the count of
+ * cells that still could not be written (logged by the caller).
+ * @private
+ */
+function _restoreInputsCellByCell_(sh, s) {
+  var skipped = 0;
+  for (var r = 0; r < s.rows; r++) {
+    for (var c = 0; c < s.cols; c++) {
+      var f = s.formulas[r][c];
+      var v = s.values[r][c];
+      if (f === '' && (v === '' || v === null)) continue;   // skip empties
+      try {
+        var cell = sh.getRange(r + 1, c + 1);
+        if (f !== '') cell.setFormula(f);
+        else          cell.setValue(v);
+      } catch (e) {
+        skipped++;                                          // fragile cell -> skip
+      }
+    }
+  }
+  return skipped;
+}
+
+
+/**
+ * Manual DEFAULT rebuild: rebuild every INPUT_* tab to its DEFAULT layout from
+ * INPUT_MAP + the existing setup functions. Best-effort and guarded.
+ *
+ * NOTE (rev 2): this is NO LONGER called automatically by a test run -- auto-
+ * wiping to default destroyed loaded inputs in rev 1. It stays here for the
+ * A3 admin panel's explicit "Reset inputs to DEFAULT" action only.
  *
  * VERIFY-POINT: confirm this BESS setup order matches your setupInputBess*
- * functions before relying on it (flagged in the Track-A review).
+ * functions before relying on it.
  * @param {Spreadsheet} ss
  */
 function rebuildInputsToDefault_(ss) {
@@ -127,9 +184,10 @@ function rebuildInputsToDefault_(ss) {
 
 
 /**
- * Snapshot inputs, run fn, then ALWAYS restore -- or rebuild DEFAULT layout if
- * the restore itself fails. Used by TestRunner and available to any future
- * destructive operation (clean / load / reset in the A3 admin panel).
+ * Snapshot inputs, run fn, then ALWAYS restore (resilient). Available to any
+ * future destructive operation (A3 admin clean / load / reset). Does NOT auto-
+ * rebuild DEFAULT -- restore is resilient; if it somehow raises, we log and
+ * leave inputs as-is rather than wiping them.
  * @param {function():*} fn
  * @param {string} label  short label for logs/toasts
  * @return {*} fn's return value
@@ -149,13 +207,16 @@ function withInputsProtected(fn, label) {
   } finally {
     if (snap) {
       try {
-        restoreInputSheets(ss, snap);
+        var rep = restoreInputSheets(ss, snap);
+        if (rep && rep.fallback.length && typeof Logger !== 'undefined' && Logger.log) {
+          Logger.log('withInputsProtected("' + (label || '') + '"): restored with '
+                     + 'fallback on ' + rep.fallback.join(' | '));
+        }
       } catch (e2) {
-        rebuildInputsToDefault_(ss);
-        try {
-          ss.toast('Inputs could not be restored after "' + (label || 'run') +
-                   '"; rebuilt DEFAULT layout. (' + e2.message + ')', 'ARGIA', 10);
-        } catch (ignore) {}
+        if (typeof Logger !== 'undefined' && Logger.log) {
+          Logger.log('withInputsProtected("' + (label || '') + '"): restore raised '
+                     + 'unexpectedly (inputs left as-is): ' + e2.message);
+        }
       }
     }
   }
