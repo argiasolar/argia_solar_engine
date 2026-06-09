@@ -570,7 +570,7 @@ var _MAP_DESIGN = {
 
   // 02 PARÁMETROS ELÉCTRICOS -------------------------------------------------
   bessCoupling: {
-    sheet: SH.INPUT_DESIGN, row: 17, col: 3,    // C17
+    sheet: SH.INPUT_DESIGN, row: 18, col: 3,    // C18
     label: 'Acoplamiento batería', type: 'dropdown',
     default: 'DC_COUPLED', required: false,
     dropdown: ['DC_COUPLED', 'AC_COUPLED'],
@@ -581,28 +581,28 @@ var _MAP_DESIGN = {
          + 'conductor runs the battery circuit sizing produces.'
   },
   dcVdropLimit: {
-    sheet: SH.INPUT_DESIGN, row: 18, col: 3,
+    sheet: SH.INPUT_DESIGN, row: 19, col: 3,
     label: 'Límite caída DC', type: 'percent',
     default: 0.015, required: false, unit: '%',
     section: '02 PARÁMETROS ELÉCTRICOS',
     consumedBy: ['engine', 'mdc']
   },
   acVdropLimit: {
-    sheet: SH.INPUT_DESIGN, row: 19, col: 3,
+    sheet: SH.INPUT_DESIGN, row: 20, col: 3,
     label: 'Límite caída AC', type: 'percent',
     default: 0.020, required: false, unit: '%',
     section: '02 PARÁMETROS ELÉCTRICOS',
     consumedBy: ['engine', 'mdc']
   },
   powerFactor: {
-    sheet: SH.INPUT_DESIGN, row: 20, col: 3,
+    sheet: SH.INPUT_DESIGN, row: 21, col: 3,
     label: 'Factor de potencia', type: 'number',
     default: 0.95, required: false,
     section: '02 PARÁMETROS ELÉCTRICOS',
     consumedBy: ['engine', 'mdc']
   },
   tempCoeffVocOverride: {
-    sheet: SH.INPUT_DESIGN, row: 21, col: 3,
+    sheet: SH.INPUT_DESIGN, row: 22, col: 3,
     label: 'Temp coeff Voc override', type: 'number',
     default: -0.0026, required: false, unit: '/°C',
     section: '02 PARÁMETROS ELÉCTRICOS',
@@ -613,7 +613,7 @@ var _MAP_DESIGN = {
 
   // 03 DISTANCIAS ------------------------------------------------------------
   roofToInverterDropM: {
-    sheet: SH.INPUT_DESIGN, row: 24, col: 3,
+    sheet: SH.INPUT_DESIGN, row: 25, col: 3,
     label: 'Caida vertical techo->inversor', type: 'number',
     default: 5, required: false, unit: 'm',
     section: '03 DISTANCIAS',
@@ -623,35 +623,35 @@ var _MAP_DESIGN = {
            'by the removed distCabinet input.'
   },
   distInverter: {
-    sheet: SH.INPUT_DESIGN, row: 25, col: 3,
+    sheet: SH.INPUT_DESIGN, row: 26, col: 3,
     label: 'Inversor', type: 'number',
     default: 50, required: false, unit: 'm',
     section: '03 DISTANCIAS',
     consumedBy: ['engine']
   },
   distAcProt: {
-    sheet: SH.INPUT_DESIGN, row: 26, col: 3,
+    sheet: SH.INPUT_DESIGN, row: 27, col: 3,
     label: 'Protección AC', type: 'number',
     default: 15, required: false, unit: 'm',
     section: '03 DISTANCIAS',
     consumedBy: ['engine']
   },
   distGrid: {
-    sheet: SH.INPUT_DESIGN, row: 27, col: 3,
+    sheet: SH.INPUT_DESIGN, row: 28, col: 3,
     label: 'Red', type: 'number',
     default: 50, required: false, unit: 'm',
     section: '03 DISTANCIAS',
     consumedBy: ['engine']
   },
   groundingLen: {
-    sheet: SH.INPUT_DESIGN, row: 28, col: 3,
+    sheet: SH.INPUT_DESIGN, row: 29, col: 3,
     label: 'Puesta a tierra', type: 'number',
     default: 2500, required: false, unit: 'm',
     section: '03 DISTANCIAS',
     consumedBy: ['engine', 'bom']
   },
   dcStringWireM: {
-    sheet: SH.INPUT_DESIGN, row: 29, col: 3,
+    sheet: SH.INPUT_DESIGN, row: 30, col: 3,
     label: 'Cableado DC (Helioscope)', type: 'number',
     default: 0, required: false, unit: 'm',
     section: '03 DISTANCIAS',
@@ -659,11 +659,11 @@ var _MAP_DESIGN = {
     notes: 'Longitud total del conductor de strings (m) importada de Helioscope ' +
            '(tabla Components -> "Strings ... (X m)"). El BOM la usa directamente ' +
            'x factor de merma; 0 o vacio -> estimacion geometrica (estimateDcRunM). ' +
-           'Auto-llenada por el importador; descripcion en E29.'
+           'Auto-llenada por el importador; descripcion en E30.'
   },
 
   longestStringRunM: {
-    sheet: SH.INPUT_DESIGN, row: 30, col: 3,
+    sheet: SH.INPUT_DESIGN, row: 31, col: 3,
     label: '\u26a0 Tramo string mas largo (1 via)', type: 'number',
     default: 0, required: false, unit: 'm',
     section: '03 DISTANCIAS',
