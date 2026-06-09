@@ -481,3 +481,72 @@ registerTest({
     }, 'MDC_v2');
   }
 });
+
+
+// =============================================================================
+// TEST [B-3]: OPTIMIZER topology -> Voc/Vmp window + DC-limit show N/A, not PASS
+// -----------------------------------------------------------------------------
+//   04_CalcDC marks every dc01/dc02/str02 result `skipped` when an inverter is
+//   OPTIMIZER topology, but those skipped results carry pass:true. Before the
+//   fix, writeMdcV2 printed "[PASS]" / "Ventana válida" / "Capacidad OK" for
+//   SolarEdge-style designs -- self-contradictory, since the raw Voc_cold can
+//   exceed Vmax yet still show PASS. The writer must gate all three display
+//   points to N/A (mirroring the already-correct CHECK_DC_LIMIT row).
+//
+//   Control case (string topology = the default fixture, and what CULLIGAN is)
+//   must still show PASS, proving the gate doesn't swallow real validation.
+// =============================================================================
+registerTest({
+  id      : 'UNIT_WRITERS_V2_MDC_OPTIMIZER_NA_GATE',
+  group   : 'unit',
+  module  : 'writers_v2/mdc',
+  scenarios: [],
+  tags    : ['writers_v2', 'mdc', 'optimizer', 'regression', 'chunk1'],
+  source  : 'tests_unit/writers_v2/WriteMdcV2Tests.gs',
+  fn: function (t, ctx) {
+    t.suite('UNIT writers_v2/mdc [B-3]: OPTIMIZER window/DC-limit show N/A');
+
+    // ---- OPTIMIZER case: flip the skip flags exactly as 04_CalcDC does -------
+    var f = _makeFixtures();
+    f.invBank.forEach(function(i){ i.topology = 'OPTIMIZER'; });
+    f.dc.dc01Results.forEach(function(r){
+      r.skipped = true; r.pass = true;
+      r.note = 'OPTIMIZER topology -- standard Voc check N/A';
+    });
+    f.dc.dc02Results.forEach(function(r){
+      r.skipped = true; r.pass = true;
+      r.note = 'OPTIMIZER topology -- standard Vmp check N/A';
+    });
+    f.dc.str02Results.forEach(function(r){
+      r.skipped = true; r.pass = true;
+      r.note = 'OPTIMIZER topology -- conteo de entradas DC N/A';
+    });
+    // skipped results keep pass:true, so the aggregates stay true (engine behavior)
+    f.dc.dc01Pass = true; f.dc.dc02Pass = true; f.dc.str02Pass = true;
+
+    var ss = _makeMdcMockSpreadsheet();
+    writeMdcV2(ss, f.inp, f.panel, f.invBank, f.dc, f.ac, f.lay, f.nom, f.bessResult);
+    var w = ss._sheet._writes;
+
+    var checkWin = _writeAt(w, MDC_ROW.CHECK_WINDOW,  MC.STATUS);
+    var flagWin  = _writeAt(w, MDC_ROW.FLAG_WINDOW,   MC.STATUS);
+    var flagLim  = _writeAt(w, MDC_ROW.FLAG_DC_LIMIT, MC.STATUS);
+
+    t.assertContains('CHECK_WINDOW status = N/A for OPTIMIZER',  checkWin, 'N/A');
+    t.assertContains('FLAG_WINDOW status = N/A for OPTIMIZER',   flagWin,  'N/A');
+    t.assertContains('FLAG_DC_LIMIT status = N/A for OPTIMIZER', flagLim,  'N/A');
+    t.assertTrue('CHECK_WINDOW is NOT a bare PASS for OPTIMIZER',
+      String(checkWin || '').indexOf('PASS') === -1);
+
+    // ---- Control: string topology (default) still validates as PASS ---------
+    var f2  = _makeFixtures();   // topology 'string', no skipped results
+    var ss2 = _makeMdcMockSpreadsheet();
+    writeMdcV2(ss2, f2.inp, f2.panel, f2.invBank, f2.dc, f2.ac, f2.lay, f2.nom, f2.bessResult);
+    var w2 = ss2._sheet._writes;
+    var checkWin2 = _writeAt(w2, MDC_ROW.CHECK_WINDOW, MC.STATUS);
+
+    t.assertContains('CHECK_WINDOW status = PASS for string topology', checkWin2, 'PASS');
+    t.assertTrue('CHECK_WINDOW string-topology status does NOT show N/A',
+      String(checkWin2 || '').indexOf('N/A') === -1);
+  }
+});

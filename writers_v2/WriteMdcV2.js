@@ -253,12 +253,28 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
       ' = ' + dc.maxMods + '  |  Inversor ref: ' + (invBank[0] ? invBank[0].model : '?'), null);
   row(MDC_ROW.ACTUAL_MODS, inp.modsPerString,
       PROV.INPUT, inputLocation('modsPerString'), null, null);
+  // OPTIMIZER topology regulates string voltage at each module, so the raw
+  // Voc_cold / Vmp_hot string-window check does not apply. 04_CalcDC already
+  // marks every dc01/dc02 result skipped for inv.topology === 'OPTIMIZER';
+  // gate the display exactly like the sibling CHECK_DC_LIMIT row so the MDC
+  // shows N/A instead of a misleading "[PASS]" (or a Voc_cold that exceeds
+  // Vmax yet prints PASS because skipped results carry pass:true). [B-3]
+  var dc01Skipped = dc.dc01Results.length > 0 &&
+    dc.dc01Results.every(function(r){ return r.skipped; });
+  var dc02Skipped = dc.dc02Results.length > 0 &&
+    dc.dc02Results.every(function(r){ return r.skipped; });
+  var windowSkipped = dc01Skipped && dc02Skipped;
   var windowDetail = dc.dc01Results.map(function(r) {
+    if (r.skipped) return r.invModel + ': ' + (r.note || 'N/A');
     return r.invModel + ': Voc_cold=' + n(r.vocCold,1) + 'V <= ' + r.maxDcV + 'V [' + (r.pass?'PASS':'FAIL') + ']';
   }).join('\n') + '\n' + dc.dc02Results.map(function(r) {
+    if (r.skipped) return r.invModel + ': ' + (r.note || 'N/A');
     return r.invModel + ': Vmp_hot=' + n(r.vmpHot,1) + 'V >= ' + r.mpptVmin + 'V [' + (r.pass?'PASS':'FAIL') + ']';
   }).join('\n');
-  var windowStatus = (dc.dc01Pass && dc.dc02Pass) ? '[PASS]' : '[FAIL] Ver detalle en BOM seccion fallas';
+  var windowStatus = windowSkipped
+      ? '[N/A] OPTIMIZER -- ventana Voc/Vmp regulada por optimizadores'
+    : (dc.dc01Pass && dc.dc02Pass) ? '[PASS]'
+    : '[FAIL] Ver detalle en BOM seccion fallas';
   row(MDC_ROW.CHECK_WINDOW, windowDetail,
       PROV.AUTO_CALC, 'NOM 690-8(A)/(MPPT)',
       'DC-01: Voc_cold <= Vmax_inv para CADA tipo de inversor  |  DC-02: Vmp_hot >= MPPT_min para CADA tipo',
@@ -415,11 +431,15 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
   row(MDC_ROW.FLAG_LAYOUT, layoutFlag, PROV.INPUT,
       inputLocation('panelQty') + ', ' + inputLocation('modsPerString') + ', ' + inputLocation('totalInverters'),
       null, layoutFlag);
-  var windowStatus2 = (dc.dc01Pass && dc.dc02Pass)
+  var windowStatus2 = windowSkipped
+    ? '[N/A] OPTIMIZER -- ventana de string regulada por optimizadores'
+    : (dc.dc01Pass && dc.dc02Pass)
     ? '[OK] Ventana de string valida para todos los inversores'
     : '[FAIL] ' + dc.dc01Results.filter(function(r){return !r.pass;}).map(function(r){return r.invModel;}).join(', ') + ' -- ver detalle fila 39';
   row(MDC_ROW.FLAG_WINDOW, windowStatus2, PROV.AUTO_CALC, 'DC-01/DC-02', null, windowStatus2);
-  var dcLimFlag = dc.str02Pass
+  var dcLimFlag = str02Skipped
+    ? '[N/A] OPTIMIZER -- conteo de entradas DC no aplica'
+    : dc.str02Pass
     ? '[OK] Capacidad de strings OK para todos los inversores'
     : '[FAIL] Strings exceden capacidad -- ver fila 40';
   row(MDC_ROW.FLAG_DC_LIMIT, dcLimFlag, PROV.AUTO_CALC, 'STR-02', null, dcLimFlag);
