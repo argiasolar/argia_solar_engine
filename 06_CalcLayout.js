@@ -220,11 +220,25 @@ function calcLayout(inp, dc, ac) {
       ? 'I_total ' + _r(ac.iTotalAC) + ' A × 1.25 = ' + _r(ac.iTotalAC * 1.25) +
         ' A → estándar ' + ac.mainBreaker + ' A'
       : 'Estándar ≥ I_total × 1.25 = ' + ac.mainBreaker + ' A',
+    // ── newly traced lines (previously blank MEMORIA) ──────────────────────
+    structureInverter: (inp.totalInverters || (ac.perInverter ? ac.perInverter.length : 0)) +
+        ' inversores → 1 estructura/rack de montaje por inversor',
+    mainConduit: 'Cable alim. ' + Math.ceil(feederCableM) + ' m ÷ 3 fases = ' +
+        Math.ceil(feederCableM / 3) + ' m físicos ÷ 3 m/tramo',
+    panelboard: '1 tablero AC; marco ≥ breaker principal ' + ac.mainBreaker + ' A',
+    transformer: '1 unidad — suministro de transformador (INPUT_DESIGN config); ' +
+        'capacidad ≥ kVA del proyecto',
+    serviceLine: 'Línea fija de servicio — 1 por proyecto',
   };
   lay.bom.acPerInverterBOM.forEach(function (b) {
     var lInv = _r(b.cableM / ((b.qty || 1) * 3 * (inp.acSpareFactor || 1)));
     b.trace = b.qty + ' inv × 3 fases × ' + lInv + ' m/inv × ' + inp.acSpareFactor +
               ' merma = ' + b.cableM + ' m  |  OCPD ' + b.ocpdA + ' A (I_AC × 1.25 → estándar)';
+    b.traceEgc     = 'EGC NOM 250.122 (' + b.egcSize + ') — ' + b.qty + ' inv × ' +
+                     lInv + ' m/inv × ' + inp.acSpareFactor + ' merma = ' + b.egcM + ' m';
+    b.traceBreaker = 'OCPD ' + b.ocpdA + ' A (I_AC × 1.25 → estándar) — ' + b.qty + ' pcs';
+    b.traceConduit = 'Conduit ' + b.conduitSize + '" — ' + lInv +
+                     ' m físicos/inv × ' + b.qty + ' inv ÷ 3 m/tramo';
   });
 
   // ── Scaling status ─────────────────────────────────────────────────────────

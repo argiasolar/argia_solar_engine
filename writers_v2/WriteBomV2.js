@@ -352,6 +352,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.STRUCTURE_INVERTER, BOM_COL.DESCRIPTION,
     'Estructura montaje inversores (rack / soporte mural)');
   w(BOM_ROW.STRUCTURE_INVERTER, BOM_COL.QTY, invCount > 0 ? invCount : 1);
+  w(BOM_ROW.STRUCTURE_INVERTER, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.structureInverter) || '');
   w(BOM_ROW.STRUCTURE_INVERTER, BOM_COL.UNIT, invCount > 1 ? 'pcs' : 'lot');
   w(BOM_ROW.STRUCTURE_INVERTER, BOM_COL.REFERENCE, 'Cotizar con proveedor');
   note(BOM_ROW.STRUCTURE_INVERTER, BOM_COL.UNIT_PRICE,
@@ -507,6 +508,9 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   // optimizer model varies, so we flag it rather than fabricate a unit cost.
   var _optRow = BOM_ROW.DC_RSD + 1;          // reserved row 33
   var optQty  = (lay.bom && lay.bom.optimizerUnits) || 0;
+  // Echo the engine-computed count into the (read-only) C69 display cell so the
+  // INPUT_DESIGN sheet shows the real number instead of a misleading 0.
+  try { writeInput(ss, 'optimizers', optQty); } catch (e) { /* display-only, non-fatal */ }
   if (optQty > 0) {
     var _optInv   = invBank.filter(function (i) {
       return String(i.topology || '').toUpperCase() === 'OPTIMIZER';
@@ -610,6 +614,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
       'Charola tipo escalera (alimentador AC horizontal) ' +
       lay.bom.mainFeederCableM + 'm');
     w(BOM_ROW.AC_CONDUIT, BOM_COL.QTY, trayTramosAC);
+    w(BOM_ROW.AC_CONDUIT, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.mainConduit) || '');
     w(BOM_ROW.AC_CONDUIT, BOM_COL.UNIT, 'tramo');
     w(BOM_ROW.AC_CONDUIT, BOM_COL.REFERENCE,
       'AC-05-TRAY' + (trayObjAC && trayObjAC.id ? ' | ' + trayObjAC.id : ''));
@@ -621,6 +626,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     w(BOM_ROW.AC_CONDUIT, BOM_COL.DESCRIPTION,
       'Conduit principal IMC ' + _bomV2_conduitSizeLabel(ac.conduitMain) + '" x 3m');
     w(BOM_ROW.AC_CONDUIT, BOM_COL.QTY, mCondStks);
+    w(BOM_ROW.AC_CONDUIT, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.mainConduit) || '');
     w(BOM_ROW.AC_CONDUIT, BOM_COL.UNIT, 'pza');
     w(BOM_ROW.AC_CONDUIT, BOM_COL.REFERENCE,
       'AC-05' + (mCondObj && mCondObj.id ? ' | ' + mCondObj.id : ''));
@@ -639,6 +645,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.AC_PANELBOARD, BOM_COL.DESCRIPTION,
     'Tablero I-LINE AC (panelboard) >= ' + ac.mainBreaker + 'A');
   w(BOM_ROW.AC_PANELBOARD, BOM_COL.QTY, 1);
+  w(BOM_ROW.AC_PANELBOARD, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.panelboard) || '');
   w(BOM_ROW.AC_PANELBOARD, BOM_COL.UNIT, 'pcs');
   w(BOM_ROW.AC_PANELBOARD, BOM_COL.REFERENCE,
     'AC interconnection' + (pbObj && pbObj.id ? ' | ' + pbObj.id : ''));
@@ -683,6 +690,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
       label + ' \u2014 Cable tierra ' + invBom.egcSize + ' ' +
       rdConductorUnit(invBom.egcSize) + ' Cu desnudo (' + invBom.egcM + 'm)');
     w(base+1, BOM_COL.QTY, invBom.egcM);
+    w(base+1, BOM_COL.MEMORIA, invBom.traceEgc || '');
     w(base+1, BOM_COL.UNIT, 'm');
     w(base+1, BOM_COL.REFERENCE,
       'AC-03 / NOM 250.122' + (egcObj && egcObj.id ? ' | ' + egcObj.id : ''));
@@ -699,6 +707,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     w(base+2, BOM_COL.DESCRIPTION,
       label + ' \u2014 Breaker I-LINE ' + invBom.ocpdA + 'A ' + poles + 'P');
     w(base+2, BOM_COL.QTY, invBom.qty);
+    w(base+2, BOM_COL.MEMORIA, invBom.traceBreaker || '');
     w(base+2, BOM_COL.UNIT, 'pcs');
     w(base+2, BOM_COL.REFERENCE,
       'AC-04 / NOM 690.9' + (brkResult && brkResult.id ? ' | ' + brkResult.id : ''));
@@ -713,6 +722,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     w(base+3, BOM_COL.DESCRIPTION,
       label + ' \u2014 Conduit IMC ' + _bomV2_conduitSizeLabel(invBom.conduitSize) + '" x 3m');
     w(base+3, BOM_COL.QTY, condStks);
+    w(base+3, BOM_COL.MEMORIA, invBom.traceConduit || '');
     w(base+3, BOM_COL.UNIT, 'pza');
     w(base+3, BOM_COL.REFERENCE,
       'AC-05 / Ch9 Table 1' + (condObj && condObj.id ? ' | ' + condObj.id : ''));
@@ -739,6 +749,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
       'Transformador seco ' + ac.transformer + ' kVA (' +
       ac.apparentPower.toFixed(0) + ' kVA base +20%)');
     w(BOM_ROW.TRANSFORMER, BOM_COL.QTY, 1);
+    w(BOM_ROW.TRANSFORMER, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.transformer) || '');
     w(BOM_ROW.TRANSFORMER, BOM_COL.UNIT, 'pcs');
     w(BOM_ROW.TRANSFORMER, BOM_COL.REFERENCE,
       'TRANS-01 / NOM Art.450' + (xfmrObj && xfmrObj.id ? ' | ' + xfmrObj.id : ''));
@@ -775,6 +786,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.MON_DATALOGGER, BOM_COL.DESCRIPTION,
     'Sistema monitoreo / datalogger + cloud');
   w(BOM_ROW.MON_DATALOGGER, BOM_COL.QTY, 1);
+  w(BOM_ROW.MON_DATALOGGER, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.serviceLine) || '');
   w(BOM_ROW.MON_DATALOGGER, BOM_COL.UNIT, 'pcs');
   w(BOM_ROW.MON_DATALOGGER, BOM_COL.REFERENCE, monObj ? monObj.id : 'BOS_0258');
   if (monObj) {
@@ -790,6 +802,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.MON_METER, BOM_COL.DESCRIPTION,
     'Medidor bidireccional ION / CFE compatible');
   w(BOM_ROW.MON_METER, BOM_COL.QTY, 1);
+  w(BOM_ROW.MON_METER, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.serviceLine) || '');
   w(BOM_ROW.MON_METER, BOM_COL.UNIT, 'pcs');
   w(BOM_ROW.MON_METER, BOM_COL.REFERENCE, meterObj ? meterObj.id : 'BOS_0229');
   if (meterObj) {
@@ -812,6 +825,7 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     w(r, BOM_COL.ITEM, itemNo++);
     w(r, BOM_COL.DESCRIPTION, svc[1]);
     w(r, BOM_COL.QTY, 1);
+    w(r, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.serviceLine) || '');
     w(r, BOM_COL.UNIT, 'servicio');
     w(r, BOM_COL.REFERENCE, svc[2]);
     wp(r, null, 1500);

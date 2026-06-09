@@ -754,6 +754,25 @@ function _formatHintFor(mapEntry) {
 // rows — their physical cells come from the helioscope/equipment block
 // render below.
 
+function _lockOptimizersCellReadOnly(sh) {
+  // C69 "Optimizadores" is NOT a design driver. The engine derives the count
+  // from the inverter topology (INV_TOPOLOGY = OPTIMIZER) and the module count
+  // (1 optimizer per module, worst case) — see computeOptimizerUnits(). This cell
+  // is locked + greyed so it can't be mistaken for an input; the engine echoes the
+  // live computed count here when MDC/BOM is generated.
+  try {
+    var cell = sh.getRange(69, 3); // C69
+    cell.setBackground(token('BG_PAGE'))
+        .setFontColor(token('TEXT_MUTED'))
+        .setFontStyle('italic');
+    cell.clearDataValidations();
+    cell.setNote('Calculado por el motor: 1 optimizador por modulo cuando el ' +
+                 'inversor es topologia OPTIMIZER. Se actualiza al generar MDC/BOM. No editable.');
+    var prot = cell.protect().setDescription('ARGIA: optimizadores (auto, no editar)');
+    prot.setWarningOnly(true);
+  } catch (e) { /* protection unavailable in some contexts — visual cues still apply */ }
+}
+
 function _setupDesignTab(force) {
   var ss = SpreadsheetApp.getActive();
   resetDesignTokenCache_();
@@ -798,6 +817,7 @@ function _setupDesignTab(force) {
   _renderDesignPanelBlock(sh);            // section 08: rows 48-54
   _renderDesignInverterBlock(sh);         // section 09: rows 56-63
   _renderDesignStringConfigBlock(sh);     // section 10: rows 65-69
+  _lockOptimizersCellReadOnly(sh);        // C69 is engine-computed, not an input
 
   // ---- Freeze banner + dashboard
   // 7 rows: banner (1-3) + dashboard header (5) + tile values (6) + tile labels (7).

@@ -8,7 +8,7 @@
 //
 // This file migrates the PURE half (part A + map-shape from part B):
 //   - resolveBessCoupling unit tests (blank / null / unknown / case+space)
-//   - INPUT_MAP.bessCoupling entry points at INPUT_DESIGN!C17
+//   - INPUT_MAP.bessCoupling entry points at INPUT_DESIGN!C18
 //
 // NOT MIGRATED HERE (deferred to a deliberate integration pass):
 //   - Live INPUT_DESIGN!C17 round-trip via readInputs(ss). That belongs in
@@ -92,7 +92,7 @@ registerTest({
     if (m) {
       t.assert('bessCoupling mapped sheet = INPUT_DESIGN',
                'INPUT_DESIGN', m.sheet);
-      t.assert('bessCoupling mapped row = 17', 17, m.row);
+      t.assert('bessCoupling mapped row = 18', 18, m.row);
       t.assert('bessCoupling mapped col = 3 (C)', 3, m.col);
     }
   }
