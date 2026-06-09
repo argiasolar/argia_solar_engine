@@ -70,6 +70,50 @@ var _INST_V2_SECTIONS = [
   'AC','DC','RACKING SYSTEM','CONNECTION','SAFETY','GENERAL SITE','EQUIPMENT','BESS','INDIRECT'
 ];
 
+// --- Per-section cost-breakdown notes ---------------------------------------
+// Build a human-readable note for a section's LABOR / EQUIP / OTHER cell that
+// lists each contributing item with its TYPE, driver quantity, and cost — e.g.
+// "Site supervisor (supervisión, 79 días): $316,316".
+function _instV2_driverLabel(res) {
+  var it = res.item || {};
+  if (String(it.costType || '').indexOf('LABOR') !== -1 && res.mhComputed > 0) {
+    return res.mhComputed.toFixed(0) + ' MH';
+  }
+  if (it.driverKey === 'PROJECT_ONE' || !(res.driverQtyVal > 0)) return 'fijo';
+  return Math.round(res.driverQtyVal) + (it.driverUom ? ' ' + it.driverUom : '');
+}
+function _instV2_typeTag(res) {
+  if (res.bucket === 'INDIRECT_LABOR') return 'supervisión';
+  var ct = String((res.item || {}).costType || '');
+  if (ct.indexOf('LABOR') !== -1)   return 'mano de obra';
+  if (ct === 'EQUIPMENT_DAY')       return 'equipo';
+  if (ct.indexOf('PERCENT') !== -1) return 'indirecto %';
+  if (ct.indexOf('OTHER') !== -1)   return 'material/logística';
+  return 'otro';
+}
+// column ∈ 'LABOR' | 'EQUIP' | 'OTHER'. Returns '' if nothing contributes.
+function _instV2_sectionColumnNote(items, section, column) {
+  var lines = [];
+  (items || []).forEach(function (res) {
+    if (!res.item || res.item.section !== section) return;
+    var amt = 0;
+    if (column === 'LABOR') {
+      amt = (res.bucket === 'INDIRECT_LABOR') ? res.otherMxn : res.laborMxn;
+    } else if (column === 'EQUIP') {
+      amt = res.equipMxn;
+    } else { // OTHER
+      amt = (res.bucket === 'INDIRECT_LABOR') ? 0 : res.otherMxn;
+    }
+    if (!(amt > 0)) return;
+    lines.push('• ' + (res.item.description || res.item.id || '?') +
+               ' (' + _instV2_typeTag(res) + ', ' + _instV2_driverLabel(res) + '): $' +
+               Math.round(amt).toLocaleString());
+  });
+  if (!lines.length) return '';
+  var titles = { LABOR: 'MANO DE OBRA', EQUIP: 'EQUIPO', OTHER: 'OTROS (material / logística / indirectos)' };
+  return section + ' — ' + titles[column] + ':\n' + lines.join('\n');
+}
+
 // Man-hours breakdown (cols F-J)
 var _INST_V2_MH_HDR_ROW   = 24;
 var _INST_V2_MH_START_ROW = 25;
@@ -257,6 +301,15 @@ function writeInstallationV2(ss, result, drivers, _testOpts) {
     sh.getRange(r, _INST_V2_SEC_COL.SECTION, 1, 5)
       .setValues([[sec, Math.round(t.labor), Math.round(t.equip),
                        Math.round(t.other), Math.round(t.total)]]);
+    // Breakdown notes: what each LABOR / EQUIP / OTHER amount is made of.
+    [['LABOR', _INST_V2_SEC_COL.LABOR], ['EQUIP', _INST_V2_SEC_COL.EQUIP],
+     ['OTHER', _INST_V2_SEC_COL.OTHER]].forEach(function (cd) {
+      var note = _instV2_sectionColumnNote(items, sec, cd[0]);
+      if (note) {
+        var rng = sh.getRange(r, cd[1]);
+        if (rng && typeof rng.setNote === 'function') rng.setNote(note);
+      }
+    });
   });
 
   // ── 4. Man-hours breakdown (col F-J rows 24+) ────────────────────────────

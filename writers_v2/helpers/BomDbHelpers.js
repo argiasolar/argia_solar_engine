@@ -287,23 +287,58 @@ function _bomV2_conduitPriceMxn(bosDb, sizeIn) {
 
 
 // =============================================================================
-// LADDER TRAY (first non-zero priced)
+// CABLE TRAY (CHAROLA)
 // =============================================================================
-function _bomV2_ladderTrayPriceObj(bosDb) {
-  for (var i = 0; i < bosDb.length; i++) {
-    var r = bosDb[i];
-    if (String(r['BOS_CATEGORY']    || '').toUpperCase().trim() !== 'SUPPORT') continue;
-    if (String(r['BOS_SUBCATEGORY'] || '').toUpperCase().trim() !== 'LADDER TRAY') continue;
-    var p = parseFloat(r['BOS_PRICE_PER_UNIT_MXN']);
-    if (!isNaN(p) && p > 0) {
-      return {
-        price: p,
-        isUsd: String(r['BOS_CURRENCY']||'').toUpperCase().trim() === 'USD',
-        id   : r['_bosId'] || String(r['BOS_ID']||'').trim()
-      };
+// Standard ladder cable-tray widths (mm).
+var BOMV2_TRAY_WIDTHS_MM = [100, 150, 200, 300, 450, 600];
+// Sizing heuristic: single-layer ladder tray, ~50% fill over ~50 mm usable
+// loading depth => ~25 mm² of insulated conductor area per mm of tray width.
+// width_mm ~= totalInsAreaMm2 / 25, rounded UP to the next standard width.
+// CONSERVATIVE STARTING POINT — validate against the chosen tray vendor's
+// published fill tables (NOM-001-SEDE Art. 392.22). Reuses the SAME insulated
+// conductor area the conduit sizer uses, so tray vs conduit share one basis.
+var BOMV2_TRAY_AREA_PER_MM = 25;
+function _bomV2_selectTrayWidth(totalInsAreaMm2) {
+  var area  = Number(totalInsAreaMm2) || 0;
+  var reqMm = area / BOMV2_TRAY_AREA_PER_MM;
+  var widthMm = BOMV2_TRAY_WIDTHS_MM[BOMV2_TRAY_WIDTHS_MM.length - 1];
+  for (var i = 0; i < BOMV2_TRAY_WIDTHS_MM.length; i++) {
+    if (reqMm <= BOMV2_TRAY_WIDTHS_MM[i]) { widthMm = BOMV2_TRAY_WIDTHS_MM[i]; break; }
+  }
+  var note = 'Charola escalera: \u00e1rea conductores ' + Math.round(area) + ' mm\u00b2 \u00f7 ' +
+             BOMV2_TRAY_AREA_PER_MM + ' mm\u00b2/mm \u2248 ' + Math.ceil(reqMm) +
+             ' mm \u2192 ancho est\u00e1ndar ' + widthMm +
+             ' mm (1 capa, ~50% relleno; validar NOM-001-SEDE 392.22)';
+  return { widthMm: widthMm, note: note };
+}
+
+// Ladder cable-tray price by width. Width-specific SKU -> width-agnostic fallback
+// (old behaviour) -> graceful price:null placeholder (no crash if the DB lacks it).
+function _bomV2_ladderTrayPriceObj(bosDb, widthMm) {
+  var w = Math.round(Number(widthMm) || 0);
+  if (bosDb && bosDb.length) {
+    var ratings = w > 0 ? [w + 'MM', w + ' MM', String(w)] : [];
+    var cats = [['SUPPORT', 'LADDER TRAY'], ['CONDUIT', 'CABLE TRAY'],
+                ['CABLE TRAY', 'CABLE TRAY'], ['SUPPORT', 'CHAROLA']];
+    for (var c = 0; c < cats.length; c++) {
+      for (var r = 0; r < ratings.length; r++) {
+        var hit = _bomV2_bosPriceObj(bosDb, cats[c][0], cats[c][1], ratings[r]);
+        if (hit) return { price: hit.price, isUsd: hit.isUsd, id: hit.id, widthMm: w };
+      }
+    }
+    for (var i = 0; i < bosDb.length; i++) {
+      var row = bosDb[i];
+      if (String(row['BOS_CATEGORY']    || '').toUpperCase().trim() !== 'SUPPORT') continue;
+      if (String(row['BOS_SUBCATEGORY'] || '').toUpperCase().trim() !== 'LADDER TRAY') continue;
+      var p = parseFloat(row['BOS_PRICE_PER_UNIT_MXN']);
+      if (!isNaN(p) && p > 0) {
+        return { price: p,
+                 isUsd: String(row['BOS_CURRENCY'] || '').toUpperCase().trim() === 'USD',
+                 id: row['_bosId'] || String(row['BOS_ID'] || '').trim(), widthMm: w };
+      }
     }
   }
-  return null;
+  return { price: null, isUsd: false, id: 'CABLE_TRAY_' + w + 'MM', widthMm: w };
 }
 
 

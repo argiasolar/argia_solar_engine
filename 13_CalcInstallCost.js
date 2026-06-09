@@ -41,7 +41,7 @@ function bessItemGatedToZero(item, driverQtyVal) {
 // benchTotalMhKwp (read in applyKwpBenchmarks); when that cell is blank this
 // default is used. Set to 0 to fall back to the legacy per-section benchmarks.
 // ---------------------------------------------------------------------------
-var INSTALL_TARGET_MH_PER_KWP = 3.0;
+var INSTALL_TARGET_MH_PER_KWP = 0;   // 0 = no MH-target scaling (use DB productivity as-is). Set >0 (e.g. 4-5) to normalise labour to that MH/kWp.
 
 // ---------------------------------------------------------------------------
 // applyTotalMhTarget(result, kWp, targetMhPerKwp) -> {applied, scale, ...}
@@ -1237,6 +1237,10 @@ function applyKwpBenchmarks(ss, result, drivers) {
   // Migrated to readInput() 2026-04-24. Legacy null-signal semantics preserved:
   // blank / 0 / NaN → null (no benchmark, use DB item calc). Positive → use.
   function readBench(key) {
+    // Benchmark cells are OPTIONAL overrides. If the key isn't registered in
+    // INPUT_MAP (or the cell is blank), treat as "no override" -> null, rather
+    // than throwing. (Was: readInput() threw 'unknown key' and aborted the run.)
+    if (!INPUT_MAP[key]) return null;
     var v = parseFloat(readInput(ss, key));
     return (v > 0) ? v : null;
   }
@@ -1249,6 +1253,8 @@ function applyKwpBenchmarks(ss, result, drivers) {
   // constant INSTALL_TARGET_MH_PER_KWP. Set the effective target to 0 to fall
   // back to the legacy per-section benchmarks.
   var totalTarget = readBench('benchTotalMhKwp');
+  // Default OFF (preserve DB productivity). Set INSTALL_TARGET_MH_PER_KWP > 0 (or
+  // the benchTotalMhKwp cell) to normalise all productive labour to that MH/kWp.
   if (totalTarget == null) totalTarget = INSTALL_TARGET_MH_PER_KWP;
 
   var anyApplied = false;
