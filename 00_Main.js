@@ -604,6 +604,32 @@ function _showArgiaProgress(title) {
 }
 
 // ---------------------------------------------------------------------------
+// SILENT UI SHIM (for programmatic / test engine runs)
+// ---------------------------------------------------------------------------
+// Stands in for SpreadsheetApp.getUi() when runArgiaEngine({silent:true}) is
+// called from a test or an E2E harness. alert() is a no-op that returns YES
+// (when assumeYes) so the validation-warning prompt auto-continues instead of
+// blocking on a modal dialog. Mirrors only the surface runArgiaEngine touches:
+//   ui.alert(...), ui.Button.YES, ui.ButtonSet.{OK,YES_NO,...}
+// ---------------------------------------------------------------------------
+function _argiaSilentUi_(assumeYes) {
+  var Button    = { YES: 'YES', NO: 'NO', OK: 'OK', CANCEL: 'CANCEL', CLOSE: 'CLOSE' };
+  var ButtonSet = { OK: 'OK', OK_CANCEL: 'OK_CANCEL', YES_NO: 'YES_NO',
+                    YES_NO_CANCEL: 'YES_NO_CANCEL' };
+  return {
+    Button: Button,
+    ButtonSet: ButtonSet,
+    alert: function () { return assumeYes ? Button.YES : Button.NO; },
+    prompt: function () {
+      return {
+        getSelectedButton: function () { return assumeYes ? Button.OK : Button.CANCEL; },
+        getResponseText:   function () { return ''; }
+      };
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
 // MENU
 // ---------------------------------------------------------------------------
 function onOpen() {
@@ -711,16 +737,25 @@ function diagSheets() {
 // ---------------------------------------------------------------------------
 // MAIN ENTRY POINT
 // ---------------------------------------------------------------------------
-function runArgiaEngine() {
+function runArgiaEngine(opts) {
+  // opts (all optional):
+  //   silent    : true  -> no modal dialogs / no progress sidebar (tests / E2E)
+  //   assumeYes : true  -> auto-"YES" on the validation-warning prompt
+  // Menu path calls runArgiaEngine() with NO args -> full UI, byte-identical to
+  // before. Programmatic/silent path: runArgiaEngine({ silent:true, assumeYes:true }).
+  // Returns { ok:bool, reason?, ... } so a caller can tell what happened.
+  opts = opts || {};
+  var silent    = opts.silent === true;
+  var assumeYes = (opts.assumeYes !== false);   // default YES when silent
   var startTime = Date.now();
   var ss  = SpreadsheetApp.getActiveSpreadsheet();
-  var ui  = SpreadsheetApp.getUi();
+  var ui  = silent ? _argiaSilentUi_(assumeYes) : SpreadsheetApp.getUi();
   var TOTAL = 14; // progress steps
 
   try {
     // -- Show progress bar before any work starts ---------------------------
     _setArgiaProgress(0, TOTAL, 'Starting\u2026');
-    _showArgiaProgress('ARGIA \u2014 Building MDC & BOM');
+    if (!silent) _showArgiaProgress('ARGIA \u2014 Building MDC & BOM');
 
     logRunStart(ss);
 
@@ -776,7 +811,7 @@ function runArgiaEngine() {
     if (!validation.passed) {
       _setArgiaProgress(TOTAL, TOTAL, '\u274C Blocked \u2014 validation errors');
       ui.alert('ENGINE BLOCKED \u2014 Validation Errors', formatValidationAlert(validation), ui.ButtonSet.OK);
-      return;
+      return { ok: false, reason: 'validation-blocked', validation: validation };
     }
     if (validation.majors.length > 0) {
       // Progress bar pauses here while user reads the warning dialog -- that is fine.
@@ -788,7 +823,7 @@ function runArgiaEngine() {
       if (response !== ui.Button.YES) {
         _setArgiaProgress(TOTAL, TOTAL, 'Cancelled.');
         engineLog(ss, 'Engine', 'INFO', 'User cancelled after validation warnings.');
-        return;
+        return { ok: false, reason: 'cancelled' };
       }
     }
 
@@ -1097,7 +1132,7 @@ function runArgiaEngine() {
       try { engineLog(ss, 'Engine', 'WARNING', 'stampMeta failed: ' + stampErr.message); } catch (_) {}
     }
 
-    Utilities.sleep(1600); // let dialog reach 100 % before auto-close
+    if (!silent) Utilities.sleep(1600); // let dialog reach 100 % before auto-close
 
     var flags = [
       dc.dc01Pass ? null : 'DC-01 Voc FAIL',
@@ -1144,12 +1179,15 @@ function runArgiaEngine() {
       ui.ButtonSet.OK
     );
 
+    return { ok: true, elapsedMs: Date.now() - startTime };
+
   } catch (e) {
     try {
       _setArgiaProgress(TOTAL, TOTAL, '\u274C Error \u2014 see alert');
       engineLog(ss, 'Engine', 'ERROR', e.message + '\n' + e.stack);
     } catch (_) {}
     ui.alert('ENGINE ERROR', e.message + '\n\nStack:\n' + e.stack, ui.ButtonSet.OK);
+    return { ok: false, reason: 'error', error: e.message };
   }
 }
 
