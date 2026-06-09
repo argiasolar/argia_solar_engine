@@ -233,6 +233,18 @@ function writeInstallationV2(ss, result, drivers, _testOpts) {
     sh.getRange(_INST_V2_SUM_ROWS.TOTAL_LABOR + i, _INST_V2_SUM_COL_LABEL).setValue(row[0]);
     sh.getRange(_INST_V2_SUM_ROWS.TOTAL_LABOR + i, _INST_V2_SUM_COL_VAL  ).setValue(row[1]);
   });
+  // Make the supervision reclassification explicit (roles billed per project-day —
+  // site supervisor / QAQC / HSE — now count as LABOR, not OTHER).
+  if ((totals.laborIndirect || 0) > 0) {
+    sh.getRange(_INST_V2_SUM_ROWS.TOTAL_LABOR, _INST_V2_SUM_COL_VAL).setNote(
+      'Mano de obra directa (MH): $' + Math.round(totals.laborDirect).toLocaleString() +
+      '\nSupervisión / indirecta (supervisor, QAQC, HSE por día): $' +
+      Math.round(totals.laborIndirect).toLocaleString() +
+      '\nEstos roles antes estaban ocultos en OTHER.');
+    sh.getRange(_INST_V2_SUM_ROWS.TOTAL_LABOR + 2, _INST_V2_SUM_COL_VAL).setNote(
+      'Reclasificado: los roles por día (supervisor/QAQC/HSE) se movieron a MANO DE OBRA. ' +
+      'OTHER ahora son consumibles, movilización, seguridad de equipo, indirectos %.');
+  }
 
   // ── 3. Section grid VALUES (col F-J rows 14-23) ──────────────────────────
   // Header row 14 (template provides palette, writer fills labels)
@@ -364,8 +376,12 @@ function writeInstallationV2(ss, result, drivers, _testOpts) {
         fv[3] !== null && fv[3] !== undefined ? fv[3] : '',
         fn2((res.factorResult && res.factorResult.combined) || 0),
         item.appliesToInstType, item.minQty,
-        fn2(res.mhComputed), fn2(res.laborMxn), fn2(res.equipDays),
-        fn2(res.equipMxn), fn2(res.otherMxn), fn2(res.totalMxn),
+        fn2(res.mhComputed),
+        fn2(res.bucket === 'INDIRECT_LABOR' ? res.otherMxn : res.laborMxn),
+        fn2(res.equipDays),
+        fn2(res.equipMxn),
+        fn2(res.bucket === 'INDIRECT_LABOR' ? 0 : res.otherMxn),
+        fn2(res.totalMxn),
         res.formulaTrace || '',
         item.active ? 'Y' : 'N', item.notes || ''
       ]);

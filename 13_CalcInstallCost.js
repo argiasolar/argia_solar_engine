@@ -187,8 +187,39 @@ var IC_SUM_ROWS = {
 var IC_SEC_HDR_ROW  = 14;
 var IC_SEC_START_ROW= 15;
 var IC_SEC_COL = { SECTION: 6, LABOR: 7, EQUIP: 8, OTHER: 9, TOTAL: 10 };
-var IC_SECTIONS = [
-  'AC','DC','RACKING SYSTEM','CONNECTION','SAFETY','GENERAL SITE','EQUIPMENT','BESS','INDIRECT'
+// -- Indirect-labour roles: PEOPLE billed per project-day (site supervisor,
+// -- QAQC, HSE officer). Historically their cost landed in the OTHER bucket,
+// -- which understated TOTAL LABOR by ~50% on big jobs. They are now routed
+// -- into a labelled "indirect labour" sub-bucket that rolls up into TOTAL
+// -- LABOR. Classified by SUBSECTION (explicit + easy to extend).
+var IC_INDIRECT_LABOR_SUBSECTIONS = ['SUPERVISION', 'QAQC', 'HSE OFFICER'];
+function _icIsIndirectLabor(item) {
+  return IC_INDIRECT_LABOR_SUBSECTIONS.indexOf(
+    String((item && item.subsection) || '').toUpperCase()) !== -1;
+}
+
+// -- PURE: the per-result contribution to the section + grand totals, honouring
+// -- the bucket. INDIRECT_LABOR results move their cost from OTHER into LABOR
+// -- (and into the laborIndirect sub-total). Total contribution is unchanged,
+// -- so the grand total is preserved by the reclassification. INDIRECT-section
+// -- (percentage) items contribute nothing here (handled in their own pass).
+function _icBucketDeltas(result) {
+  var zero = { labor:0, laborDirect:0, laborIndirect:0, equip:0, other:0, mh:0,
+               secLabor:0, secEquip:0, secOther:0, secLaborIndirect:0, secTotal:0 };
+  if (!result || !result.item || result.item.section === 'INDIRECT') return zero;
+  if (result.bucket === 'INDIRECT_LABOR') {
+    return { labor: result.otherMxn, laborDirect: 0, laborIndirect: result.otherMxn,
+             equip: 0, other: 0, mh: 0,
+             secLabor: result.otherMxn, secEquip: 0, secOther: 0,
+             secLaborIndirect: result.otherMxn, secTotal: result.totalMxn };
+  }
+  return { labor: result.laborMxn, laborDirect: result.laborMxn, laborIndirect: 0,
+           equip: result.equipMxn, other: result.otherMxn, mh: result.mhComputed,
+           secLabor: result.laborMxn, secEquip: result.equipMxn, secOther: result.otherMxn,
+           secLaborIndirect: 0, secTotal: result.totalMxn };
+}
+
+var IC_SECTIONS = [  'AC','DC','RACKING SYSTEM','CONNECTION','SAFETY','GENERAL SITE','EQUIPMENT','BESS','INDIRECT'
 ];
 
 // Driver block (col A=key, col B=value, rows 4-33)
@@ -575,6 +606,7 @@ function loadInstallLib(ss) {
       id               : String(r['COST_ITEM_ID']).trim(),
       active           : true,
       section          : String(r['SECTION']                 || '').trim(),
+      subsection       : String(r['SUBSECTION']              || '').trim().toUpperCase(),
       subsection       : String(r['SUBSECTION']              || '').trim(),
       description      : String(r['DESCRIPTION']             || '').trim(),
       appliesToInstType: String(r['APPLIES_TO_INSTALL_TYPE'] || 'ALL').trim().toUpperCase(),
@@ -913,6 +945,7 @@ function calcInstallCost(instLib, drivers) {
     }
 
     result.totalMxn = result.laborMxn + result.equipMxn + result.otherMxn;
+    result.bucket   = _icIsIndirectLabor(item) ? 'INDIRECT_LABOR' : 'STANDARD';
     result.formulaTrace = _buildFormulaTrace(item, result, drivers);
     return result;
   }
@@ -923,16 +956,19 @@ function calcInstallCost(instLib, drivers) {
   function accumulateResult(result) {
     if (result.item.section !== 'INDIRECT') {
       var sec = result.item.section;
-      if (!sectionTotals[sec]) sectionTotals[sec] = { labor: 0, equip: 0, other: 0, total: 0 };
-      sectionTotals[sec].labor += result.laborMxn;
-      sectionTotals[sec].equip += result.equipMxn;
-      sectionTotals[sec].other += result.otherMxn;
-      sectionTotals[sec].total += result.totalMxn;
-
-      grandLabor += result.laborMxn;
-      grandEquip += result.equipMxn;
-      grandOther += result.otherMxn;
-      grandMH    += result.mhComputed;
+      if (!sectionTotals[sec]) sectionTotals[sec] = { labor: 0, equip: 0, other: 0, laborIndirect: 0, total: 0 };
+      var d = _icBucketDeltas(result);
+      sectionTotals[sec].labor         += d.secLabor;
+      sectionTotals[sec].equip         += d.secEquip;
+      sectionTotals[sec].other         += d.secOther;
+      sectionTotals[sec].laborIndirect += d.secLaborIndirect;
+      sectionTotals[sec].total         += d.secTotal;
+      grandLabor         += d.labor;
+      grandLaborDirect   += d.laborDirect;
+      grandLaborIndirect += d.laborIndirect;
+      grandEquip         += d.equip;
+      grandOther         += d.other;
+      grandMH            += d.mh;
     }
     return result;
   }
@@ -941,9 +977,10 @@ function calcInstallCost(instLib, drivers) {
   var items = new Array(lib.length);
   var sectionTotals = {};
   IC_SECTIONS.forEach(function(sec) {
-    sectionTotals[sec] = { labor: 0, equip: 0, other: 0, total: 0 };
+    sectionTotals[sec] = { labor: 0, equip: 0, other: 0, laborIndirect: 0, total: 0 };
   });
   var grandLabor = 0, grandEquip = 0, grandOther = 0, grandMH = 0;
+  var grandLaborDirect = 0, grandLaborIndirect = 0;
 
   // ── STAGE A: compute + accumulate every item whose driver is NOT day-driven.
   // This populates productive labor MH (the basis for the days estimate).
@@ -986,7 +1023,9 @@ function calcInstallCost(instLib, drivers) {
   });
 
   // -- SECOND PASS: PERCENT_OF items (IN-01 Insurance, IN-02 Contingency) --
-  drivers.laborEquipSubtotal = grandLabor + grandEquip;
+  // Insurance base = direct labour + equip (unchanged from before reclassification).
+  drivers.laborEquipSubtotal = grandLaborDirect + grandEquip;
+  // Contingency base = full subtotal (indirect labour now lives in grandLabor).
   drivers.installSubtotal    = grandLabor + grandEquip + grandOther;
 
   var indirectLabor = 0, indirectEquip = 0, indirectOther = 0;
@@ -1023,9 +1062,11 @@ function calcInstallCost(instLib, drivers) {
   // -- Grand totals ----------------------------------------------------------
   var grandTotal = grandLabor + grandEquip + grandOther;
   var totals = {
-    labor        : grandLabor,
+    labor        : grandLabor,           // honest TOTAL LABOR (direct + indirect)
+    laborDirect  : grandLaborDirect,     // MH-based trade labour
+    laborIndirect: grandLaborIndirect,   // supervision / QAQC / HSE (per-day roles)
     equip        : grandEquip,
-    other        : grandOther,
+    other        : grandOther,           // now excludes the per-day roles
     total        : grandTotal,
     perWp        : drivers.projectDcWp  > 0 ? grandTotal / drivers.projectDcWp  : 0,
     perKwp       : drivers.projectDcKwp > 0 ? grandTotal / drivers.projectDcKwp : 0,
@@ -1034,7 +1075,7 @@ function calcInstallCost(instLib, drivers) {
     totalMH      : grandMH,
     impliedDays  : (drivers.crewSize > 0 && grandMH > 0)
                    ? Math.round(grandMH / drivers.crewSize / 8) : 0,
-    avgRateMxnMH : grandMH > 0 ? Math.round(grandLabor / grandMH) : 0,
+    avgRateMxnMH : grandMH > 0 ? Math.round(grandLaborDirect / grandMH) : 0,
   };
 
   // -- Role aggregation for man-hours block -----------------------------------

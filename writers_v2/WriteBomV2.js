@@ -445,24 +445,31 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
     else                 { wp(BOM_ROW.DC_OCPD, dcFuseObj.price, null); }
   }
 
-  // DC conduit (or cable tray if trayM > 0)
+  // DC conduit — or cable tray when trayM > 0 (fill-sized width + DB price).
   var condSzDC     = parseFloat(dc.conduitDC);
   var condObjDC    = _bomV2_conduitPriceObj(bosDb, condSzDC);
   var condSticksDC = Math.ceil(lay.bom.dcConduitM / 3);
   w(BOM_ROW.DC_CONDUIT, BOM_COL.ITEM, itemNo++);
   if (trayM > 0) {
-    var trayObjDC    = _bomV2_ladderTrayPriceObj(bosDb);
+    var trayWDC      = _bomV2_selectTrayWidth(dc.totalDCInsArea || 0);
+    var trayObjDC    = _bomV2_ladderTrayPriceObj(bosDb, trayWDC.widthMm);
     var trayTramosDC = Math.ceil(trayM / 3);
     w(BOM_ROW.DC_CONDUIT, BOM_COL.DESCRIPTION,
-      'Charola tipo escalera (DC homerun horizontal) ' + trayM + 'm');
+      'Charola tipo escalera ' + trayWDC.widthMm + ' mm (DC homerun horizontal) ' + trayM + ' m');
     w(BOM_ROW.DC_CONDUIT, BOM_COL.QTY, trayTramosDC);
-    w(BOM_ROW.DC_CONDUIT, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.dcConduit) || '');
+    w(BOM_ROW.DC_CONDUIT, BOM_COL.MEMORIA,
+      trayWDC.note + ' | ' + trayM + ' m \u00f7 3 m/tramo = ' + trayTramosDC + ' tramos');
     w(BOM_ROW.DC_CONDUIT, BOM_COL.UNIT, 'tramo');
     w(BOM_ROW.DC_CONDUIT, BOM_COL.REFERENCE,
       'DC-08-TRAY' + (trayObjDC && trayObjDC.id ? ' | ' + trayObjDC.id : ''));
-    if (trayObjDC) { wp(BOM_ROW.DC_CONDUIT, trayObjDC.price, null); }
-    else note(BOM_ROW.DC_CONDUIT, BOM_COL.UNIT_PRICE,
-              'Precio charola pendiente \u2014 cotizar con proveedor');
+    if (trayObjDC && trayObjDC.price != null) {
+      if (trayObjDC.isUsd) { wp(BOM_ROW.DC_CONDUIT, null, trayObjDC.price); }
+      else                 { wp(BOM_ROW.DC_CONDUIT, trayObjDC.price, null); }
+    } else {
+      note(BOM_ROW.DC_CONDUIT, BOM_COL.UNIT_PRICE,
+           'Precio charola ' + trayWDC.widthMm + ' mm pendiente \u2014 ' +
+           'agregar SKU LADDER TRAY en 14M_PRODUCTS_BOS o cotizar con proveedor');
+    }
   } else {
     w(BOM_ROW.DC_CONDUIT, BOM_COL.DESCRIPTION,
       'Conduit IMC ' + _bomV2_conduitSizeLabel(dc.conduitDC) + '" x 3m (DC)');
@@ -608,19 +615,26 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   var mCondObj  = _bomV2_conduitPriceObj(bosDb, mCondSz);
   var mCondStks = Math.ceil(lay.bom.mainFeederCableM / 3 / 3);
   if (trayM > 0) {
-    var trayObjAC    = _bomV2_ladderTrayPriceObj(bosDb);
-    var trayTramosAC = Math.ceil(lay.bom.mainFeederCableM / 3 / 3);
+    var trayWAC      = _bomV2_selectTrayWidth(ac.totalInsMain || 0);
+    var trayObjAC    = _bomV2_ladderTrayPriceObj(bosDb, trayWAC.widthMm);
+    var trayTramosAC = Math.ceil(trayM / 3);
     w(BOM_ROW.AC_CONDUIT, BOM_COL.DESCRIPTION,
-      'Charola tipo escalera (alimentador AC horizontal) ' +
-      lay.bom.mainFeederCableM + 'm');
+      'Charola tipo escalera ' + trayWAC.widthMm + ' mm (alimentador AC horizontal) ' +
+      trayM + ' m');
     w(BOM_ROW.AC_CONDUIT, BOM_COL.QTY, trayTramosAC);
-    w(BOM_ROW.AC_CONDUIT, BOM_COL.MEMORIA, (lay.bom.trace && lay.bom.trace.mainConduit) || '');
+    w(BOM_ROW.AC_CONDUIT, BOM_COL.MEMORIA,
+      trayWAC.note + ' | ' + trayM + ' m \u00f7 3 m/tramo = ' + trayTramosAC + ' tramos');
     w(BOM_ROW.AC_CONDUIT, BOM_COL.UNIT, 'tramo');
     w(BOM_ROW.AC_CONDUIT, BOM_COL.REFERENCE,
       'AC-05-TRAY' + (trayObjAC && trayObjAC.id ? ' | ' + trayObjAC.id : ''));
-    if (trayObjAC) { wp(BOM_ROW.AC_CONDUIT, trayObjAC.price, null); }
-    else note(BOM_ROW.AC_CONDUIT, BOM_COL.UNIT_PRICE,
-              'Precio charola pendiente \u2014 cotizar con proveedor');
+    if (trayObjAC && trayObjAC.price != null) {
+      if (trayObjAC.isUsd) { wp(BOM_ROW.AC_CONDUIT, null, trayObjAC.price); }
+      else                 { wp(BOM_ROW.AC_CONDUIT, trayObjAC.price, null); }
+    } else {
+      note(BOM_ROW.AC_CONDUIT, BOM_COL.UNIT_PRICE,
+           'Precio charola ' + trayWAC.widthMm + ' mm pendiente \u2014 ' +
+           'agregar SKU CABLE TRAY en 14M_PRODUCTS_BOS o cotizar con proveedor');
+    }
   } else {
     w(BOM_ROW.AC_CONDUIT, BOM_COL.ITEM, itemNo++);
     w(BOM_ROW.AC_CONDUIT, BOM_COL.DESCRIPTION,

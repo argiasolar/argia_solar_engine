@@ -62,6 +62,12 @@ var INPUT_DESIGN_IMPACT = {
   roofToInverterDropM:
     'Caída vertical techo\u2192inversor (m). Se suma a cada corrida DC/AC para estimar el cable real. ' +
     '\u2191 \u2192 más cobre y más caída de tensión. En blanco = 5 m.',
+  dcStringWireM:
+    'Longitud total de cable DC de strings medida por Helioscope (m). Alimenta directamente la ' +
+    'cantidad de cable DC del BOM (\u00d7 merma). En blanco = se estima por geometría del arreglo.',
+  longestStringRunM:
+    'Corrida del string más largo (m), tomada de Helioscope. Gobierna el dimensionamiento del ' +
+    'conductor DC por caída de tensión. \u2191 \u2192 conductor más grande. En blanco = usa el promedio.',
   distInverter:
     'Distancia al inversor (m). Base de las corridas DC (home-run) y AC. \u2191 \u2192 más metros de ' +
     'cable, más caída de tensión y más mano de obra de tendido.',

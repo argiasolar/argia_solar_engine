@@ -81,10 +81,10 @@ registerTest({
 
     t.assertTrue('roofToInverterDropM registered in INPUT_MAP',
       INPUT_MAP.hasOwnProperty('roofToInverterDropM'));
-    // Reuses the freed distCabinet cell (INPUT_DESIGN row 24, col 3).
+    // distCabinet cell freed + shifted by the row-15 hotfix (INPUT_DESIGN row 25, col 3).
     t.assertTrue('drop input default is 5 m',
       INPUT_MAP.roofToInverterDropM.default === 5);
-    t.assert('drop input row', 24, INPUT_MAP.roofToInverterDropM.row, 0);
+    t.assert('drop input row', 25, INPUT_MAP.roofToInverterDropM.row, 0);
     t.assert('drop input col', 3,  INPUT_MAP.roofToInverterDropM.col, 0);
   }
 });
