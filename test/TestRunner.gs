@@ -22,6 +22,12 @@
 // Tests are wrapped in try/catch so a throw in one doesn't kill the run.
 // Exceptions are recorded via t.error() so they show up in the result sheet.
 //
+// INPUT PROTECTION (Track A / A1, 2026)
+//   Any run that includes an integration or regression test snapshots all
+//   INPUT_* tabs before the run and ALWAYS restores them afterwards (or
+//   rebuilds DEFAULT layout if restore fails). See 00d_InputSnapshot.gs.
+//   This is why running the suite no longer wipes the working project.
+//
 // LEGACY COMPATIBILITY
 //   The legacy runTests() in 99_TestRunner.gs was deleted in Pass 23.
 //   A compatibility shim function runTests() near the bottom of this
@@ -124,8 +130,9 @@ function listRegisteredTests() {
 
 
 /**
- * Core dispatch. Filter the registry, run each matching test in a try/catch,
- * gather entries, write the result sheet, return a summary string.
+ * Core dispatch. Filter the registry, snapshot inputs if the run can mutate
+ * them, run each matching test in a try/catch, ALWAYS restore inputs, gather
+ * entries, write the result sheet, return a summary string.
  *
  * @param {function(Object): boolean} filterFn
  * @param {string} label  Used in the run banner / log
@@ -150,24 +157,61 @@ function _tr_runFiltered(filterFn, label) {
     return emptyMsg;
   }
 
-  matching.forEach(function (entry) {
-    t._setContext(entry.id, entry.module, (entry.scenarios || [])[0] || '');
-    t.suite(entry.id);
-    try {
-      // Pass the test a context with cheap shortcuts. Tests can ignore ctx
-      // and use the global TEST_SCENARIOS / getScenario() directly.
-      var ctx = {
-        ss        : ss,
-        scenarios : TEST_SCENARIOS,
-        getScenario: getScenario
-      };
-      entry.fn(t, ctx);
-    } catch (e) {
-      t.error(entry.id + ' aborted', e);
-    } finally {
-      t._completeTest(entry.id);
-    }
+  // -------------------------------------------------------------------------
+  // INPUT PROTECTION (A1). Only integration/regression tests mutate INPUT_*;
+  // a pure unit-only run is left untouched (no needless writes). When needed,
+  // snapshot before any test runs and ALWAYS restore in the finally below --
+  // even if a test throws past its own finally. If restore itself fails,
+  // rebuild the DEFAULT layout so a run can never leave the workbook wiped.
+  // -------------------------------------------------------------------------
+  var needsProtection = matching.some(function (r) {
+    return r.group === 'integration' || r.group === 'regression';
   });
+  var inputSnap = null;
+  if (needsProtection) {
+    try {
+      inputSnap = snapshotInputSheets(ss);
+    } catch (snapErr) {
+      if (typeof Logger !== 'undefined' && Logger.log) {
+        Logger.log('TestRunner: input snapshot failed -- run proceeds but inputs '
+                   + 'may not auto-restore: ' + snapErr.message);
+      }
+    }
+  }
+
+  try {
+    matching.forEach(function (entry) {
+      t._setContext(entry.id, entry.module, (entry.scenarios || [])[0] || '');
+      t.suite(entry.id);
+      try {
+        // Pass the test a context with cheap shortcuts. Tests can ignore ctx
+        // and use the global TEST_SCENARIOS / getScenario() directly.
+        var ctx = {
+          ss        : ss,
+          scenarios : TEST_SCENARIOS,
+          getScenario: getScenario
+        };
+        entry.fn(t, ctx);
+      } catch (e) {
+        t.error(entry.id + ' aborted', e);
+      } finally {
+        t._completeTest(entry.id);
+      }
+    });
+  } finally {
+    // Restore inputs to their pre-run state no matter what happened above.
+    if (inputSnap) {
+      try {
+        restoreInputSheets(ss, inputSnap);
+      } catch (restoreErr) {
+        rebuildInputsToDefault_(ss);
+        if (typeof Logger !== 'undefined' && Logger.log) {
+          Logger.log('TestRunner: input restore failed; rebuilt DEFAULT layout: '
+                     + restoreErr.message);
+        }
+      }
+    }
+  }
 
   var entries2 = t.flush();
   _tr_stampEntries(entries2, runId, matching);
@@ -239,7 +283,7 @@ function _tr_generateRunId() {
 // Output goes to _TEST_RESULTS_V2, NOT the legacy _TEST_RESULTS.
 //
 // This shim does NOT replicate every behavior of the legacy runTests
-// (e.g. specific phase-by-phase ordering). It runs all 46 registered
+// (e.g. specific phase-by-phase ordering). It runs all registered
 // tests in registry order, which is the closest semantic match.
 // ============================================================================
 
