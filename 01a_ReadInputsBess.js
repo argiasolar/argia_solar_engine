@@ -37,13 +37,12 @@
 // Decides which voltage calcBessCircuit should use for one side (DC bus or
 // AC system). Pure function -- no sheet access -- so it is fully unit-testable.
 //
-// Priority:
-//   1. DB voltage (the selected catalog product's Nominal_Voltage_V) when it
-//      is a positive number. Catalog products carry an authoritative voltage;
-//      preferring it stops a designer hand-typing a wrong value for a known
-//      product.
-//   2. The manual INPUT_BESS cell (§6 C44 / C45) when the DB has nothing --
-//      this is the CUSTOM_MANUAL path, and also a deliberate override hook.
+// Priority (BDF-7.1, manual-wins):
+//   1. The manual INPUT_BESS cell (§6 C44 / C45) when it is a positive
+//      number -- INPUT_* overrides MASTER_DB everywhere in the engine, and
+//      this is also the CUSTOM_MANUAL path.
+//   2. DB voltage (the selected catalog product's Nominal_Voltage_V) as the
+//      fallback for designers who haven't typed a voltage themselves.
 //   3. 0 when neither is available. 0 means "not supplied"; calcBessCircuit
 //      then returns sizeable:false and MDC §7 prints "pendiente". A 0 is a
 //      valid state, never an error -- the engine must not invent a voltage.
@@ -264,6 +263,37 @@ function readBessInstallContext(ss) {
     commissioningMxn:      valNum('bessCommissioningMxn'),
     provenance:            'INPUT_BESS_S6',
   };
+}
+
+// ---------------------------------------------------------------------------
+// applyBessAuthoritativeContext(installCtx, bessResult) -> installCtx   [A2c]
+// ---------------------------------------------------------------------------
+// Overrides install-context fields that have a single authoritative source
+// elsewhere in the engine, so the BoS/voltage-drop/NOM calcs can never
+// diverge from the circuit calc:
+//
+//   coupling -- bessResult.coupling (INPUT_DESIGN!C17, BDF-7.1). A stale or
+//               removed INPUT_BESS!C43 value must never reach the calcs.
+//   dcBusV / acV -- bessResult.bess.dcBusVoltageV / .acVoltageV, the RESOLVED
+//               voltages (manual C44/C45 wins, battery DB nominal fallback,
+//               else 0 -- resolveBessVoltage). The raw C44/C45 reads in the
+//               context are correct when the cells are populated, but a
+//               BLANK cell reads 0 while the circuit calc resolves to the DB
+//               nominal -- the same silent voltage split the 2026-06-10
+//               unification fixed for the populated case. Injecting the
+//               resolved values closes the blank-cell case too.
+//
+// Mutates and returns installCtx. Pure (no sheet access) -- unit-testable.
+// Both orchestration sites (00_Main step 9.6, 13 standalone install) call
+// this instead of hand-injecting coupling.
+// ---------------------------------------------------------------------------
+function applyBessAuthoritativeContext(installCtx, bessResult) {
+  installCtx.coupling = bessResult.coupling;
+  if (bessResult.bess) {
+    installCtx.dcBusV = Number(bessResult.bess.dcBusVoltageV) || 0;
+    installCtx.acV    = Number(bessResult.bess.acVoltageV)    || 0;
+  }
+  return installCtx;
 }
 
 

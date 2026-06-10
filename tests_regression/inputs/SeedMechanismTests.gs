@@ -65,7 +65,13 @@ registerTest({
     });
 
     // ---- numeric BESS seeds present (voltages + §6) ------------------------
-    t.assert('bessDcBusV seed 800', 800, INPUT_MAP.bessDcBusV.seed);
+    // bessDcBusV deliberately has NO seed (2026-06-10, post voltage-unify):
+    // the old 800 was the stray placeholder behind the voltage-drift bug.
+    // An empty/0 C44 = "not supplied" -> resolveBessVoltage falls back to the
+    // battery DB nominal, which is the physically-correct value. Seeding any
+    // number here would override the DB nominal (manual-wins, BDF-7.1).
+    t.assertTrue('bessDcBusV has NO seed (DB nominal must win on fresh sheets)',
+                 !INPUT_MAP.bessDcBusV.hasOwnProperty('seed'));
     t.assert('bessAcV seed 480',    480, INPUT_MAP.bessAcV.seed);
     t.assert('bessGecRunM seed 15', 15,  INPUT_MAP.bessGecRunM.seed);
     // and their reader defaults remain 0 (A2b parity intact)

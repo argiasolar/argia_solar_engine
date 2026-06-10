@@ -1603,7 +1603,7 @@ function runInstallCostStandalone() {
       bessResult = runBessStep(ss);
       if (bessResult && bessResult.bessEnabled && bessResult.bess && bessResult.circuit) {
         var installCtx = readBessInstallContext(ss);
-        installCtx.coupling = bessResult.coupling;
+        applyBessAuthoritativeContext(installCtx, bessResult);  // A2c: coupling + resolved voltages
         bessResult.installContext = installCtx;
         bessResult.bos = calcBessBosQuantities({
           bess: bessResult.bess,

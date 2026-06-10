@@ -1863,7 +1863,7 @@ var _MAP_CFE = {
 // preserving. Layout verified live against ARGIA_ENGINE__64_ INPUT_BESS. [A2a]
 // ===========================================================================
 var _MAP_BESS_S6 = {
-  bessDcBusV:                { sheet: SH.INPUT_BESS, row: 44, col: 3, label: 'Voltaje bus DC',                         type: 'number',   default: 0, seed: 800,  unit: 'V',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessDcBusV:                { sheet: SH.INPUT_BESS, row: 44, col: 3, label: 'Voltaje bus DC',                         type: 'number',   default: 0,             unit: 'V',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
   bessAcV:                   { sheet: SH.INPUT_BESS, row: 45, col: 3, label: 'Voltaje AC sistema',                     type: 'number',   default: 0, seed: 480,  unit: 'V',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
   bessDcRunM:                { sheet: SH.INPUT_BESS, row: 46, col: 3, label: 'Distancia batería ↔ tablero',           type: 'number',   default: 0,  unit: 'm',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
   bessAcRunM:                { sheet: SH.INPUT_BESS, row: 47, col: 3, label: 'Distancia tablero ↔ interconexión CFE', type: 'number',   default: 0,  unit: 'm',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },

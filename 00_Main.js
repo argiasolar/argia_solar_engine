@@ -919,11 +919,12 @@ function runArgiaEngine(opts) {
       engineLog(ss, 'Engine', 'INFO', 'Step 9.6: BESS BoS + NOM checks');
       try {
         var installCtx = readBessInstallContext(ss);
-        // BDF-7.1: coupling has a single authoritative source —
-        // bessResult.coupling (derived from INPUT_DESIGN!C17). Inject it
-        // here so the calc functions never get a stale or contradictory
-        // value from a removed/old INPUT_BESS!C43 cell.
-        installCtx.coupling = bessResult.coupling;
+        // A2c: coupling AND voltages have single authoritative sources --
+        // bessResult.coupling (INPUT_DESIGN!C17) and the resolved
+        // bessResult.bess voltages (manual>DB>0). Injected here so the calc
+        // functions never get a stale coupling or a blank-cell 0 voltage
+        // while the circuit calc uses the DB nominal.
+        applyBessAuthoritativeContext(installCtx, bessResult);
         var bosResult = calcBessBosQuantities({
           bess: bessResult.bess,
           circuit: bessResult.circuit,
