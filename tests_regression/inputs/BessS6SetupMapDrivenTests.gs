@@ -54,6 +54,10 @@ function _mockBessTabSs(initialCells) {
       return stub;
     },
     setRowHeight: function () { return sheet; },
+    setColumnWidth: function () { return sheet; },
+    setHiddenGridlines: function () { return sheet; },
+    setFrozenRows: function () { return sheet; },
+    hideColumns: function () { return sheet; },
     val: function (r, c) { var k = r + ',' + c; return cells.hasOwnProperty(k) ? cells[k] : undefined; },
     dv:  function (r, c) { return validations[r + ',' + c]; }
   };

@@ -37,6 +37,22 @@ registerTest({
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
 
+    // -- Context guard: this test locks values produced by the CULLIGAN E2E
+    // (fixture inputs + engine run). In a bare full-suite run those
+    // preconditions are absent and every value is from whatever project the
+    // sheet currently holds -- skip with INFO instead of producing 19
+    // uninterpretable FAILs. The Admin Panel E2E (runTestsByModule) always
+    // satisfies this guard because it runs the engine on the fixture first.
+    var mdc = ss.getSheetByName('MDC_v2');
+    var projName = mdc ? String(mdc.getRange(7, 3).getValue() || '') : '';
+    if (projName.toUpperCase().indexOf('CULLIGAN') < 0) {
+      t.info('skipped',
+             'Requires CULLIGAN E2E context (fixture + engine run). Current '
+           + 'MDC_v2 project: "' + (projName || '(none)') + '". Run via '
+           + 'Admin Panel \u25b8 Test \u25b8 CULLIGAN E2E.');
+      return;
+    }
+
     // -- Canonical INPUT_BAAS frame (restored by the E2E snapshot) ----------
     if (typeof setupInputBaasSheet === 'function') setupInputBaasSheet();
     var ib = ss.getSheetByName('INPUT_BAAS');

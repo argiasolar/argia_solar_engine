@@ -109,9 +109,9 @@ registerTest({
       if (!sh) return;
 
       // Title row contains the marker
-      var title = String(sh.getRange(1, 1).getValue() || '');
-      t.assertTrue('row 1 title contains "BESS Recommendations"',
-        title.indexOf('BESS Recommendations') >= 0);
+      var title = String(sh.getRange(1, 3).getValue() || '');
+      t.assertTrue('row 1 title (C1) contains "BESS RECOMMENDATIONS"',
+        title.indexOf('BESS RECOMMENDATIONS') >= 0);
 
       // Tariff inputs row 3
       t.assert('row 3 col A label', 'Tariff inputs:', sh.getRange(3, 1).getValue());
@@ -283,7 +283,7 @@ registerTest({
 
       // Verify BDF-1 row positions still intact (no shift)
       t.assert('row 1 still has title', true,
-               String(sh.getRange(1, 1).getValue()).indexOf('BESS Recommendations') >= 0);
+               String(sh.getRange(1, 3).getValue()).indexOf('BESS RECOMMENDATIONS') >= 0);
       t.assert('row 3 still has tariff inputs label',
                'Tariff inputs:', sh.getRange(3, 1).getValue());
       t.assert('row 5 still has site summary label',
@@ -443,9 +443,9 @@ registerTest({
       t.assert('row 2 col A is blank when threshold disabled', '', bannerCell);
 
       // Row 1 (title) still rendered
-      var title = String(sh.getRange(1, 1).getValue() || '');
+      var title = String(sh.getRange(1, 3).getValue() || '');
       t.assertTrue('row 1 title still rendered',
-                   title.indexOf('BESS Recommendations') >= 0);
+                   title.indexOf('BESS RECOMMENDATIONS') >= 0);
     } finally {
       _deleteSheetIfExists_BR_(ss, scratch);
     }

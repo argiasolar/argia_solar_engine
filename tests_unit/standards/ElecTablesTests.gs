@@ -58,7 +58,10 @@ registerTest({
     // --- Next breaker -------------------------------------------------------
     t.assert('nextBreaker(22.30)  = 25',  25,  nextBreaker(22.30,  tbls));
     t.assert('nextBreaker(150.35) = 175', 175, nextBreaker(150.35, tbls));
-    t.assert('nextBreaker(601.40) = 800', 800, nextBreaker(601.40, tbls));
+    // 700 verified against NOM_DB 66_NOM_OCPD (2026-06-09): the ladder is
+    // ... 500, 600, 700, 800 ... -- 700A is a standard size (NEC 240.6 / NOM
+    // equivalent). The old expectation (800) predates the 700 step.
+    t.assert('nextBreaker(601.40) = 700', 700, nextBreaker(601.40, tbls));
 
     // --- Conductor selection ------------------------------------------------
     var c1 = selectConductor(31.40, tbls);

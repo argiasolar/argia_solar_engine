@@ -1873,15 +1873,30 @@ function setupInputBessStyling() {
     // GAS sometimes throws if column already hidden; non-blocking.
   }
 
-  // ---- Section header rows --------------------------------------------
-  // The OG sheet has section headers at rows 5, 9, 19, 22 (per the
-  // openpyxl dump). Apply consistent token styling to each.
-  var sectionRows = [
-    [5,  '1. SELECCIÓN DE BATERÍA'],
-    [9,  '2. ESPECIFICACIONES TÉCNICAS'],
-    [19, '3. INFORMACIÓN COMERCIAL'],
-    [22, '4. PEAK SHAVING'],
-  ];
+  // ---- Section header rows (map-derived, A2c) --------------------------
+  // Header rows come from INPUT_MAP: each section's header sits one row
+  // above its first field (minRow - 1). The old hardcoded list said 19/22
+  // for §3/§4 -- wrong since the §-layout moved (§3 fields start r22, §4
+  // r25). Worse, the BDF-10 clear above wipes B19 and the old list then
+  // wrote the §3 header BACK into r19 -- the function fought itself and
+  // manufactured the duplicate-header cruft seen on live sheets. Deriving
+  // the rows from the map ends that class of drift: r19 now STAYS clear.
+  var SECTION_TITLES = {
+    'BESS 1 SELECCION':        '1. SELECCIÓN DE BATERÍA',
+    'BESS 2 ESPECIFICACIONES': '2. ESPECIFICACIONES TÉCNICAS',
+    'BESS 3 COMERCIAL':        '3. INFORMACIÓN COMERCIAL',
+    'BESS 4 PEAK SHAVING':     '4. PEAK SHAVING'
+  };
+  var secMin = {};
+  Object.keys(INPUT_MAP).forEach(function (k) {
+    var m = INPUT_MAP[k];
+    if (m.sheet !== 'INPUT_BESS' && m.sheet !== SH.INPUT_BESS) return;
+    if (!SECTION_TITLES[m.section]) return;
+    if (!(m.section in secMin) || m.row < secMin[m.section]) secMin[m.section] = m.row;
+  });
+  var sectionRows = Object.keys(SECTION_TITLES).map(function (s) {
+    return [secMin[s] - 1, SECTION_TITLES[s]];
+  });
   sectionRows.forEach(function(pair) {
     var r = pair[0];
     var labelExpected = pair[1];
@@ -1909,14 +1924,16 @@ function setupInputBessStyling() {
       DIVIDER_LINE, SpreadsheetApp.BorderStyle.SOLID);
   });
 
-  // ---- BDF-10: row 22 helper text in C22 -------------------------------
-  // The PEAK SHAVING section header has explanatory text in col C
-  // ("Solo aplica si BESS_STRATEGY = PEAK_SHAVING"). Style it as italic
-  // muted text — not an input cell — so the designer doesn't mistake it
-  // for something editable.
-  var c22Val = String(sh.getRange(22, 3).getValue() || '').trim();
-  if (c22Val.length > 0 && c22Val.indexOf('Solo aplica') >= 0) {
-    sh.getRange(22, 3)
+  // ---- §4 helper text (map-derived row, was hardcoded C22) --------------
+  // The PEAK SHAVING header row carries explanatory text in col C
+  // ("Solo aplica si BESS_STRATEGY = PEAK_SHAVING"). On the live sheet that
+  // is the §4 header row (map minRow - 1 = C24), NOT C22 -- the old
+  // hardcoded target never fired. Style it italic + muted so the designer
+  // doesn't mistake it for an input.
+  var s4NoteRow = secMin['BESS 4 PEAK SHAVING'] - 1;
+  var s4NoteVal = String(sh.getRange(s4NoteRow, 3).getValue() || '').trim();
+  if (s4NoteVal.length > 0 && s4NoteVal.indexOf('Solo aplica') >= 0) {
+    sh.getRange(s4NoteRow, 3)
       .setFontFamily(FF)
       .setFontSize(FS)
       .setFontStyle('italic')
