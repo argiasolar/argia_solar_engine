@@ -1759,9 +1759,99 @@ var _MAP_BAAS = {
 // ---------------------------------------------------------------------------
 // COMBINE — the single map. Writers and readers only touch INPUT_MAP.
 // ---------------------------------------------------------------------------
+
+// ===========================================================================
+// _MAP_CFE — INPUT_CFE: 8 header scalars + the 12-month bill matrix (C..N).
+// ---------------------------------------------------------------------------
+// INPUT_CFE was never in the map: the CFE bill is a 12-month MATRIX (rows x
+// months C..N), not single cells, so reads were hardcoded in 02_LoadDB.js /
+// 20a. The map's `range` mode (rangeA1 -> 2D getValues) models the monthly
+// rows; scalars cover the header. Rows r30-r37 are DERIVED totals (formulas),
+// not inputs, so they are intentionally NOT mapped. Layout verified live
+// against ARGIA_ENGINE__62_ INPUT_CFE. [A2a]
+// ===========================================================================
+var _MAP_CFE = {
+  // -- 01 ENCABEZADO (header scalars, col C) --------------------------------
+  cfeTariff: {
+    sheet: SH.INPUT_CFE, row: 4, col: 3,
+    label: 'Código de tarifa CFE', type: 'text',
+    default: '', required: true,
+    section: '01 ENCABEZADO CFE',
+    consumedBy: ['engine'], notes: 'p.ej. GDMTH, GDMTO, PDBT'
+  },
+  cfeRegion: {
+    sheet: SH.INPUT_CFE, row: 5, col: 3,
+    label: 'Región tarifaria CFE', type: 'text',
+    default: '', required: true,
+    section: '01 ENCABEZADO CFE',
+    consumedBy: ['engine'], notes: 'p.ej. GOLFO NORTE'
+  },
+  cfeDap: {
+    sheet: SH.INPUT_CFE, row: 6, col: 3,
+    label: 'DAP (alumbrado público)', type: 'number',
+    default: 0, required: false, unit: 'MXN',
+    section: '01 ENCABEZADO CFE', consumedBy: ['engine']
+  },
+  cfeBajaTension2pct: {
+    sheet: SH.INPUT_CFE, row: 7, col: 3,
+    label: '2% Baja Tensión', type: 'dropdown',
+    default: 'NO', required: false, dropdown: ['SI', 'NO'],
+    section: '01 ENCABEZADO CFE', consumedBy: ['engine']
+  },
+
+  // -- 03 INTERCONEXIÓN (header scalars, col C) -----------------------------
+  cfeInterconnMode: {
+    sheet: SH.INPUT_CFE, row: 41, col: 3,
+    label: 'Modo de interconexión', type: 'dropdown',
+    default: 'SIN_EXPORTACION', required: true,
+    dropdown: ['MEDICION_NETA', 'FACTURACION_NETA', 'SIN_EXPORTACION'],
+    section: '03 INTERCONEXIÓN', consumedBy: ['engine']
+  },
+  cfeExportPriceMxnPerKwh: {
+    sheet: SH.INPUT_CFE, row: 42, col: 3,
+    label: 'Precio exportación', type: 'number',
+    default: 0, required: false, unit: 'MXN/kWh',
+    section: '03 INTERCONEXIÓN', consumedBy: ['engine']
+  },
+  cfeAutoconsumoPct: {
+    sheet: SH.INPUT_CFE, row: 43, col: 3,
+    label: 'Autoconsumo', type: 'percent',
+    default: 0.7, required: false, unit: '%',
+    section: '03 INTERCONEXIÓN', consumedBy: ['engine']
+  },
+  cfePowerFactorThreshold: {
+    sheet: SH.INPUT_CFE, row: 44, col: 3,
+    label: 'Umbral factor de potencia', type: 'number',
+    default: 0.9, required: false,
+    section: '03 INTERCONEXIÓN', consumedBy: ['engine']
+  },
+
+  // -- 02 FACTURA 12 MESES (range mode, C..N = ENE..DIC) --------------------
+  cfeKwhBase:           { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C10:N10', label: 'kWh base (12 meses)',         type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeKwhIntermedia:     { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C11:N11', label: 'kWh intermedia (12 meses)',   type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeKwhPunta:          { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C12:N12', label: 'kWh punta (12 meses)',        type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeKwBase:            { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C13:N13', label: 'kW base (12 meses)',          type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeKwIntermedia:      { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C14:N14', label: 'kW intermedia (12 meses)',    type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeKwPunta:           { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C15:N15', label: 'kW punta (12 meses)',         type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeKwMaxAnoMovil:     { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C16:N16', label: 'kW máx año móvil (12 meses)', type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeKvarh:             { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C17:N17', label: 'kVArh (12 meses)',            type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeDias:              { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C18:N18', label: 'Días (12 meses)',             type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeDemandaFacturable: { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C19:N19', label: 'Demanda facturable (12 meses)', type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeFpPct:             { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C20:N20', label: 'Factor de potencia (12 meses)', type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeCapacidadMxn:      { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C21:N21', label: 'Capacidad MXN (12 meses)',    type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeDistribucionMxn:   { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C22:N22', label: 'Distribución MXN (12 meses)', type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeTransmisionMxn:    { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C23:N23', label: 'Transmisión MXN (12 meses)',  type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeCenaceMxn:         { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C24:N24', label: 'CENACE MXN (12 meses)',       type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeEnergiaBMxn:       { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C25:N25', label: 'Energía Base MXN (12 meses)', type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeEnergiaIMxn:       { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C26:N26', label: 'Energía Intermedia MXN (12 meses)', type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeEnergiaPMxn:       { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C27:N27', label: 'Energía Punta MXN (12 meses)', type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeScnmemMxn:         { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C28:N28', label: 'SCnMEM MXN (12 meses)',       type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] },
+  cfeSuministroMxn:     { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C29:N29', label: 'Suministro MXN (12 meses)',  type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] }
+};
+
 var INPUT_MAP = {};
 (function _mergeMaps() {
-  var parts = [_MAP_PROJECT, _MAP_DESIGN, _MAP_INSTALL, _MAP_INSTALL_BESS, _MAP_BESS, _MAP_BAAS];
+  var parts = [_MAP_PROJECT, _MAP_DESIGN, _MAP_INSTALL, _MAP_INSTALL_BESS, _MAP_BESS, _MAP_BAAS, _MAP_CFE];
   for (var p = 0; p < parts.length; p++) {
     var src = parts[p];
     for (var k in src) {
