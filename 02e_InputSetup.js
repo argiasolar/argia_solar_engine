@@ -231,6 +231,23 @@ function _setupOneTab(tabName, docTitle, force) {
 // PRIMITIVE: render one input row at its map coordinates
 // Label in B:C, value cell in D, unit in E. Data validation applied per type.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// [A2c] Setup-seed value for a field, distinct from mapEntry.default.
+//   mapEntry.default = the value readInput() returns for an EMPTY cell (the
+//                      reader fallback; consumed by the engine at read time).
+//   mapEntry.seed    = the value setup writes into a fresh cell (a suggested
+//                      starting point for the designer).
+// They are usually identical and only `default` is set, so this returns
+// `default` by default. When the two must differ -- e.g. a reader fallback of 0
+// but a sensible suggested value of 250000 -- give the field a `seed`. Returns
+// '' when there is nothing to seed (so callers can guard with `!== ''`).
+// ---------------------------------------------------------------------------
+function _seedValueFor(mapEntry) {
+  if (mapEntry && mapEntry.hasOwnProperty('seed'))    return mapEntry.seed;
+  if (mapEntry && mapEntry.hasOwnProperty('default')) return mapEntry.default;
+  return '';
+}
+
 function _renderInputRow(sh, mapEntry) {
   var r = mapEntry.row;
   var c = mapEntry.col || 4;
@@ -244,8 +261,9 @@ function _renderInputRow(sh, mapEntry) {
   // value.
   if (c !== 4) {
     var secondaryCell = sh.getRange(r, c);
-    if (mapEntry.hasOwnProperty('default') && mapEntry.default !== '') {
-      secondaryCell.setValue(mapEntry.default);
+    var _secSeed = _seedValueFor(mapEntry);
+    if (_secSeed !== '') {
+      secondaryCell.setValue(_secSeed);
     }
     secondaryCell
       .setFontFamily(token('FONT_FAMILY'))
@@ -272,8 +290,9 @@ function _renderInputRow(sh, mapEntry) {
   var valueCell = sh.getRange(r, 4);
 
   // Default value (if any) --------------------------------------------------
-  if (mapEntry.hasOwnProperty('default') && mapEntry.default !== '') {
-    valueCell.setValue(mapEntry.default);
+  var _primSeed = _seedValueFor(mapEntry);
+  if (_primSeed !== '') {
+    valueCell.setValue(_primSeed);
   }
 
   // Style the value cell
@@ -457,8 +476,9 @@ function _detectUserData(sh, tabName) {
     if (m.mode === 'range' || m.mode === 'skip') continue;
     var v = sh.getRange(m.row, m.col).getValue();
     if (v === '' || v === null || v === undefined) continue;
-    // If we have a default and the current value equals it, not "user data"
-    if (m.hasOwnProperty('default') && v === m.default) continue;
+    // If the current value equals what setup would seed (seed ?? default), it's
+    // not user data -- a freshly-built tab holds the seed, not a blank.
+    if (v === _seedValueFor(m)) continue;
     // Anything else -> user data
     return true;
   }
@@ -1018,8 +1038,9 @@ function _renderDesignFieldRow(sh, m, labelCol, valueCol, unitCol, defaultCol) {
 
   // Value cell
   var valueCell = sh.getRange(r, valueCol);
-  if (m.hasOwnProperty('default') && m.default !== '') {
-    valueCell.setValue(m.default);
+  var _dSeed = _seedValueFor(m);
+  if (_dSeed !== '') {
+    valueCell.setValue(_dSeed);
   }
   valueCell
     .setFontFamily(token('FONT_FAMILY'))
@@ -1045,8 +1066,9 @@ function _renderDesignFieldRow(sh, m, labelCol, valueCol, unitCol, defaultCol) {
   }
 
   // Default hint cell
-  if (m.hasOwnProperty('default') && m.default !== '') {
-    var defaultStr = 'default: ' + m.default;
+  var _hintSeed = _seedValueFor(m);
+  if (_hintSeed !== '') {
+    var defaultStr = 'default: ' + _hintSeed;
     sh.getRange(r, defaultCol).setValue(defaultStr)
       .setFontFamily(token('FONT_FAMILY'))
       .setFontSize(tokenNum('FONT_SIZE_SMALL'))

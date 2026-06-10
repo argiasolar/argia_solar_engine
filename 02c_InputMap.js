@@ -1436,7 +1436,7 @@ var _MAP_BESS = {
     // has its own '|| SELF_CONSUMPTION_MAX' fallback, so '' is unchanged for it.
     // '' preserves both readers' empty-cell behavior; a non-empty default would
     // silently flip the hourly dispatch strategy on a blank cell.
-    default: '', required: false,
+    default: '', seed: 'PEAK_SHAVING', required: false,
     // 3.7.9: LOAD_SHIFTING now steers the hourly dispatcher (grid arbitrage
     // base->punta under NET_BILLING). All three are priority policies, not
     // on/off switches — see _bessDispatchHour() in 20_CalcHourlySimulation.
@@ -1612,7 +1612,11 @@ var _MAP_BESS = {
   bessMinAnnualSavingMxn: {
     sheet: 'INPUT_BESS', row: 37, col: 3,        // C37
     label: 'Mín. ahorro anual MXN', type: 'number',
-    default: 2000000, required: false, unit: 'MXN',
+    // [A2c] default 0 = reader fallback (blank C37 -> DISABLED, matching
+    // readBessMinSavingsThreshold); seed 2000000 = the value setup writes
+    // into a fresh sheet. This split lets readBessMinSavingsThreshold migrate
+    // onto readInput while preserving both the seeded value and blank=DISABLED.
+    default: 0, seed: 2000000, required: false, unit: 'MXN',
     section: 'BESS 5 ECONOMICS',
     consumedBy: ['engine'],
     notes: 'Sizing engine flags candidates whose annual saving is below this. ' +
@@ -1811,7 +1815,7 @@ var _MAP_CFE = {
     // [A2b] default '' (not 'SIN_EXPORTACION'): readBessInterconnectionFromInputCfe
     // treats an empty C41 as mode UNKNOWN. A non-empty default would silently
     // promote unset interconnection to ZERO_EXPORT. '' preserves the old behavior.
-    default: '', required: true,
+    default: '', seed: 'SIN_EXPORTACION', required: true,
     dropdown: ['MEDICION_NETA', 'FACTURACION_NETA', 'SIN_EXPORTACION'],
     section: '03 INTERCONEXIÓN', consumedBy: ['engine']
   },
@@ -1868,16 +1872,16 @@ var _MAP_CFE = {
 // preserving. Layout verified live against ARGIA_ENGINE__64_ INPUT_BESS. [A2a]
 // ===========================================================================
 var _MAP_BESS_S6 = {
-  bessDcBusV:                { sheet: SH.INPUT_BESS, row: 44, col: 3, label: 'Voltaje bus DC',                         type: 'number',   default: 0,  unit: 'V',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
-  bessAcV:                   { sheet: SH.INPUT_BESS, row: 45, col: 3, label: 'Voltaje AC sistema',                     type: 'number',   default: 0,  unit: 'V',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessDcBusV:                { sheet: SH.INPUT_BESS, row: 44, col: 3, label: 'Voltaje bus DC',                         type: 'number',   default: 0, seed: 800,  unit: 'V',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessAcV:                   { sheet: SH.INPUT_BESS, row: 45, col: 3, label: 'Voltaje AC sistema',                     type: 'number',   default: 0, seed: 480,  unit: 'V',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
   bessDcRunM:                { sheet: SH.INPUT_BESS, row: 46, col: 3, label: 'Distancia batería ↔ tablero',           type: 'number',   default: 0,  unit: 'm',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
   bessAcRunM:                { sheet: SH.INPUT_BESS, row: 47, col: 3, label: 'Distancia tablero ↔ interconexión CFE', type: 'number',   default: 0,  unit: 'm',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
-  bessCablePath:             { sheet: SH.INPUT_BESS, row: 48, col: 3, label: 'Trayectoria del cable',                  type: 'dropdown', default: '', dropdown: ['INTEMPERIE', 'CONDUIT_ENTERRADO', 'BANDEJA_INTERIOR'], section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
-  bessS6BatteriesPerContainer: { sheet: SH.INPUT_BESS, row: 49, col: 3, label: 'Baterías por contenedor',               type: 'number',   default: 0,  unit: 'pcs', section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
-  bessLocation:              { sheet: SH.INPUT_BESS, row: 50, col: 3, label: 'Ubicación física',                       type: 'dropdown', default: '', dropdown: ['EXTERIOR', 'INTERIOR_TECHADO', 'SALA_ELECTRICA'],     section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
-  bessGroundingSystem:       { sheet: SH.INPUT_BESS, row: 51, col: 3, label: 'Sistema de tierra',                      type: 'dropdown', default: '', dropdown: ['UFER', 'VARILLA', 'RED_EXISTENTE'],                  section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
-  bessGecRunM:               { sheet: SH.INPUT_BESS, row: 52, col: 3, label: 'Distancia a electrodo de tierra',        type: 'number',   default: 0,  unit: 'm',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
-  bessCommissioningMxn:      { sheet: SH.INPUT_BESS, row: 53, col: 3, label: 'Comisionamiento',                        type: 'number',   default: 0,  unit: 'MXN', section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] }
+  bessCablePath:             { sheet: SH.INPUT_BESS, row: 48, col: 3, label: 'Trayectoria del cable',                  type: 'dropdown', default: '', seed: 'CONDUIT_ENTERRADO', dropdown: ['INTEMPERIE', 'CONDUIT_ENTERRADO', 'BANDEJA_INTERIOR'], section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessS6BatteriesPerContainer: { sheet: SH.INPUT_BESS, row: 49, col: 3, label: 'Baterías por contenedor',               type: 'number',   default: 0,  seed: 1,       unit: 'pcs', section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessLocation:              { sheet: SH.INPUT_BESS, row: 50, col: 3, label: 'Ubicación física',                       type: 'dropdown', default: '', seed: 'EXTERIOR', dropdown: ['EXTERIOR', 'INTERIOR_TECHADO', 'SALA_ELECTRICA'],     section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessGroundingSystem:       { sheet: SH.INPUT_BESS, row: 51, col: 3, label: 'Sistema de tierra',                      type: 'dropdown', default: '', seed: 'VARILLA', dropdown: ['UFER', 'VARILLA', 'RED_EXISTENTE'],                  section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessGecRunM:               { sheet: SH.INPUT_BESS, row: 52, col: 3, label: 'Distancia a electrodo de tierra',        type: 'number',   default: 0,  seed: 15,      unit: 'm',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessCommissioningMxn:      { sheet: SH.INPUT_BESS, row: 53, col: 3, label: 'Comisionamiento',                        type: 'number',   default: 0,  seed: 250000,  unit: 'MXN', section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] }
 };
 
 var INPUT_MAP = {};
