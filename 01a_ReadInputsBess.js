@@ -232,28 +232,36 @@ function readInputBess(ss) {
 //   r53: commissioningMxn           (flat fee, MXN)
 function readBessInstallContext(ss) {
   ss = ss || SpreadsheetApp.getActive();
-  var sh = ss.getSheetByName('INPUT_BESS');
-  if (!sh) {
+  // [A2b] Coordinates now come from INPUT_MAP (_MAP_BESS_S6, see 02c_InputMap)
+  // instead of hardcoded getRange(row, 3) calls. readInput() throws when
+  // INPUT_BESS is absent, so the sheet is guarded first to preserve the old
+  // graceful empty return. The map defaults (numbers -> 0, dropdowns -> '')
+  // reproduce the previous valNum/valStr empty-cell behavior, so this is
+  // behavior-preserving for all realistic inputs (locked by the migration
+  // parity test, REG_MIGRATE_BESS_INSTALL_CONTEXT). Note: readInput coerces
+  // numbers with parseFloat, marginally more lenient than the old Number()
+  // on trailing-garbage text — immaterial for these numeric install cells.
+  if (!ss.getSheetByName('INPUT_BESS')) {
     return _bessInstallContextEmpty('INPUT_BESS sheet not found');
   }
-  function valStr(row) {
-    return String(sh.getRange(row, 3).getValue() || '').trim();
+  function valNum(key) {
+    return Number(readInput(ss, key)) || 0;
   }
-  function valNum(row) {
-    return Number(sh.getRange(row, 3).getValue()) || 0;
+  function valStr(key) {
+    return String(readInput(ss, key) || '').trim().toUpperCase();
   }
   return {
     // BDF-7.1: coupling intentionally absent. Orchestrator injects it.
-    dcBusV:                valNum(44),
-    acV:                   valNum(45),
-    dcRunM:                valNum(46),
-    acRunM:                valNum(47),
-    cablePath:             valStr(48).toUpperCase(),
-    batteriesPerContainer: valNum(49),
-    location:              valStr(50).toUpperCase(),
-    groundingSystem:       valStr(51).toUpperCase(),
-    gecRunM:               valNum(52),
-    commissioningMxn:      valNum(53),
+    dcBusV:                valNum('bessDcBusV'),
+    acV:                   valNum('bessAcV'),
+    dcRunM:                valNum('bessDcRunM'),
+    acRunM:                valNum('bessAcRunM'),
+    cablePath:             valStr('bessCablePath'),
+    batteriesPerContainer: valNum('bessS6BatteriesPerContainer'),
+    location:              valStr('bessLocation'),
+    groundingSystem:       valStr('bessGroundingSystem'),
+    gecRunM:               valNum('bessGecRunM'),
+    commissioningMxn:      valNum('bessCommissioningMxn'),
     provenance:            'INPUT_BESS_S6',
   };
 }
