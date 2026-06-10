@@ -10,8 +10,8 @@
 //
 // COVERAGE
 //   readInputBess populates dcBusVoltageV / acVoltageV correctly:
-//     CASE 1: CUSTOM_MANUAL battery + manual C18/C19 cells -> manual wins
-//     CASE 2: CUSTOM_MANUAL + blank C18/C19 -> 0 (pendiente)
+//     CASE 1: CUSTOM_MANUAL battery + manual C44/C45 cells -> manual wins
+//     CASE 2: CUSTOM_MANUAL + blank C44/C45 -> 0 (pendiente)
 //     CASE 3: Catalog battery (HW_LUNA_200KWH) -> DB voltage wins
 //             KNOWN-FRAGILE: INPUT_BESS!C6 has a data-validation dropdown
 //             whose allowlist is out of sync with the live product DB.
@@ -19,7 +19,7 @@
 //
 // CLASSIFICATION
 //   group=integration. Writes 7 cells across INPUT_PROJECT (D64) and
-//   INPUT_BESS (C6, C7, C10, C11, C18, C19).
+//   INPUT_BESS (C6, C7, C10, C11, C44, C45).
 //
 // DEPENDENCIES
 //   - readInputBess (01a_ReadInputsBess.gs)
@@ -55,23 +55,23 @@ registerTest({
       'bessStrategy',       // INPUT_BESS!C7
       'bessCapacityKwh',    // INPUT_BESS!C10
       'bessPowerKw',        // INPUT_BESS!C11
-      'bessDcBusVoltageV',  // INPUT_BESS!C18
-      'bessAcVoltageV'      // INPUT_BESS!C19
+      'bessDcBusV',  // INPUT_BESS!C44
+      'bessAcV'      // INPUT_BESS!C45
     ];
     var snap = backupInputCells(fieldsToBackup, ctx.ss);
 
     try {
       // ===================================================================
       // CASE 1: CUSTOM_MANUAL battery + manual voltage cells
-      // CUSTOM_MANUAL has DB voltage 0, so C18/C19 manual cells must win.
+      // CUSTOM_MANUAL has DB voltage 0, so C44/C45 manual cells must win.
       // ===================================================================
       setInputValue('installBattery',    'YES',                  ctx.ss);
       setInputValue('bessBatteryId',     'CUSTOM_MANUAL',        ctx.ss);
       setInputValue('bessStrategy',      'SELF_CONSUMPTION_MAX', ctx.ss);
       setInputValue('bessCapacityKwh',   200,                    ctx.ss);
       setInputValue('bessPowerKw',       100,                    ctx.ss);
-      setInputValue('bessDcBusVoltageV', 800,                    ctx.ss);
-      setInputValue('bessAcVoltageV',    480,                    ctx.ss);
+      setInputValue('bessDcBusV', 800,                    ctx.ss);
+      setInputValue('bessAcV',    480,                    ctx.ss);
       SpreadsheetApp.flush();
 
       var b1 = readInputBess(ctx.ss);
@@ -84,13 +84,13 @@ registerTest({
       // ===================================================================
       // CASE 2: CUSTOM_MANUAL + blank voltage cells -> 0 (pendiente)
       // ===================================================================
-      setInputValue('bessDcBusVoltageV', '', ctx.ss);
-      setInputValue('bessAcVoltageV',    '', ctx.ss);
+      setInputValue('bessDcBusV', '', ctx.ss);
+      setInputValue('bessAcV',    '', ctx.ss);
       SpreadsheetApp.flush();
       var b2 = readInputBess(ctx.ss);
-      t.assert('CASE2: blank C18 -> dcBusVoltageV 0 (pendiente)',
+      t.assert('CASE2: blank C44 -> dcBusVoltageV 0 (pendiente)',
                0, b2.dcBusVoltageV);
-      t.assert('CASE2: blank C19 -> acVoltageV 0',
+      t.assert('CASE2: blank C45 -> acVoltageV 0',
                0, b2.acVoltageV);
 
       // ===================================================================
@@ -125,7 +125,7 @@ registerTest({
                  + 'product DB.');
         }
         if (c6CanTakeRealId) {
-          setInputValue('bessDcBusVoltageV', 600, ctx.ss);
+          setInputValue('bessDcBusV', 600, ctx.ss);
           SpreadsheetApp.flush();
           var b3 = readInputBess(ctx.ss);
           t.assert('CASE3: catalog battery + manual=600 -> dcBusVoltageV=600 '

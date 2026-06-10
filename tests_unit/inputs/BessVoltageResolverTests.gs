@@ -85,30 +85,24 @@ registerTest({
   fn: function (t, ctx) {
     t.suite('UNIT inputs/bess_voltage: INPUT_MAP shape');
 
-    // === Map entries for the voltage cells exist ===========================
-    t.assertTrue('INPUT_MAP.bessDcBusVoltageV exists',
-                 !!INPUT_MAP.bessDcBusVoltageV);
-    t.assertTrue('INPUT_MAP.bessAcVoltageV exists',
-                 !!INPUT_MAP.bessAcVoltageV);
+    // === Voltage cells unified onto §6 (2026-06-10) ========================
+    // The former bessDcBusVoltageV (C18) / bessAcVoltageV (C19) entries were
+    // removed; the engine now reads bessDcBusV (C44) / bessAcV (C45). Full
+    // survivor coverage lives in REG_BESS_VOLTAGE_UNIFY_C44.
+    t.assertTrue('bessDcBusVoltageV (C18) removed from INPUT_MAP',
+                 !INPUT_MAP.hasOwnProperty('bessDcBusVoltageV'));
+    t.assertTrue('bessAcVoltageV (C19) removed from INPUT_MAP',
+                 !INPUT_MAP.hasOwnProperty('bessAcVoltageV'));
 
-    // === Voltage cells point at the right rows/cols =======================
-    t.assert('bessDcBusVoltageV -> INPUT_BESS row 18',
-             18, INPUT_MAP.bessDcBusVoltageV.row);
-    t.assert('bessAcVoltageV -> INPUT_BESS row 19',
-             19, INPUT_MAP.bessAcVoltageV.row);
-    t.assert('bessDcBusVoltageV col 3 (C)',
-             3,  INPUT_MAP.bessDcBusVoltageV.col);
-
-    // === Moved cells: capex + peak-shaving rows shifted +2 ================
-    // Increment 4b-2.5b inserted the C18/C19 voltage rows; everything below
-    // shifted down by 2.
-    t.assert('bessCapexMxn -> row 22 (was 20)',
+    // === Commercial + peak-shaving rows are stable =========================
+    // (Sheet layout is unchanged by the map cleanup; these still hold.)
+    t.assert('bessCapexMxn -> row 22',
              22, INPUT_MAP.bessCapexMxn.row);
-    t.assert('bessLoadFactorFC -> row 25 (was 23)',
+    t.assert('bessLoadFactorFC -> row 25',
              25, INPUT_MAP.bessLoadFactorFC.row);
-    t.assert('bessPuntaWindowSummerH -> row 26 (was 24)',
+    t.assert('bessPuntaWindowSummerH -> row 26',
              26, INPUT_MAP.bessPuntaWindowSummerH.row);
-    t.assert('bessPuntaWindowWinterH -> row 27 (was 25)',
+    t.assert('bessPuntaWindowWinterH -> row 27',
              27, INPUT_MAP.bessPuntaWindowWinterH.row);
   }
 });

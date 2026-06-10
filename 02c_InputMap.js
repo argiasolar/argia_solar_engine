@@ -1555,22 +1555,13 @@ var _MAP_BESS = {
   // lookupBatteryVoltage); these cells are used only when the product has no
   // DB voltage (CUSTOM_MANUAL) or the designer wants to force a value.
   // Blank is a valid state -> calcBessCircuit reports "pendiente".
-  // Physically rows 18/19 of INPUT_BESS, inserted between §2 (C10-C17) and
-  // §3 (now C22). default 0 = "not supplied".
-  bessDcBusVoltageV: {
-    sheet: 'INPUT_BESS', row: 18, col: 3,       // C18
-    label: 'Voltaje bus DC / batería (V)', type: 'number',
-    default: 0, required: false, unit: 'V',
-    section: 'BESS 2 ESPECIFICACIONES',
-    consumedBy: ['engine']
-  },
-  bessAcVoltageV: {
-    sheet: 'INPUT_BESS', row: 19, col: 3,       // C19
-    label: 'Voltaje sistema AC (V)', type: 'number',
-    default: 0, required: false, unit: 'V',
-    section: 'BESS 2 ESPECIFICACIONES',
-    consumedBy: ['engine']
-  },
+  // NOTE (2026-06-10): the former bessDcBusVoltageV (C18) / bessAcVoltageV (C19)
+  // entries were removed. They duplicated the §6 bessDcBusV (C44) / bessAcV (C45)
+  // voltage cells, but the live sheet only ever populated C44/C45 -- so 01a read
+  // empty C18/C19, always fell back to the battery DB nominal, and diverged from
+  // the voltage-drop/BOS calcs (which read C44/C45). The engine now reads the §6
+  // keys directly, unifying all three calcs onto one DC voltage. See
+  // BessVoltageUnifyTests (REG_BESS_VOLTAGE_UNIFY_C44).
 
   // -- INPUT_BESS §3 INFORMACIÓN COMERCIAL ---------------------------------
   bessCapexMxn: {

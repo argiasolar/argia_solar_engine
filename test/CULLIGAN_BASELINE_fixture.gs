@@ -15,12 +15,9 @@
 //   writeCulliganInputs(ss)  -- writes all sections to INPUT_PROJECT / INPUT_DESIGN
 //   / INPUT_INSTALL / INPUT_BESS / INPUT_CFE. See test/TestSheetBackup.gs.
 //
-// KNOWN ISSUE (BESS voltage cell drift)
-//   INPUT_MAP claims bessDcBusVoltageV / bessAcVoltageV live at C18/C19, but the
-//   live workbook has them at C44/C45. This fixture writes via direct cell coords
-//   to match the live sheet (C44/C45). When the cell-coord drift is fixed in
-//   INPUT_MAP (a separate bug -- see BESS voltage regression failures from
-//   2026-05-26 regression run), switch this fixture to use the logical keys.
+// BESS DC/AC bus voltage (§6 C44/C45) is read via the logical keys
+// bessDcBusV / bessAcV. The earlier C18/C19 cell-coord drift was fixed
+// 2026-06-10 (the dead C18/C19 map entries were removed).
 // =============================================================================
 
 var CULLIGAN_BASELINE = {
@@ -181,9 +178,10 @@ var CULLIGAN_BASELINE = {
 
     // ---------------- INPUT_BESS (mixed: logical keys for canon cells, _cell_ for §6) -----
     // INPUT_MAP covers C6-C39 via logical keys (most of §1-§5).
-    // INPUT_BESS §6 (C44+) is NOT in INPUT_MAP. Those fields use the
-    // _cell_<A1> convention: writeCulliganInputs treats any key starting with
-    // '_cell_' as a direct cell write to INPUT_BESS.
+    // INPUT_BESS §6 voltages (C44/C45) now use logical keys (bessDcBusV/bessAcV).
+    // The remaining §6 distance/config fields still use the _cell_<A1> convention:
+    // writeCulliganInputs treats any key starting with '_cell_' as a direct cell
+    // write to INPUT_BESS.
     bess: {
       // section 1-5 -- via writeInput()
       bessBatteryId: '9 × HW_LUNA_241_2S1 (2169 kWh, 972 kW)',
@@ -202,10 +200,15 @@ var CULLIGAN_BASELINE = {
       bessPuntaWindowWinterH: 4,
       bessMinAnnualSavingMxn: 2000000,
 
+      // §6 DC/AC bus voltage -- read via logical keys (cell-coord drift fixed
+      // 2026-06-10). 864 = HW_LUNA_241_2S1 nominal; unifies the circuit,
+      // voltage-drop and BOS calcs onto one DC voltage (previously circuit
+      // used the DB nominal 864 while vdrop/BOS used a stray 800).
+      bessDcBusV: 864,
+      bessAcV: 480,
+
       // section 6+ -- direct cell writes (see writeCulliganInputs for handling)
       _cell_C20: 28800000,  // legacy CAPEX cell at C20 (manual carry-forward)
-      _cell_C44: 800,  // live sheet voltage (INPUT_MAP claims C18 -- known drift)
-      _cell_C45: 480,  // live sheet voltage (INPUT_MAP claims C19 -- known drift)
       _cell_C46: 25,
       _cell_C47: 50,
       _cell_C48: 'INTEMPERIE',

@@ -42,8 +42,8 @@
 //      is a positive number. Catalog products carry an authoritative voltage;
 //      preferring it stops a designer hand-typing a wrong value for a known
 //      product.
-//   2. The manual INPUT_BESS cell (C18 / C19) when the DB has nothing -- this
-//      is the CUSTOM_MANUAL path, and also a deliberate override hook.
+//   2. The manual INPUT_BESS cell (§6 C44 / C45) when the DB has nothing --
+//      this is the CUSTOM_MANUAL path, and also a deliberate override hook.
 //   3. 0 when neither is available. 0 means "not supplied"; calcBessCircuit
 //      then returns sizeable:false and MDC §7 prints "pendiente". A 0 is a
 //      valid state, never an error -- the engine must not invent a voltage.
@@ -153,11 +153,11 @@ function readInputBess(ss) {
                   ? lookupBatteryVoltage(ss, baseBatteryId)
                   : 0;
   var dcBusVoltageV = resolveBessVoltage(
-    dbVoltage, readInput(ss, 'bessDcBusVoltageV'));
+    dbVoltage, readInput(ss, 'bessDcBusV'));
   // The product DB carries one nominal voltage; there is no separate AC
   // figure in it, so the AC side resolves from the manual cell only.
   var acVoltageV = resolveBessVoltage(
-    0, readInput(ss, 'bessAcVoltageV'));
+    0, readInput(ss, 'bessAcV'));
 
   // -- 6. Build the typed object ------------------------------------------
   // Contract: same field shape as before BDF-7.1 plus two new fields

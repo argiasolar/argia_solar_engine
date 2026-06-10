@@ -72,7 +72,7 @@ registerTest({
       'bessCapacityKwh', 'bessPowerKw',
       'bessMinSocPct', 'bessMaxSocPct', 'bessRtePct',
       'bessCyclesPerDay', 'bessDegradationPct', 'bessBackupReservePct',
-      'bessDcBusVoltageV', 'bessAcVoltageV',
+      'bessDcBusV', 'bessAcV',
       'bessCapexMxn'
     ];
     var snap = backupInputCells(fieldsToBackup, ss);
