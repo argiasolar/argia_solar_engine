@@ -63,9 +63,15 @@
  * Wrapped per-RFQ in try/catch so a single broken RFQ doesn't kill the
  * other 5. Shows a UI alert at the end summarizing what was generated.
  */
-function runWriteAllRfqsV2() {
+function runWriteAllRfqsV2(opts) {
+  // opts.silent === true (Batch 1): no end-of-run alert -- used by the
+  // Generate ALL Deliverables orchestrator, which shows ONE summary instead.
+  // Returns { succeeded:[names], failed:[{sheet,error}] } either way.
+  // Menu path calls with no args -> byte-identical legacy behavior.
+  opts = opts || {};
+  var silent = opts.silent === true;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var ui = SpreadsheetApp.getUi();
+  var ui = silent ? null : SpreadsheetApp.getUi();
   var total = RFQ_REGISTRY.length + 2;  // +2: "starting" + "reading inputs"
 
   try {
@@ -122,9 +128,17 @@ function runWriteAllRfqsV2() {
                    .join('\n  \u2022 ');
     }
     msg += '\n\nYellow cells = supplier fills in.';
-    ui.alert(msg);
+
+    // Batch 1 / B1.4: freshness stamp for every RFQ tab just written.
+    if (typeof argiaStampOutputs === 'function' && succeeded.length) {
+      argiaStampOutputs(ss, succeeded);
+    }
+
+    if (!silent) ui.alert(msg);
+    return { succeeded: succeeded, failed: failed };
   } catch (fatalErr) {
-    ui.alert('RFQ v2 Error', fatalErr.message, ui.ButtonSet.OK);
+    if (!silent) ui.alert('RFQ v2 Error', fatalErr.message, ui.ButtonSet.OK);
+    return { succeeded: [], failed: [{ sheet: '(fatal)', error: fatalErr.message }] };
   }
 }
 

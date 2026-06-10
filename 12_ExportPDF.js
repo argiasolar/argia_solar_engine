@@ -262,10 +262,23 @@ function _buildPdfUrl(ssId, sheetGid, cfg) {
 // INTERNAL: read project name and client name for filename
 // ---------------------------------------------------------------------------
 function _getProjectMeta(ss) {
+  // Batch 1 / B1.5 fix: this used to read INPUT_GENERAL!C5/C6 -- a sheet
+  // RETIRED in v2.0.2. With the sheet absent, every exported PDF silently
+  // fell back to "<spreadsheet name>_CLIENT_...". Read via the INPUT_MAP
+  // logical keys on INPUT_PROJECT instead (same source the engine uses).
   try {
-    var gen = ss.getSheetByName('INPUT_GENERAL');
-    var proj   = gen ? String(gen.getRange(5, 3).getValue() || '').trim() : '';
-    var client = gen ? String(gen.getRange(6, 3).getValue() || '').trim() : '';
+    var proj = '', client = '';
+    try { proj   = String(readInput(ss, 'projectName') || '').trim(); } catch (e1) {}
+    try { client = String(readInput(ss, 'clientName')  || '').trim(); } catch (e2) {}
+    // Back-compat: legacy workbooks that still carry INPUT_GENERAL win only
+    // when the map keys came back empty.
+    if (!proj || !client) {
+      var gen = ss.getSheetByName('INPUT_GENERAL');
+      if (gen) {
+        if (!proj)   proj   = String(gen.getRange(5, 3).getValue() || '').trim();
+        if (!client) client = String(gen.getRange(6, 3).getValue() || '').trim();
+      }
+    }
     return {
       project: proj   || ss.getName(),
       client : client || 'CLIENT',
@@ -368,6 +381,29 @@ function _runExport(cfgKey) {
   var ui  = SpreadsheetApp.getUi();
 
   try {
+    // Batch 1 / B1.4: refuse-with-override when the tab is STALE (generated
+    // from inputs that have since changed). UNSTAMPED legacy outputs export
+    // without nagging; a freshness-check bug never blocks an export.
+    if (typeof assertExportFreshness === 'function') {
+      var cfg = PDF_EXPORTS[cfgKey];
+      var fresh = cfg ? assertExportFreshness(ss, cfg.sheet)
+                      : { exportable: true };
+      if (!fresh.exportable) {
+        var goAhead = ui.alert(
+          '\u26a0 ' + cfgKey + ' est\u00e1 DESACTUALIZADO',
+          fresh.message + '\n\n\u00bfExportar de todos modos?',
+          ui.ButtonSet.YES_NO);
+        if (goAhead !== ui.Button.YES) {
+          ui.alert('Export cancelado',
+                   'Regenere ' + cfgKey + ' y vuelva a exportar.',
+                   ui.ButtonSet.OK);
+          return;
+        }
+        engineLog(ss, 'ExportPDF', 'WARNING',
+                  cfgKey + ' exported STALE (user override).');
+      }
+    }
+
     var offerFolder = getOutputFolder_(ss);
     var res         = _exportSheetToPdf(ss, cfgKey, offerFolder);
 

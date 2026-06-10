@@ -1,3 +1,62 @@
+## [4.13.0] — 2026-06-10
+
+**Batch 1 — Workbook Lifecycle & Trust.** One push closing launch gates G4,
+G5, G7 (staleness guard, clean reset, PDF filenames) plus the open A2 copyTo
+retirement and the audit-drift gap.
+
+> **MINOR.** New features, no breaking changes. CULLIGAN goldens untouched
+> (banner writes are stale-only; stamps live in _META rows 17+).
+
+### B1.1 — Start New Project (admin menu)
+- `startNewProjectCore(ss)` + `runStartNewProject()`: persistent backup →
+  DEFAULT rebuild of all six INPUT_* tabs → clear all 13 deliverable tabs
+  (+ driver map) → clear freshness stamps → audit refresh. The undo path is
+  "Restore Inputs from Backup".
+- `rebuildInputsToDefault()` promoted to public; its VERIFY-POINT resolved
+  (ordering constraints documented + exercised by the new lifecycle test).
+
+### B1.2 — copyTo backup retired (closes A2 remainder)
+- `backupAllInputSheets` / `restoreAllInputSheets` now run on the persistent
+  formula-aware snapshot (hidden `_INPUT_BACKUP` sheet): ALL SIX tabs
+  including INPUT_BAAS (the copyTo map omitted it), safe for INPUT_CFE array
+  formulas, survives sessions. Legacy `_TEST_BACKUP_*` twins: restored once
+  if found (migration grace), deleted on next backup.
+
+### B1.3 — Generate ALL Deliverables (menu)
+- `runGenerateAllDeliverables()`: engine → RFQs (silent) → BaaS → Client
+  Financials in dependency order, one end-of-run summary. Kills the
+  "regenerated financials against a stale BOM" ordering hazard.
+- `runWriteAllRfqsV2(opts)` gains `{silent}` + returns {succeeded, failed}
+  (no-arg menu path byte-identical).
+
+### B1.4 — Staleness guard (new 00e_InputsHash.js)
+- FNV-1a inputs hash (formula precedence — IMPORTRANGE recalcs do NOT fake
+  staleness), `_META` key-value stamps per deliverable tab, red A1 banner on
+  stale tabs, on-demand "Check Output Freshness" menu report, and an
+  export-time prompt in 12_ExportPDF before exporting any STALE deliverable.
+  Engine + all five standalone runners + RFQs now stamp what they write.
+  Pre-existing (UNSTAMPED) outputs are never falsely flagged.
+
+### B1.5 — PDF filename fix
+- `_getProjectMeta` read the RETIRED INPUT_GENERAL sheet, so every exported
+  PDF was named `<spreadsheet>_CLIENT_…`. Now reads projectName/clientName
+  via the INPUT_MAP (INPUT_PROJECT), with INPUT_GENERAL as legacy fallback.
+
+### B1.6 — Audit completeness
+- CLIENT_FINANCIALS_v2 + BESS_RECOMMENDATIONS added to AUDIT_OUTPUT_SHEETS
+  (live workbook had CLIENT_FINANCIALS_v2 populated and unaudited).
+- "Audit Config (auto-discover sheets)" exposed in the admin menu.
+- New contract test pins the audit lists to the stamped-deliverables + input
+  tabs registries — a new writer without an audit entry now fails the suite.
+
+### Tests
+- +9 registered (487 → 496): 6 unit (hash determinism/sensitivity/formula
+  precedence/boundaries, audit contract, engine-tabs contract — all green in
+  the Node rig) + 3 workbook-dependent integration (persistent-backup
+  round-trip incl. INPUT_BAAS, banner apply/clear/idempotence + export guard,
+  Start-New-Project zero-residue + undo). Node rig: 496 registered, 454
+  PASS, 0 FAIL, 42 expected workbook errors.
+
 ## [4.12.1] — 2026-05-29
 
 **Two bugfixes, both fallout from the v4.12.0 INPUT_BAAS / output-header work.**

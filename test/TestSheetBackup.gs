@@ -52,75 +52,84 @@
 
 
 /**
- * Map of original-sheet-name -> backup-sheet-name. INPUT_CFE deliberately
- * excluded (see file header for why).
+ * Map of original-sheet-name -> LEGACY backup-sheet-name. The copyTo backup
+ * is RETIRED (Batch 1, 2026-06-10): backupAllInputSheets/restoreAllInputSheets
+ * below now run on the persistent formula-aware snapshot (00d_InputSnapshot:
+ * persistInputSnapshot / loadPersistedInputSnapshot). This map is kept ONLY so
+ * restoreAllInputSheets can still recover from _TEST_BACKUP_* twins created by
+ * a pre-Batch-1 version, and so cleanup can delete them.
+ *
+ * Why copyTo was retired:
+ *   - it omitted INPUT_BAAS entirely (silent restore gap),
+ *   - clearContents + copyTo corrupts INPUT_CFE's array formulas (this file's
+ *     own header warned about that while the map still included INPUT_CFE),
+ *   - the snapshot strategy is the one already proven by the A1 TestRunner
+ *     protection and the Phase-4 regression tests.
  */
 var TEST_INPUT_BACKUP_NAMES = {
   'INPUT_PROJECT': '_TEST_BACKUP_PROJ_V2',
   'INPUT_DESIGN':  '_TEST_BACKUP_DES_V2',
   'INPUT_INSTALL': '_TEST_BACKUP_INST_V2',
-  'INPUT_BESS':    '_TEST_BACKUP_BESS_V2',   // ADDED 2026-05-26 for CULLIGAN fixture (PR-2)
-  'INPUT_CFE':     '_TEST_BACKUP_CFE_V2',    // ADDED 2026-05-26 for CULLIGAN fixture (PR-2)
+  'INPUT_BESS':    '_TEST_BACKUP_BESS_V2',
+  'INPUT_CFE':     '_TEST_BACKUP_CFE_V2',
   'INPUT_GENERAL': '_TEST_BACKUP_GEN_V2'
 };
 
 
 /**
- * Duplicate each INPUT_* tab listed in TEST_INPUT_BACKUP_NAMES as a hidden
- * sheet, using Sheet.copyTo so formulas/formats/validation/merged cells
- * are all preserved. Idempotent: deletes any stale backup from a prior
- * interrupted run before creating fresh duplicates.
- *
- * Missing INPUT sheets are skipped silently (e.g. INPUT_GENERAL on newer
- * projects).
+ * Back up ALL SIX INPUT_* tabs (incl. INPUT_BAAS, which copyTo missed) as a
+ * persistent formula-aware snapshot on the hidden _INPUT_BACKUP sheet.
+ * Replaces any previous backup. Also deletes any stale legacy _TEST_BACKUP_*
+ * twins from a pre-Batch-1 run so the workbook carries exactly one backup.
  *
  * @param {Spreadsheet} ss
  */
 function backupAllInputSheets(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
 
-  // 1. Delete any stale backup sheets from a previous interrupted run
-  Object.keys(TEST_INPUT_BACKUP_NAMES).forEach(function (original) {
-    var backupName = TEST_INPUT_BACKUP_NAMES[original];
-    var existing = ss.getSheetByName(backupName);
-    if (existing) ss.deleteSheet(existing);
-  });
+  var snap = snapshotInputSheets(ss);
+  persistInputSnapshot(ss, snap);
 
-  // 2. Create a fresh duplicate of each input sheet
+  // Remove stale legacy copyTo twins (superseded by the persistent backup).
   Object.keys(TEST_INPUT_BACKUP_NAMES).forEach(function (original) {
-    var src = ss.getSheetByName(original);
-    if (!src) return;  // missing sheet OK (e.g. INPUT_GENERAL retired)
-    var copy = src.copyTo(ss);
-    copy.setName(TEST_INPUT_BACKUP_NAMES[original]);
-    copy.hideSheet();
+    var legacy = ss.getSheetByName(TEST_INPUT_BACKUP_NAMES[original]);
+    if (legacy) {
+      try { ss.deleteSheet(legacy); } catch (e) { /* leave it; harmless */ }
+    }
   });
 }
 
 
 /**
- * Restore each original INPUT_* tab from its backup using Range.copyTo
- * (preserves formulas), then delete the backup sheets.
- *
- * Missing backups are skipped silently (e.g. if backupAllInputSheets
- * was never called or the original sheet was absent).
+ * Restore the six INPUT_* tabs from the persistent backup (formula
+ * precedence, resilient per-tab fallback -- restoreInputSheets), then delete
+ * the backup. When NO persistent backup exists but legacy _TEST_BACKUP_*
+ * twins do (created by a pre-Batch-1 version), falls back to the old copyTo
+ * restore once, as a migration grace path.
  *
  * @param {Spreadsheet} ss
  */
 function restoreAllInputSheets(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
 
+  if (hasPersistedInputBackup(ss)) {
+    var snap = loadPersistedInputSnapshot(ss);
+    if (!snap) throw new Error('restoreAllInputSheets: backup sheet present but unreadable');
+    restoreInputSheets(ss, snap);   // resilient -- never throws on per-tab trouble
+    clearPersistedInputBackup(ss);
+    return;
+  }
+
+  // ---- LEGACY FALLBACK (pre-Batch-1 copyTo twins) --------------------------
   Object.keys(TEST_INPUT_BACKUP_NAMES).forEach(function (original) {
     var backupName = TEST_INPUT_BACKUP_NAMES[original];
     var backup = ss.getSheetByName(backupName);
     var dest   = ss.getSheetByName(original);
     if (!backup || !dest) return;
 
-    // Clear the destination, then copy from backup
     dest.clearContents();
     var srcRange = backup.getDataRange();
     srcRange.copyTo(dest.getRange(srcRange.getRow(), srcRange.getColumn()));
-
-    // Remove the backup sheet
     ss.deleteSheet(backup);
   });
 }

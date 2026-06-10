@@ -658,6 +658,8 @@ function onOpen() {
     .addItem('Import Helioscope',         'importHelioscopePdf')
     .addItem('Verify Layout',             'verifyInputs')
     .addItem('Suggest BESS',              'onMenuSuggestBess')
+    .addItem('Generate ALL Deliverables', 'runGenerateAllDeliverables')
+    .addSeparator()
     .addItem('Generate MDC and BOM',      'runArgiaEngine')
     .addItem('Generate Installation',     'runInstallCostStandalone')
     .addItem('Generate Project Card',     'runWriteProjectCardV2')
@@ -665,6 +667,7 @@ function onOpen() {
     .addItem('Generate BaaS Projection',  'runBaasProjectionMenu')
     .addItem('Generate Client Financials', 'runClientFinancialsMenu')
     .addSeparator()
+    .addItem('Check Output Freshness',    'runCheckOutputFreshness')
     .addItem('Update Input Audit',        'auditInputs')
     .addSubMenu(ui.createMenu('Exports')
       .addItem('Export MDC',                         'exportMDC')
@@ -715,12 +718,14 @@ function onOpen() {
       // -- Delete ----------------------------------------------
       .addItem('Delete Legacy Tabs',                    'runDeleteLegacyTabs')
       .addSeparator()
-      // -- Load / fixtures -------------------------------------
+      // -- Load / fixtures / lifecycle --------------------------
+      .addItem('Start New Project (reset to defaults)', 'runStartNewProject')
       .addItem('Load CULLIGAN Fixture',                 'runLoadCulliganFixture')
       .addItem('Restore Inputs from Backup',            'runRestoreInputsFromBackup')
       .addSeparator()
       // -- Operational -----------------------------------------
-      .addItem('Update CFE Output',                     'runUpdateCfeOutputV2'))
+      .addItem('Update CFE Output',                     'runUpdateCfeOutputV2')
+      .addItem('Audit Config (auto-discover sheets)',   'auditConfigSetup'))
     .addToUi();
 }
 
@@ -1131,6 +1136,16 @@ function runArgiaEngine(opts) {
         'Install cost sanity check threw (non-fatal): ' + sanityErr.message);
     }
 
+    // Step 14.6: freshness stamp (Batch 1 / B1.4) ----------------------------
+    // Record the inputs hash this run consumed and stamp the five tabs the
+    // engine just wrote. Tabs written by OTHER producers (BaaS, financials,
+    // RFQs) keep their old stamps -- if those now differ from the new hash,
+    // refreshStalenessBanners (inside argiaStampOutputs) flags them, which is
+    // exactly the "ran engine but financials are old" case. Guarded
+    // internally: stamping failure never breaks a successful run.
+    engineLog(ss, 'Engine', 'INFO', 'Step 14.6: freshness stamp');
+    argiaStampOutputs(ss, ARGIA_ENGINE_TABS);
+
     // Done ------------------------------------------------------------------
     _setArgiaProgress(TOTAL, TOTAL, '\u2705 Complete!');
     logRunEnd(ss, Date.now() - startTime);
@@ -1267,9 +1282,9 @@ function runLoadCulliganFixture() {
   var confirmResp = ui.alert(
     'Load CULLIGAN Fixture',
     'This will:\n\n' +
-    '  1. Back up your current INPUT_PROJECT, INPUT_DESIGN, INPUT_INSTALL,\n' +
-    '     INPUT_BESS, INPUT_CFE sheets (hidden _TEST_BACKUP_* twins).\n' +
-    '  2. Overwrite those sheets with the CULLIGAN reference project.\n\n' +
+    '  1. Back up ALL SIX current INPUT_* sheets (incl. INPUT_BAAS) to the\n' +
+    '     hidden persistent _INPUT_BACKUP sheet (formula-aware).\n' +
+    '  2. Overwrite the input sheets with the CULLIGAN reference project.\n\n' +
     'Use "Restore Inputs from Backup" afterwards to get your data back.\n\n' +
     'Continue?',
     ui.ButtonSet.OK_CANCEL);
@@ -1472,21 +1487,24 @@ function runRestoreInputsFromBackup() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ui = SpreadsheetApp.getUi();
 
-  // Sanity check: is there anything to restore?
-  var anyBackup = false;
-  if (typeof TEST_INPUT_BACKUP_NAMES === 'object') {
+  // Sanity check: is there anything to restore? Persistent backup first
+  // (Batch 1), legacy _TEST_BACKUP_* copyTo twins as migration fallback.
+  var hasPersistent = (typeof hasPersistedInputBackup === 'function')
+                      && hasPersistedInputBackup(ss);
+  var hasLegacy = false;
+  if (!hasPersistent && typeof TEST_INPUT_BACKUP_NAMES === 'object') {
     Object.keys(TEST_INPUT_BACKUP_NAMES).forEach(function (orig) {
-      if (ss.getSheetByName(TEST_INPUT_BACKUP_NAMES[orig])) {
-        anyBackup = true;
-      }
+      if (ss.getSheetByName(TEST_INPUT_BACKUP_NAMES[orig])) hasLegacy = true;
     });
   }
-  if (!anyBackup) {
+  if (!hasPersistent && !hasLegacy) {
     ui.alert('No backup found',
-             'No _TEST_BACKUP_* sheets exist in this workbook.\n\n' +
-             'A backup is created automatically when you click\n' +
-             '"Load CULLIGAN Fixture". If your current inputs ARE\n' +
-             'your original data, there is nothing to restore.',
+             'No input backup exists in this workbook (neither the\n' +
+             'persistent _INPUT_BACKUP sheet nor legacy _TEST_BACKUP_*\n' +
+             'twins).\n\n' +
+             'A backup is created automatically by "Load CULLIGAN Fixture"\n' +
+             'and by "Start New Project". If your current inputs ARE your\n' +
+             'original data, there is nothing to restore.',
              ui.ButtonSet.OK);
     return;
   }
@@ -1494,9 +1512,11 @@ function runRestoreInputsFromBackup() {
   var confirmResp = ui.alert(
     'Restore Inputs from Backup',
     'This will:\n\n' +
-    '  1. Overwrite your current INPUT_* sheets with the most recent\n' +
-    '     backup (created when you last loaded a fixture).\n' +
-    '  2. Delete the backup sheets after restore.\n\n' +
+    '  1. Overwrite your current INPUT_* sheets (ALL SIX, including\n' +
+    '     INPUT_BAAS) with the most recent backup' +
+    (hasPersistent ? ' (persistent\n     _INPUT_BACKUP, formula-aware)'
+                   : ' (LEGACY _TEST_BACKUP_*\n     twins from a pre-update version)') + '.\n' +
+    '  2. Delete the backup after restore.\n\n' +
     'Your current INPUT data will be LOST. Continue?',
     ui.ButtonSet.OK_CANCEL);
   if (confirmResp !== ui.Button.OK) {
@@ -1509,15 +1529,22 @@ function runRestoreInputsFromBackup() {
   } catch (e) {
     ui.alert('Restore failed',
              'restoreAllInputSheets threw: ' + e.message + '\n\n' +
-             'The backup sheets may still be present -- you can also\n' +
-             'manually copy data from them (hidden, named _TEST_BACKUP_*).',
+             'The backup may still be present (hidden sheet _INPUT_BACKUP\n' +
+             'or _TEST_BACKUP_* twins) -- data can be recovered manually.',
              ui.ButtonSet.OK);
     return;
   }
 
+  // Inputs just changed -> previously generated outputs are now stale.
+  if (typeof refreshStalenessBanners === 'function') {
+    try { refreshStalenessBanners(ss); } catch (e2) { /* non-fatal */ }
+  }
+
   ui.alert('Restored',
-           'INPUT sheets restored from backup.\n' +
-           'Backup sheets have been deleted.',
+           'INPUT sheets restored from backup (all six tabs).\n' +
+           'The backup has been deleted.\n\n' +
+           'NOTE: existing outputs were generated from OTHER inputs --\n' +
+           'stale tabs are flagged in red. Regenerate before exporting.',
            ui.ButtonSet.OK);
 }
 
@@ -1783,6 +1810,9 @@ function runWriteProjectCardV2() {
     setupProjectCardTemplate(ss);
     writeProjectCardV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult);
 
+    // Batch 1 / B1.4: freshness stamp for the tab this runner just wrote.
+    argiaStampOutputs(ss, ['PROJECT_CARD_v2']);
+
     _setArgiaProgress(TOTAL, TOTAL, '\u2705 Done!');
     Utilities.sleep(1200);
 
@@ -1807,6 +1837,9 @@ function runBaasProjectionMenu() {
   var ui = SpreadsheetApp.getUi();
   try {
     var ret = runBaasProjection(ss);
+
+    // Batch 1 / B1.4: freshness stamp for the tab this runner just wrote.
+    argiaStampOutputs(ss, ['BAAS_PROJECTION_v2']);
 
     var msg = 'BAAS_PROJECTION_v2 generated.\n\n'
       + 'BaaS CAPEX (materiales + instalacion BESS): $'
@@ -1856,6 +1889,11 @@ function runClientFinancialsMenu() {
 
     var ret = runClientFinancials(ss, { baasNetSavingsByYear: baasNet });
 
+    // Batch 1 / B1.4: this path regenerates BAAS_PROJECTION_v2 too (above),
+    // so stamp both tabs.
+    argiaStampOutputs(ss, ['CLIENT_FINANCIALS_v2',
+                           baasNet ? 'BAAS_PROJECTION_v2' : null].filter(Boolean));
+
     var c = ret.fin.cash, h = ret.fin.headline;
     var msg = 'CLIENT_FINANCIALS_v2 generated.\n\n'
       + 'CAPEX total (BOM + instalacion): $' + _baasFmt(ret.capex.totalMxn) + ' MXN\n'
@@ -1877,5 +1915,232 @@ function runClientFinancialsMenu() {
     ui.alert('Client Financials', msg, ui.ButtonSet.OK);
   } catch (e) {
     ui.alert('Client Financials Error', e.message + '\n\n' + (e.stack || ''), ui.ButtonSet.OK);
+  }
+}
+
+
+// ===========================================================================
+// BATCH 1 LIFECYCLE COMMANDS  (2026-06-10)
+// ---------------------------------------------------------------------------
+// runStartNewProject        -- B1.1: clean reset to DEFAULT inputs + cleared
+//                              outputs, with a persistent backup first.
+// runGenerateAllDeliverables-- B1.3: one-click full pipeline in dependency
+//                              order (engine -> RFQs -> BaaS -> financials).
+// runCheckOutputFreshness   -- B1.4: on-demand freshness report + banners.
+// ===========================================================================
+
+/**
+ * UI-free core of Start New Project. Separated from the menu wrapper so the
+ * lifecycle integration test can exercise the EXACT production path without
+ * dialogs. Steps:
+ *   1. Persistent backup of all six INPUT_* tabs (undo path).
+ *   2. Rebuild every INPUT_* tab to its DEFAULT layout.
+ *   3. Clear ALL deliverable output tabs (+ the install driver map) so no
+ *      previous project's numbers can sit next to the new project's inputs.
+ *   4. Clear freshness stamps (no outputs exist now) + remove banners.
+ *   5. Refresh the input audit.
+ *
+ * @param {Spreadsheet} ss
+ * @return {Object} report { backedUpCells, clearedTabs:[], errors:[] }
+ */
+function startNewProjectCore(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var report = { backedUpCells: 0, clearedTabs: [], errors: [] };
+
+  // 1. Backup (abort the whole reset if this fails -- never wipe unbacked data)
+  var snap = snapshotInputSheets(ss);
+  report.backedUpCells = persistInputSnapshot(ss, snap);
+
+  // 2. DEFAULT rebuild (per-step guarded inside)
+  rebuildInputsToDefault(ss);
+
+  // 3. Clear outputs. ARGIA_STAMPED_TABS = the 13 deliverables; the driver
+  //    map is internal but project-specific, so it goes too.
+  var outputTabs = ARGIA_STAMPED_TABS.concat(['95_INSTALL_DRIVER_MAP_v2']);
+  outputTabs.forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) return;
+    try {
+      sh.clearContents();
+      report.clearedTabs.push(name);
+    } catch (e) {
+      report.errors.push(name + ': ' + e.message);
+    }
+  });
+
+  // 4. Clear stamps (the keyed rows stay, values blanked) + banners.
+  try {
+    ARGIA_STAMPED_TABS.forEach(function (name) {
+      metaKvSet(ss, META_KEY_STAMP_PREFIX + name, '');
+    });
+    metaKvSet(ss, META_KEY_INPUTS_HASH, '');
+    metaKvSet(ss, META_KEY_INPUTS_HASH_TIME, '');
+    refreshStalenessBanners(ss);   // clears any leftover banner markers
+  } catch (e) {
+    report.errors.push('stamps: ' + e.message);
+  }
+
+  // 5. Audit refresh so _AUDIT_INPUTS reflects the clean state.
+  try { _refreshInputAudit_(); }
+  catch (e) { report.errors.push('audit: ' + e.message); }
+
+  return report;
+}
+
+
+/**
+ * Menu wrapper for Start New Project: confirm -> core -> summary.
+ */
+function runStartNewProject() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  var resp = ui.alert(
+    'Start New Project',
+    'This resets the workbook for a NEW project:\n\n' +
+    '  1. Backs up ALL SIX current INPUT_* sheets to the hidden\n' +
+    '     persistent _INPUT_BACKUP sheet (undo via "Restore Inputs\n' +
+    '     from Backup").\n' +
+    '  2. Rebuilds every INPUT_* tab to its DEFAULT layout.\n' +
+    '  3. CLEARS every output tab (MDC, BOM, Installation, Project\n' +
+    '     Card, CFE Output, BaaS, Financials, all RFQs).\n\n' +
+    'No data from tests or previous projects survives in the inputs\n' +
+    'or outputs. Continue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (resp !== ui.Button.OK) {
+    ui.alert('Cancelled', 'No changes made.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var report;
+  try {
+    report = startNewProjectCore(ss);
+  } catch (e) {
+    ui.alert('Start New Project failed',
+             e.message + '\n\n' +
+             'If the backup step completed, your inputs are recoverable via\n' +
+             '"Restore Inputs from Backup".',
+             ui.ButtonSet.OK);
+    return;
+  }
+
+  var msg = 'Workbook reset for a new project.\n\n' +
+            'Backed up: ' + report.backedUpCells + ' input cell(s) to _INPUT_BACKUP\n' +
+            'Cleared outputs: ' + report.clearedTabs.length + ' tab(s)\n';
+  if (report.errors.length) {
+    msg += '\nWarnings (' + report.errors.length + '):\n  - ' +
+           report.errors.join('\n  - ') + '\n';
+  }
+  msg += '\nNEXT STEPS:\n' +
+         '  1. Fill the INPUT_* tabs for the new project\n' +
+         '  2. ARGIA menu -> "Generate ALL Deliverables"';
+  ui.alert('New Project Ready', msg, ui.ButtonSet.OK);
+}
+
+
+/**
+ * One-click full pipeline in dependency order (B1.3):
+ *   1. runArgiaEngine()            -> MDC, BOM, INSTALLATION, PROJECT_CARD,
+ *                                     CFE_OUTPUT (+ its own validation UI)
+ *   2. runWriteAllRfqsV2({silent}) -> 6 RFQ tabs
+ *   3. runBaasProjection(ss)       -> BAAS_PROJECTION_v2
+ *   4. runClientFinancials(ss,..)  -> CLIENT_FINANCIALS_v2 (3-way uses the
+ *                                     BaaS net-savings from step 3)
+ * Steps 2-4 each get a freshness stamp. A failure in any post-engine step is
+ * collected, not fatal -- the summary lists per-deliverable status. The
+ * engine's own dialogs (validation warnings etc.) still appear; this wrapper
+ * adds exactly ONE summary alert at the end.
+ */
+function runGenerateAllDeliverables() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  var lines = [];
+
+  // -- 1. Engine ------------------------------------------------------------
+  var eng;
+  try {
+    eng = runArgiaEngine();
+  } catch (e) {
+    ui.alert('Generate ALL \u2014 aborted',
+             'Engine threw: ' + e.message + '\n\nNothing else was generated.',
+             ui.ButtonSet.OK);
+    return;
+  }
+  if (!eng || eng.ok !== true) {
+    ui.alert('Generate ALL \u2014 stopped',
+             'Engine did not complete (' + ((eng && eng.reason) || 'unknown') +
+             ').\nRFQs / BaaS / Financials were NOT generated.',
+             ui.ButtonSet.OK);
+    return;
+  }
+  lines.push('\u2705 Engine: MDC, BOM, INSTALLATION, PROJECT_CARD, CFE_OUTPUT');
+
+  // -- 2. RFQs ----------------------------------------------------------------
+  try {
+    var rfq = runWriteAllRfqsV2({ silent: true });
+    if (rfq && rfq.failed && rfq.failed.length) {
+      lines.push('\u26a0 RFQs: ' + rfq.succeeded.length + ' ok, ' +
+                 rfq.failed.length + ' failed (see LOGS)');
+    } else {
+      lines.push('\u2705 RFQs: ' + ((rfq && rfq.succeeded) ? rfq.succeeded.length : 0) + ' generated');
+    }
+  } catch (e) {
+    lines.push('\u274c RFQs: ' + e.message);
+  }
+
+  // -- 3. BaaS projection -------------------------------------------------------
+  var baasNet = null;
+  try {
+    var baasRet = runBaasProjection(ss);
+    argiaStampOutputs(ss, ['BAAS_PROJECTION_v2']);
+    if (baasRet && baasRet.ok && baasRet.result && baasRet.result.projection) {
+      baasNet = baasRet.result.projection.map(function (r) { return r.ahorroNeto; });
+      lines.push('\u2705 BaaS projection');
+    } else {
+      lines.push('\u26a0 BaaS projection: datos incompletos (see sheet notes)');
+    }
+  } catch (e) {
+    lines.push('\u274c BaaS projection: ' + e.message);
+  }
+
+  // -- 4. Client financials -----------------------------------------------------
+  try {
+    var finRet = runClientFinancials(ss, { baasNetSavingsByYear: baasNet });
+    argiaStampOutputs(ss, ['CLIENT_FINANCIALS_v2']);
+    lines.push((finRet && finRet.ok ? '\u2705' : '\u26a0') + ' Client financials' +
+               (baasNet ? ' (3-way incl. BaaS)' : ' (sin escenario BaaS)'));
+  } catch (e) {
+    lines.push('\u274c Client financials: ' + e.message);
+  }
+
+  ui.alert('Generate ALL Deliverables \u2014 summary',
+           lines.join('\n') +
+           '\n\nAll generated tabs carry a fresh stamp; edit any INPUT tab and ' +
+           'they will be flagged as stale.',
+           ui.ButtonSet.OK);
+}
+
+
+/**
+ * On-demand freshness report (B1.4): recomputes the inputs hash, applies/
+ * clears banners, and shows per-deliverable status.
+ */
+function runCheckOutputFreshness() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  try {
+    refreshStalenessBanners(ss);
+    var rep = getOutputFreshness(ss);
+    var icon = { FRESH: '\u2705', STALE: '\u26a0', UNSTAMPED: '\u2014', ABSENT: '\u00b7' };
+    var lines = rep.tabs.map(function (t) {
+      return (icon[t.status] || '?') + ' ' + t.name + '  [' + t.status + ']';
+    });
+    ui.alert('Output Freshness',
+             'Inputs hash: ' + rep.currentHash + '\n\n' + lines.join('\n') +
+             '\n\nSTALE = generated from inputs that have since changed.\n' +
+             'UNSTAMPED = generated before this feature existed (unknown).',
+             ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('Freshness check failed', e.message, ui.ButtonSet.OK);
   }
 }

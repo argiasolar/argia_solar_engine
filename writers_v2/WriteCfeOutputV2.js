@@ -55,6 +55,10 @@ function runUpdateCfeOutputV2() {
     // Menu invocation has no hourlySim — addendum will be skipped when
     // null. Engine invocation passes hourlySim from Step 13.
     writeCfeOutputV2(ss, null);
+    // Batch 1 / B1.4: freshness stamp for the tab this runner just wrote.
+    if (typeof argiaStampOutputs === 'function') {
+      argiaStampOutputs(ss, ['CFE_OUTPUT_v2']);
+    }
     ui.alert('CFE_OUTPUT_v2 updated.');
   } catch (err) {
     ui.alert('CFE_OUTPUT_v2 error', err.message, ui.ButtonSet.OK);

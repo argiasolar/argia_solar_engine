@@ -60,6 +60,13 @@ var AUDIT_INPUT_SHEETS  = ['INPUT_PROJECT', 'INPUT_DESIGN', 'INPUT_INSTALL', 'IN
 var AUDIT_OUTPUT_SHEETS = ['FINANCE',
                            'BOM_v2', 'INSTALLATION_v2', 'MDC_v2', 'PROJECT_CARD_v2', 'CFE_OUTPUT_v2',
                            'BAAS_PROJECTION_v2',
+                           // Batch 1 / B1.6: CLIENT_FINANCIALS_v2 shipped 2026-06
+                           // without an audit entry -- the live workbook proved the
+                           // drift (sheet present with data, absent from the audit).
+                           // BESS_RECOMMENDATIONS added for the same reason. The
+                           // UNIT_AUDIT_CONTRACT test now pins this list to the
+                           // stamped-deliverables registry so it can't drift again.
+                           'CLIENT_FINANCIALS_v2', 'BESS_RECOMMENDATIONS',
                            'RFQ_PANELES_v2', 'RFQ_INVERSORES_v2', 'RFQ_ELECTRICO_v2',
                            'RFQ_ESTRUCTURA_v2', 'RFQ_BESS_v2', 'RFQ_MONITOREO_v2'];
 

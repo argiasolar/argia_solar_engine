@@ -1633,6 +1633,10 @@ function runInstallCostStandalone() {
         setupInstallationTemplate(ss);
         writeInstallationV2(ss, result, result.drivers);
         writeInstallationDriverMapV2(ss, result.drivers, result);
+        // Batch 1 / B1.4: freshness stamp for the tab this runner just wrote.
+        if (typeof argiaStampOutputs === 'function') {
+          argiaStampOutputs(ss, ['INSTALLATION_v2']);
+        }
       } catch (wErr) {
         engineLog(ss, 'InstallCost', 'WARNING',
           'INSTALLATION_v2 write failed: ' + wErr.message + '\n' + (wErr.stack || ''));
