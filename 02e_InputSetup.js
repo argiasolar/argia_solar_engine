@@ -2022,21 +2022,30 @@ function setupInputBessEconomicsRows() {
   // Section header (always written; idempotent because it's the same string)
   sh.getRange(36, 2).setValue(expectedHeader).setFontWeight('bold');
 
-  // Threshold row
-  sh.getRange(37, 2).setValue('Mín. ahorro anual MXN:');
-  var currentThresh = sh.getRange(37, 3).getValue();
-  if (currentThresh === '' || currentThresh === null || currentThresh === undefined) {
-    sh.getRange(37, 3).setValue(2000000).setNumberFormat('"$"#,##0');
-  }
-  // If a designer-set value is present, leave it alone but ensure the
-  // number format is applied (cheap, helps readability).
-  sh.getRange(37, 3).setNumberFormat('"$"#,##0');
-
-  // Tariff override rows (labels only; cells stay blank by design)
-  sh.getRange(38, 2).setValue('Override tarifa punta MXN/kWh:');
-  sh.getRange(38, 3).setNumberFormat('#,##0.0000');
-  sh.getRange(39, 2).setValue('Override tarifa base MXN/kWh:');
-  sh.getRange(39, 3).setNumberFormat('#,##0.0000');
+  // ---- Rows 37-39: map-driven (A2c) --------------------------------------
+  // Labels, seeds and formats come from _MAP_BESS §5 via INPUT_MAP -- single
+  // source of truth (these strings were hand-maintained copies of the map).
+  //
+  // SEED GATE: only entries with an EXPLICIT `seed` property are prefilled
+  // (threshold -> 2,000,000). The tariff overrides have no seed and MUST stay
+  // blank -- blank means "auto-derive from INPUT_CFE"; writing their reader
+  // default (0) would visually suggest a zero tariff. (This is the
+  // seed/default split from A2c-0 doing its job.)
+  var S5_KEYS = ['bessMinAnnualSavingMxn', 'bessPuntaRateOverride', 'bessBaseRateOverride'];
+  S5_KEYS.forEach(function (key) {
+    var m = INPUT_MAP[key];
+    if (!m) throw new Error('setupInputBessEconomicsRows: INPUT_MAP missing "' + key + '"');
+    var r = m.row;
+    sh.getRange(r, 2).setValue(m.label + ':');
+    if (m.hasOwnProperty('seed') && sh.getRange(r, 3).getValue() === '') {
+      sh.getRange(r, 3).setValue(m.seed);
+    }
+    // Format by unit; applied even to designer-set values (cheap, readability)
+    var fmt = (m.unit === 'MXN')     ? '"$"#,##0'
+            : (m.unit === 'MXN/kWh') ? '#,##0.0000'
+            : '#,##0';
+    sh.getRange(r, 3).setNumberFormat(fmt);
+  });
 
   // Notes row
   sh.getRange(40, 2).setValue('Notas:').setFontStyle('italic');
@@ -2068,16 +2077,10 @@ function setupInputBessEconomicsRows() {
 // LAYOUT (rows 42-53):
 //   42: § header
 //   43: (deprecated — see BDF-7.1 note above)
-//   44: Voltaje bus DC (V):         800
-//   45: Voltaje AC sistema (V):     480
-//   46: Distancia batería-tablero (m): 25
-//   47: Distancia tablero-CFE (m):     50
-//   48: Trayectoria del cable:      [INTEMPERIE|CONDUIT_ENTERRADO|BANDEJA_INTERIOR]
-//   49: Baterías por contenedor:    1
-//   50: Ubicación física:           [EXTERIOR|INTERIOR_TECHADO|SALA_ELECTRICA]
-//   51: Sistema de tierra:          [UFER|VARILLA|RED_EXISTENTE]
-//   52: Distancia a barra tierra (m): 15
-//   53: Comisionamiento MXN:        250000
+//   44-53: map-driven from _MAP_BESS_S6 via INPUT_MAP (labels, seeds, units,
+//          dropdowns -- see the S6_KEYS loop below; 2026-06-10 refactor).
+//          Note: bessDcBusV deliberately has NO seed -- blank/0 means the
+//          battery DB nominal wins (see REG_BESS_VOLTAGE_UNIFY_C44).
 function setupInputBessInstallRows() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName('INPUT_BESS');
