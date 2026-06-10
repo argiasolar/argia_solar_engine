@@ -470,16 +470,13 @@ function readInputBessTariffOverride(ss) {
 //   provenance: 'INPUT_BESS' when the cell has a positive value,
 //               'DISABLED' otherwise.
 function readBessMinSavingsThreshold(ss) {
-  var sh = ss.getSheetByName('INPUT_BESS');
-  if (!sh) return { thresholdMxn: 0, provenance: 'DISABLED' };
-  // [A2b] r37 read intentionally NOT migrated to readInput (parity hazard):
-  // bessMinAnnualSavingMxn's map default is 2,000,000, but this reader treats a
-  // BLANK C37 as DISABLED (0). readInput would return the 2M default on a blank
-  // cell, ENABLING the threshold where the old code disabled it. The 2M default
-  // also drives setup seeding, so reconciling it (map default 0 + a separate
-  // "suggested initial value") belongs with the A2c setup collapse, not here.
-  var raw = sh.getRange(37, 3).getValue();
-  var n = Number(raw);
+  ss = ss || SpreadsheetApp.getActive();
+  if (!ss.getSheetByName('INPUT_BESS')) return { thresholdMxn: 0, provenance: 'DISABLED' };
+  // [A2c] now migrated onto readInput. The seed/default split (A2c-0) set
+  // bessMinAnnualSavingMxn's `default` to 0, so readInput returns 0 on a blank
+  // C37 -> DISABLED, exactly as the old direct read did. The 2,000,000 `seed`
+  // only feeds fresh-sheet setup, never the read path (readInput uses `default`).
+  var n = Number(readInput(ss, 'bessMinAnnualSavingMxn'));
   if (!isFinite(n) || n <= 0) {
     return { thresholdMxn: 0, provenance: 'DISABLED' };
   }
