@@ -97,10 +97,23 @@ function _cfeOutV2_renderTierBanner(sh, row, tier) {
 // is load-shifting arbitrage that needs NET_BILLING).
 // ---------------------------------------------------------------------------
 
-function _cfeOutV2_renderConsExpUpside(sh, startRow, autoOpt, expectedAnnualMxn, interconnMode) {
+function _cfeOutV2_renderConsExpUpside(sh, startRow, autoOpt, expectedAnnualMxn, interconnMode, addressableMxn) {
   var cons = Number(autoOpt && autoOpt.conservativeMxn) || 0;
   var ups  = Number(autoOpt && autoOpt.upsideMxn) || 0;
   var exp  = Number(expectedAnnualMxn) || 0;
+
+  // [B-1] Screening savings (cons/ups) are summed from per-strategy monthly
+  // ledger estimates and can overshoot what the client even pays CFE, yielding
+  // a nonsensical "Optimo" larger than the whole bill (the $92M artifact). You
+  // cannot save more than the addressable annual bill, so clamp the screening
+  // tiles to it. addressableMxn = annual CFE cost with PV / no BESS
+  // (pvOnly.totalCostMxn); 0 or absent disables the clamp (older callers).
+  var addressable  = Number(addressableMxn) || 0;
+  var upsideCapped = false;
+  if (addressable > 0) {
+    if (ups  > addressable) { ups  = addressable; upsideCapped = true; }
+    if (cons > addressable) { cons = addressable; }
+  }
 
   // Section header
   sh.getRange(startRow, 2, 1, 14).breakApart().merge()
@@ -120,8 +133,17 @@ function _cfeOutV2_renderConsExpUpside(sh, startRow, autoOpt, expectedAnnualMxn,
   _cfeOutV2_paintRangeTile(sh, tileRow, 12,
     'ÓPTIMO\n(auto-optimizado)', ups, '#E1F5FE');
 
-  // Wide-divergence explanatory line
+  // Wide-divergence explanatory line (uses the clamped cons/ups)
   var note = _cfeOutV2_rangeExplanation(cons, exp, ups, interconnMode);
+  // [B-1] When the raw Optimo was clamped, say so plainly -- otherwise the now-
+  // reasonable tile would hide that the screening crudely over-counted.
+  if (upsideCapped) {
+    var capNote = 'El \u00d3ptimo de screening fue limitado al monto de la '
+                + 'factura anual direccionable ($' + _cfeOutV2_fmtChunk5(addressable)
+                + '): el c\u00e1lculo crudo exced\u00eda la factura, lo cual no es '
+                + 'f\u00edsicamente alcanzable. Cifra de screening, no garantizada.';
+    note = note ? (note + ' ' + capNote) : capNote;
+  }
   if (note) {
     var noteRow = tileRow + 1;
     sh.getRange(noteRow, 2, 1, 14).breakApart().merge()

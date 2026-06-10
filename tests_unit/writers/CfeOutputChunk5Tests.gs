@@ -237,3 +237,49 @@ registerTest({
     t.assertTrue('shows 20,000 intermedia savings', text.indexOf('20,000') >= 0);
   }
 });
+
+
+// =============================================================================
+// TEST [B-1]: screening Óptimo is clamped to the addressable bill, not $92M
+// -----------------------------------------------------------------------------
+//   The auto-optimize upside is summed from per-strategy monthly ledger
+//   estimates and can exceed what the client even pays CFE -- the "$92M Óptimo"
+//   artifact. _cfeOutV2_renderConsExpUpside now takes the addressable annual
+//   bill (pvOnly.totalCostMxn) and clamps cons/ups to it, with a plain note
+//   when the upside was capped. Control: an upside below the bill is untouched
+//   and no cap note appears.
+// =============================================================================
+registerTest({
+  id      : 'UNIT_CFE_UPSIDE_CAPPED_AT_ADDRESSABLE_BILL',
+  group   : 'unit',
+  module  : 'writers/cfe_chunk5',
+  scenarios: [],
+  tags    : ['writers', 'cfe', 'chunk5', 'regression'],
+  source  : 'tests_unit/writers/CfeOutputChunk5Tests.gs',
+  fn      : function (t, ctx) {
+    t.suite('UNIT writers/cfe_chunk5 [B-1]: Óptimo clamped to addressable bill');
+
+    // Óptimo $92M against a $13M addressable bill -> must clamp to $13M.
+    var sh = _mkMockSheet();
+    var autoOpt = { conservativeMxn: 13000000, upsideMxn: 92000000, optimalByMonth: [] };
+    _cfeOutV2_renderConsExpUpside(sh, 50, autoOpt, 13000000, 'NET_METERING', 13000000);
+    var text = _allWrittenText(sh);
+
+    t.assertTrue('impossible 92,000,000 Óptimo is NOT shown',
+                 text.indexOf('92,000,000') < 0);
+    t.assertTrue('Óptimo clamped to the 13,000,000 addressable bill',
+                 text.indexOf('13,000,000') >= 0);
+    t.assertTrue('cap is explained (limitado al monto de la factura)',
+                 text.indexOf('limitado al monto de la') >= 0);
+
+    // Control: upside below the bill is untouched, and no cap note appears.
+    var sh2 = _mkMockSheet();
+    var autoOpt2 = { conservativeMxn: 500000, upsideMxn: 650000, optimalByMonth: [] };
+    _cfeOutV2_renderConsExpUpside(sh2, 50, autoOpt2, 580000, 'NET_BILLING', 13000000);
+    var text2 = _allWrittenText(sh2);
+    t.assertTrue('below-bill upside (650,000) shown unchanged',
+                 text2.indexOf('650,000') >= 0);
+    t.assertTrue('no cap note when nothing was clamped',
+                 text2.indexOf('limitado al monto de la') < 0);
+  }
+});

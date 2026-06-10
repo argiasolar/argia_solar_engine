@@ -146,7 +146,12 @@ function writeCfeOutputV2(ss, hourlySim) {
                      - (Number(hourlySim.attribution.pvBess.totalCostMxn) || 0);
     }
     var interconnMode = hourlySim.interconnMode || '';
-    var lastRow = _cfeOutV2_renderConsExpUpside(sh, blockStart, ao, expectedAnnual, interconnMode);
+    // [B-1] Addressable annual bill = CFE cost with PV but no BESS. The screening
+    // Optimo cannot exceed it (you can't save more than you pay), so pass it to
+    // clamp the upside/conservative tiles to a physically achievable bound.
+    var addressableMxn = (hourlySim.attribution.pvOnly
+      && Number(hourlySim.attribution.pvOnly.totalCostMxn)) || 0;
+    var lastRow = _cfeOutV2_renderConsExpUpside(sh, blockStart, ao, expectedAnnual, interconnMode, addressableMxn);
     if (typeof _cfeOutV2_renderDemandChargeBreakdown === 'function') {
       _cfeOutV2_renderDemandChargeBreakdown(sh, lastRow + 2, hourlySim);
     }
