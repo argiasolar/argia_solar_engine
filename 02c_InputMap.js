@@ -1803,7 +1803,10 @@ var _MAP_CFE = {
   cfeInterconnMode: {
     sheet: SH.INPUT_CFE, row: 41, col: 3,
     label: 'Modo de interconexión', type: 'dropdown',
-    default: 'SIN_EXPORTACION', required: true,
+    // [A2b] default '' (not 'SIN_EXPORTACION'): readBessInterconnectionFromInputCfe
+    // treats an empty C41 as mode UNKNOWN. A non-empty default would silently
+    // promote unset interconnection to ZERO_EXPORT. '' preserves the old behavior.
+    default: '', required: true,
     dropdown: ['MEDICION_NETA', 'FACTURACION_NETA', 'SIN_EXPORTACION'],
     section: '03 INTERCONEXIÓN', consumedBy: ['engine']
   },

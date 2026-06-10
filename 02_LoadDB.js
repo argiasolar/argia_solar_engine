@@ -332,22 +332,25 @@ function lookupBatteryUnitPrice(ss, batteryId) {
 //   var punta    = override.punta != null ? override.punta : auto.puntaMxnPerKwh;
 //   var base     = override.base  != null ? override.base  : auto.baseMxnPerKwh;
 function deriveBessTariffRatesFromInputCfe(ss) {
-  var sh = ss.getSheetByName('INPUT_CFE');
-  if (!sh) {
+  ss = ss || SpreadsheetApp.getActive();
+  if (!ss.getSheetByName('INPUT_CFE')) {
     return { puntaMxnPerKwh: 0, baseMxnPerKwh: 0,
              provenance: 'NO_INPUT_CFE_SHEET', monthsRead: 0 };
   }
-  // INPUT_CFE layout (verified against ARGIA_ENGINE_18):
-  //   r10 = kWh base, r12 = kWh punta, r25 = Energía B (MXN), r27 = Energía P (MXN)
-  //   cols C..N = ENE..DIC (12 months)
-  var rowKwhBase = 10, rowKwhPunta = 12, rowEnergB = 25, rowEnergP = 27;
-  var firstMonthCol = 3, lastMonthCol = 14;  // C..N
+  // [A2b] monthly rows via INPUT_MAP range reads (cfeKwhBase C10, cfeKwhPunta
+  //   C12, cfeEnergiaBMxn C25, cfeEnergiaPMxn C27; all C..N). Each returns
+  //   [[12 values]]; [0][i] for i=0..11 reproduces the old c=3..14 loop, with
+  //   the same Number(...)||0 coercion and >0 / months<6 thresholds.
+  var kwhBaseRow  = readInput(ss, 'cfeKwhBase')[0];
+  var kwhPuntaRow = readInput(ss, 'cfeKwhPunta')[0];
+  var energBRow   = readInput(ss, 'cfeEnergiaBMxn')[0];
+  var energPRow   = readInput(ss, 'cfeEnergiaPMxn')[0];
   var sumKwhP = 0, sumKwhB = 0, sumEnergP = 0, sumEnergB = 0, months = 0;
-  for (var c = firstMonthCol; c <= lastMonthCol; c++) {
-    var kwhP = Number(sh.getRange(rowKwhPunta, c).getValue()) || 0;
-    var kwhB = Number(sh.getRange(rowKwhBase,  c).getValue()) || 0;
-    var enrP = Number(sh.getRange(rowEnergP,   c).getValue()) || 0;
-    var enrB = Number(sh.getRange(rowEnergB,   c).getValue()) || 0;
+  for (var i = 0; i < 12; i++) {
+    var kwhP = Number(kwhPuntaRow[i]) || 0;
+    var kwhB = Number(kwhBaseRow[i])  || 0;
+    var enrP = Number(energPRow[i])   || 0;
+    var enrB = Number(energBRow[i])   || 0;
     if (kwhP > 0 && kwhB > 0 && enrP > 0 && enrB > 0) {
       sumKwhP   += kwhP;
       sumKwhB   += kwhB;
@@ -476,15 +479,20 @@ function readBessMinSavingsThreshold(ss) {
 // Months with zero/missing data are excluded -- the sizer warns when fewer
 // than 12 are present, so callers don't need to fake months.
 function buildBessLoadProfileFromInputCfe(ss) {
-  var sh = ss.getSheetByName('INPUT_CFE');
-  if (!sh) return { months: [], provenance: 'NO_INPUT_CFE_SHEET' };
-  var rowKwhPunta = 12, rowKwPunta = 15, rowDias = 18;
-  var firstCol = 3, lastCol = 14;  // C..N = ENE..DIC
+  ss = ss || SpreadsheetApp.getActive();
+  // [A2b] monthly rows via INPUT_MAP range reads (cfeKwhPunta C12:N12,
+  // cfeKwPunta C15:N15, cfeDias C18:N18). Sheet guarded first. Each range read
+  // returns [[12 values C..N]]; [0][i] for i=0..11 reproduces the old c=3..14
+  // loop, and the per-cell Number(...)||0 / ||30 semantics are unchanged.
+  if (!ss.getSheetByName('INPUT_CFE')) return { months: [], provenance: 'NO_INPUT_CFE_SHEET' };
+  var kwhPuntaRow = readInput(ss, 'cfeKwhPunta')[0];
+  var kwPuntaRow  = readInput(ss, 'cfeKwPunta')[0];
+  var diasRow     = readInput(ss, 'cfeDias')[0];
   var months = [];
-  for (var c = firstCol; c <= lastCol; c++) {
-    var kwhP = Number(sh.getRange(rowKwhPunta, c).getValue()) || 0;
-    var kwP  = Number(sh.getRange(rowKwPunta,  c).getValue()) || 0;
-    var days = Number(sh.getRange(rowDias,     c).getValue()) || 30;
+  for (var i = 0; i < 12; i++) {
+    var kwhP = Number(kwhPuntaRow[i]) || 0;
+    var kwP  = Number(kwPuntaRow[i])  || 0;
+    var days = Number(diasRow[i])     || 30;
     if (kwhP > 0 && kwP > 0) {
       months.push({ kwhPunta: kwhP, kwPunta: kwP, days: days });
     }
@@ -675,17 +683,19 @@ function readMonthlyPvFromCfeSimulation(ss) {
 //
 // Returns { demandChargeMxnPerKw, provenance, monthsRead }.
 function deriveBessDemandChargeFromInputCfe(ss) {
-  var sh = ss.getSheetByName('INPUT_CFE');
-  if (!sh) {
+  ss = ss || SpreadsheetApp.getActive();
+  if (!ss.getSheetByName('INPUT_CFE')) {
     return { demandChargeMxnPerKw: 0,
              provenance: 'NO_INPUT_CFE_SHEET', monthsRead: 0 };
   }
-  var rowCapacidad = 21, rowDemandaFact = 19;
-  var firstCol = 3, lastCol = 14;
+  // [A2b] monthly rows via INPUT_MAP range reads (cfeCapacidadMxn C21:N21,
+  //   cfeDemandaFacturable C19:N19). [0][i] for i=0..11 == old c=3..14 loop.
+  var capRow = readInput(ss, 'cfeCapacidadMxn')[0];
+  var demRow = readInput(ss, 'cfeDemandaFacturable')[0];
   var sumKw = 0, sumMxn = 0, months = 0;
-  for (var c = firstCol; c <= lastCol; c++) {
-    var capMxn = Number(sh.getRange(rowCapacidad,   c).getValue()) || 0;
-    var demKw  = Number(sh.getRange(rowDemandaFact, c).getValue()) || 0;
+  for (var i = 0; i < 12; i++) {
+    var capMxn = Number(capRow[i]) || 0;
+    var demKw  = Number(demRow[i]) || 0;
     if (capMxn > 0 && demKw > 0) {
       sumMxn += capMxn;
       sumKw  += demKw;
@@ -715,9 +725,13 @@ function deriveBessDemandChargeFromInputCfe(ss) {
 //   exportPriceMxnPerKwh: 0 if not applicable.
 //   provenance: 'INPUT_CFE' on success, 'MISSING' otherwise.
 function readBessInterconnectionFromInputCfe(ss) {
-  var sh = ss.getSheetByName('INPUT_CFE');
-  if (!sh) return { mode: 'UNKNOWN', exportPriceMxnPerKwh: 0, provenance: 'MISSING' };
-  var rawMode = String(sh.getRange(41, 3).getValue() || '').trim().toUpperCase();
+  ss = ss || SpreadsheetApp.getActive();
+  // [A2b] coords via INPUT_MAP (cfeInterconnMode C41 / cfeExportPriceMxnPerKwh C42).
+  // Sheet guarded first (readInput throws on a missing sheet). The map default
+  // for cfeInterconnMode is '' so an empty cell still falls through to UNKNOWN,
+  // matching the pre-migration behavior exactly.
+  if (!ss.getSheetByName('INPUT_CFE')) return { mode: 'UNKNOWN', exportPriceMxnPerKwh: 0, provenance: 'MISSING' };
+  var rawMode = String(readInput(ss, 'cfeInterconnMode') || '').trim().toUpperCase();
   var mode;
   switch (rawMode) {
     case 'MEDICION_NETA':    mode = 'NET_METERING'; break;
@@ -725,7 +739,7 @@ function readBessInterconnectionFromInputCfe(ss) {
     case 'SIN_EXPORTACION':  mode = 'ZERO_EXPORT';  break;
     default:                 mode = 'UNKNOWN';
   }
-  var exportPrice = Number(sh.getRange(42, 3).getValue()) || 0;
+  var exportPrice = Number(readInput(ss, 'cfeExportPriceMxnPerKwh')) || 0;
   return {
     mode: mode,
     exportPriceMxnPerKwh: exportPrice,
