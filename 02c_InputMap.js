@@ -1431,7 +1431,12 @@ var _MAP_BESS = {
   bessStrategy: {
     sheet: 'INPUT_BESS', row: 7, col: 3,        // C7
     label: 'BESS_STRATEGY', type: 'dropdown',
-    default: 'SELF_CONSUMPTION_MAX', required: false,
+    // [A2b] default '' (not 'SELF_CONSUMPTION_MAX'): _readBatterySpecForHourlySim
+    // (20a) treats an empty C7 as '' then falls back to 'PEAK_SHAVING'. 01a:171
+    // has its own '|| SELF_CONSUMPTION_MAX' fallback, so '' is unchanged for it.
+    // '' preserves both readers' empty-cell behavior; a non-empty default would
+    // silently flip the hourly dispatch strategy on a blank cell.
+    default: '', required: false,
     // 3.7.9: LOAD_SHIFTING now steers the hourly dispatcher (grid arbitrage
     // base->punta under NET_BILLING). All three are priority policies, not
     // on/off switches — see _bessDispatchHour() in 20_CalcHourlySimulation.

@@ -289,35 +289,36 @@ function _hourlyBlocked(reason) {
 // Read battery spec from INPUT_BESS. Returns null if the project doesn't
 // have a battery configured. Uses the cells already mapped in 02c_InputMap.
 function _readBatterySpecForHourlySim(ss) {
-  var sh = ss.getSheetByName('INPUT_BESS');
-  if (!sh) return null;
-  // INPUT_BESS layout (from _MAP_BESS):
-  //   r10 = Capacidad nominal kWh
-  //   r11 = Potencia kW
-  //   r12 = Min SOC %
-  //   r13 = Max SOC %
-  //   r14 = RTE %
-  var capacityKwh = Number(sh.getRange(10, 3).getValue()) || 0;
+  ss = ss || SpreadsheetApp.getActive();
+  // [A2b] reads via INPUT_MAP (_MAP_BESS); sheet guarded first because readInput
+  // throws on a missing sheet (the old function returned null in that case).
+  // Map defaults match the prior inline fallbacks exactly: capacity 0, minSoc
+  // 0.10, maxSoc 0.90, rte 0.90, cyclesPerDay 1, all others 0. bessStrategy's
+  // map default is '' so an empty C7 still falls through to the 'PEAK_SHAVING'
+  // fallback below, unchanged. INPUT_BESS layout (from _MAP_BESS):
+  //   r10 Capacidad kWh · r11 Potencia kW · r12 Min SOC · r13 Max SOC · r14 RTE
+  if (!ss.getSheetByName('INPUT_BESS')) return null;
+  var capacityKwh = Number(readInput(ss, 'bessCapacityKwh')) || 0;
   if (capacityKwh <= 0) return null;  // no battery configured
   // 3.7.9: read strategy (C7) so the hourly dispatcher can prioritize.
   // Blank/unknown falls back to PEAK_SHAVING inside the simulator.
-  var strategy = String(sh.getRange(7, 3).getValue() || '').trim().toUpperCase();
+  var strategy = String(readInput(ss, 'bessStrategy') || '').trim().toUpperCase();
 
   // Chunk 7 Session 2: read the backup reserve (C17) -- previously the hourly
   // sim never read this, so any reserve was ignored (savings over-credited).
-  var minSocPct = Number(sh.getRange(12, 3).getValue()) || 0.10;
-  var maxSocPct = Number(sh.getRange(13, 3).getValue()) || 0.90;
-  var backupReservePct = Number(sh.getRange(17, 3).getValue()) || 0;
+  var minSocPct = Number(readInput(ss, 'bessMinSocPct')) || 0.10;
+  var maxSocPct = Number(readInput(ss, 'bessMaxSocPct')) || 0.90;
+  var backupReservePct = Number(readInput(ss, 'bessBackupReservePct')) || 0;
 
   // Chunk 7 Session 2: RESILIENCE section (7.) -- physical critical-load
   // backup spec. Rows 58-62 (col C). Rows 42-53 hold the pre-existing
   // DISTANCIAS section, so resilience lives below it in the empty zone.
   // Blank/0 => no resilience reserve.
-  var criticalLoadKw      = Number(sh.getRange(58, 3).getValue()) || 0;
-  var backupDurationHours = Number(sh.getRange(59, 3).getValue()) || 0;
-  var eventsPerYear       = Number(sh.getRange(60, 3).getValue()) || 0;
-  var eventCostMxn        = Number(sh.getRange(61, 3).getValue()) || 0;
-  var eventValueSource    = String(sh.getRange(62, 3).getValue() || '').trim().toUpperCase();
+  var criticalLoadKw      = Number(readInput(ss, 'bessCriticalLoadKw')) || 0;
+  var backupDurationHours = Number(readInput(ss, 'bessBackupDurationHours')) || 0;
+  var eventsPerYear       = Number(readInput(ss, 'bessEventsPerYear')) || 0;
+  var eventCostMxn        = Number(readInput(ss, 'bessEventCostMxn')) || 0;
+  var eventValueSource    = String(readInput(ss, 'bessEventValueSource') || '').trim().toUpperCase();
 
   // Compute the resilience reserve fraction (physical reserve / usable). The
   // pure calc lives in calcResilience; here we just need the fraction to feed
@@ -334,14 +335,14 @@ function _readBatterySpecForHourlySim(ss) {
 
   return {
     capacityKwh: capacityKwh,
-    powerKw:     Number(sh.getRange(11, 3).getValue()) || 0,
+    powerKw:     Number(readInput(ss, 'bessPowerKw')) || 0,
     minSocPct:   minSocPct,
     maxSocPct:   maxSocPct,
-    rtePct:      Number(sh.getRange(14, 3).getValue()) || 0.90,
+    rtePct:      Number(readInput(ss, 'bessRtePct')) || 0.90,
     strategy:    strategy || 'PEAK_SHAVING',
     // Chunk 7 4B: surfaced for the capture-throughput cap.
     usableKwh:    usableKwh,
-    cyclesPerDay: Number(sh.getRange(15, 3).getValue()) || 1,
+    cyclesPerDay: Number(readInput(ss, 'bessCyclesPerDay')) || 1,
     // Chunk 7 Session 2: reserve fields consumed by 20_ planUsable reduction.
     backupReservePct:        backupReservePct,
     resilienceReservedFrac:  resilienceReservedFrac,
