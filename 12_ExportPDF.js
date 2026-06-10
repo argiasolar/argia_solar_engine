@@ -118,6 +118,29 @@ var PDF_EXPORTS = {
     scale   : 2,
   },
 
+  // ---- Financial deliverables (Track B) ----
+  // Both use dynamicEndRow: the BaaS note / scenario block length varies with
+  // term and configuration. c2: 12 = buffer column M (the widest merges --
+  // disclaimers -- span cols A..L = index 11).
+  CLIENT_FINANCIALS: {
+    sheet   : 'CLIENT_FINANCIALS_v2',
+    r1: 0,  c1: 0,    // A1
+    r2: 0,  c2: 12,   // overridden at export time (dynamicEndRow)
+    orient  : 'portrait',
+    label   : 'FINANCIALS',
+    scale   : 2,
+    dynamicEndRow: true,
+  },
+  BAAS_PROJECTION: {
+    sheet   : 'BAAS_PROJECTION_v2',
+    r1: 0,  c1: 0,    // A1
+    r2: 0,  c2: 12,   // overridden at export time (dynamicEndRow)
+    orient  : 'landscape',   // 11-column projection table
+    label   : 'BAAS',
+    scale   : 2,
+    dynamicEndRow: true,
+  },
+
   // ---- RFQs (Tier 3, dynamic end row, scale=4 fit-to-page) ----
   // c2: 13 = column N (buffer column past N=M to avoid col M trim).
   // r2 is overridden at export time with sheet.getLastRow()-1.
@@ -366,6 +389,8 @@ function exportMDC()          { _runExport('MDC');          }
 function exportBOM()          { _runExport('BOM');          }
 function exportInstallation() { _runExport('INSTALLATION'); }
 function exportProjectCard()  { _runExport('PROJECT_CARD'); }
+function exportClientFinancials() { _runExport('CLIENT_FINANCIALS'); }
+function exportBaasProjection()   { _runExport('BAAS_PROJECTION');   }
 
 function exportRfqPaneles()    { _runExport('RFQ_PANELES');    }
 function exportRfqInversores() { _runExport('RFQ_INVERSORES'); }

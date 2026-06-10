@@ -671,6 +671,8 @@ function onOpen() {
       .addItem('Export BOM',                         'exportBOM')
       .addItem('Export Installation',                'exportInstallation')
       .addItem('Export Project Card',                'exportProjectCard')
+      .addItem('Export Client Financials',           'exportClientFinancials')
+      .addItem('Export BaaS Projection',             'exportBaasProjection')
       .addSeparator()
       .addSubMenu(ui.createMenu('Export RFQ')
         .addItem('Export RFQ \u2014 Paneles',        'exportRfqPaneles')
