@@ -541,6 +541,12 @@ function getMasterLinkFolderIds(ss) {
 // ---------------------------------------------------------------------------
 var ARGIA_PROGRESS_KEY = 'ARGIA_PROGRESS';
 
+// When a wrapper flow (e.g. runCulliganE2E) drives a multi-stage run, the inner
+// engine still emits granular progress, but its terminal step must NOT close
+// the popup -- the wrapper owns the final 'done'. Set true around the inner
+// call, then clear it and emit the real 'done' when the whole flow finishes.
+var _ARGIA_PROGRESS_EXTERNAL = false;
+
 /** Called by the HTML dialog every 600 ms — must be a top-level function. */
 function getArgiaProgress() {
   var raw = PropertiesService.getScriptProperties().getProperty(ARGIA_PROGRESS_KEY);
@@ -555,7 +561,7 @@ function _setArgiaProgress(step, total, label) {
       total : total,
       pct   : Math.round(step / total * 100),
       label : label,
-      done  : step >= total
+      done  : (step >= total) && !_ARGIA_PROGRESS_EXTERNAL
     })
   );
 }
@@ -1372,15 +1378,25 @@ function runCulliganE2E() {
   var snap = null, phase = 'start', engineResult = null, skipped = null;
   var testSummary = '(baseline not reached)';
 
+  // Progress popup: reuse the engine's modeless dialog. The silent engine still
+  // emits granular _setArgiaProgress during generate, so the bar moves through
+  // real steps (DC calc, Writing MDC_v2, ...). The flag makes the engine's
+  // terminal step NOT close the popup -- the E2E owns the final close below.
+  _ARGIA_PROGRESS_EXTERNAL = true;
+  _setArgiaProgress(0, 14, 'E2E: respaldando tus inputs\u2026');
+  _showArgiaProgress('ARGIA \u2014 CULLIGAN E2E');
+
   try {
     phase = 'snapshot inputs';
     snap = snapshotInputSheets(ss);
 
     phase = 'load CULLIGAN fixture';
+    _setArgiaProgress(1, 14, 'E2E: cargando datos CULLIGAN\u2026');
     skipped = writeCulliganInputs(ss);
     SpreadsheetApp.flush();
 
     phase = 'engine (silent generate)';
+    _setArgiaProgress(2, 14, 'E2E: generando MDC y BOM\u2026 (~1\u20132 min)');
     engineResult = runArgiaEngine({ silent: true, assumeYes: true });
     SpreadsheetApp.flush();
     if (!engineResult || engineResult.ok !== true) {
@@ -1402,6 +1418,7 @@ function runCulliganE2E() {
     });
 
     phase = 'baseline assertions';
+    _setArgiaProgress(13, 14, 'E2E: corriendo regresi\u00f3n CULLIGAN\u2026');
     // Runs ONLY REG_CULLIGAN_BASELINE_V2 (module regression/v2/culligan) and
     // (re)writes _TEST_RESULTS_V2 with just that test's block-by-block result.
     testSummary = runTestsByModule('regression/v2/culligan');
@@ -1414,6 +1431,7 @@ function runCulliganE2E() {
   } finally {
     if (snap) {
       try {
+        _setArgiaProgress(13, 14, 'E2E: restaurando tus inputs\u2026');
         var rep = restoreInputSheets(ss, snap);   // A1: resilient, never throws
         if (rep && rep.fallback.length && typeof engineLog === 'function') {
           try { engineLog(ss, 'E2E', 'INFO',
@@ -1426,6 +1444,11 @@ function runCulliganE2E() {
       }
     }
   }
+
+  // E2E flow finished (success or handled error): release external ownership and
+  // emit the real 'done' so the progress popup auto-closes.
+  _ARGIA_PROGRESS_EXTERNAL = false;
+  _setArgiaProgress(14, 14, '\u2705 CULLIGAN E2E \u2014 listo');
 
   var skipMsg = (skipped && skipped.length)
     ? '\n\nFixture load skipped ' + skipped.length + ' field(s) (see LOGS).'
