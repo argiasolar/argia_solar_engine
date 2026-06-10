@@ -259,6 +259,53 @@ function _renderInputRow(sh, mapEntry) {
   // they MUST NOT overwrite label/unit/divider written by the primary, and
   // the unit is suppressed entirely since col 5 is now occupied by the max
   // value.
+  // ── Col-C primary entry (BESS / single-value col-C tabs) ─────────────────
+  // [A2c] BESS and other col-3 tabs put the editable value in C, so the label
+  // sits in B alone (no B:C merge -- C is occupied) and the unit shifts left
+  // to D. Styling mirrors the col-4 primary path below. Dormant until a col-3
+  // tab is rendered via _setupOneTab (no col-3 PRIMARY entry is rendered by
+  // the existing Project/Install flows, which are col-4).
+  if (c === 3) {
+    sh.getRange(r, 2)
+      .setValue(mapEntry.label + (mapEntry.required ? ' *' : ''))
+      .setFontFamily(token('FONT_FAMILY'))
+      .setFontSize(tokenNum('FONT_SIZE_BODY'))
+      .setFontColor(token('TEXT_PRIMARY'))
+      .setVerticalAlignment('middle');
+
+    var colCCell = sh.getRange(r, 3);
+    var _colCSeed = _seedValueFor(mapEntry);
+    if (_colCSeed !== '') colCCell.setValue(_colCSeed);
+    colCCell
+      .setFontFamily(token('FONT_FAMILY'))
+      .setFontSize(tokenNum('FONT_SIZE_BODY'))
+      .setFontColor(token('TEXT_PRIMARY'))
+      .setBackground(token('BG_INPUT_CELL'))
+      .setHorizontalAlignment('right')
+      .setVerticalAlignment('middle');
+    _applyTypeValidation(colCCell, mapEntry);
+
+    var colCHint = mapEntry.unit || _formatHintFor(mapEntry);
+    if (colCHint) {
+      sh.getRange(r, 4)
+        .setValue(colCHint)
+        .setFontFamily(token('FONT_FAMILY'))
+        .setFontSize(tokenNum('FONT_SIZE_SMALL'))
+        .setFontColor(token('TEXT_SECONDARY'))
+        .setFontStyle(mapEntry.unit ? 'normal' : 'italic')
+        .setHorizontalAlignment('left')
+        .setVerticalAlignment('middle');
+    }
+
+    // Row-level divider beneath the whole row (B:G), matching col-4 rows.
+    sh.getRange(r, 2, 1, 6).setBorder(
+      null, null, true, null, null, null,
+      token('DIVIDER_LINE'), SpreadsheetApp.BorderStyle.SOLID
+    );
+    sh.setRowHeight(r, tokenNum('ROW_H_BODY'));
+    return;
+  }
+
   if (c !== 4) {
     var secondaryCell = sh.getRange(r, c);
     var _secSeed = _seedValueFor(mapEntry);
