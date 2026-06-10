@@ -383,24 +383,32 @@ function deriveBessTariffRatesFromInputCfe(ss) {
 // Returns { puntaMxnPerKwh, intermediaMxnPerKwh, baseMxnPerKwh, provenance,
 //           monthsRead }. Falls back to 0 for any rate with insufficient data.
 function deriveFullTariffRatesFromInputCfe(ss) {
-  var sh = ss.getSheetByName('INPUT_CFE');
-  if (!sh) {
+  ss = ss || SpreadsheetApp.getActive();
+  if (!ss.getSheetByName('INPUT_CFE')) {
     return { puntaMxnPerKwh: 0, intermediaMxnPerKwh: 0, baseMxnPerKwh: 0,
              provenance: 'NO_INPUT_CFE_SHEET', monthsRead: 0 };
   }
-  // r10 = kWh base, r11 = kWh intermedia, r12 = kWh punta
-  // r25 = Energía B, r26 = Energía I, r27 = Energía P  (MXN amounts)
-  var firstMonthCol = 3, lastMonthCol = 14;  // C..N
+  // [A2b] monthly rows via INPUT_MAP range reads:
+  //   cfeKwhBase C10, cfeKwhIntermedia C11, cfeKwhPunta C12,
+  //   cfeEnergiaBMxn C25, cfeEnergiaIMxn C26, cfeEnergiaPMxn C27 (all C..N).
+  //   [0][i] for i=0..11 reproduces the old c=3..14 loop; coercion, the
+  //   base+punta month filter, and months<6 threshold are unchanged.
+  var rKwhB = readInput(ss, 'cfeKwhBase')[0];
+  var rKwhI = readInput(ss, 'cfeKwhIntermedia')[0];
+  var rKwhP = readInput(ss, 'cfeKwhPunta')[0];
+  var rMxnB = readInput(ss, 'cfeEnergiaBMxn')[0];
+  var rMxnI = readInput(ss, 'cfeEnergiaIMxn')[0];
+  var rMxnP = readInput(ss, 'cfeEnergiaPMxn')[0];
   var sumKwhP = 0, sumKwhI = 0, sumKwhB = 0;
   var sumMxnP = 0, sumMxnI = 0, sumMxnB = 0;
   var months = 0;
-  for (var c = firstMonthCol; c <= lastMonthCol; c++) {
-    var kwhB = Number(sh.getRange(10, c).getValue()) || 0;
-    var kwhI = Number(sh.getRange(11, c).getValue()) || 0;
-    var kwhP = Number(sh.getRange(12, c).getValue()) || 0;
-    var mxnB = Number(sh.getRange(25, c).getValue()) || 0;
-    var mxnI = Number(sh.getRange(26, c).getValue()) || 0;
-    var mxnP = Number(sh.getRange(27, c).getValue()) || 0;
+  for (var i = 0; i < 12; i++) {
+    var kwhB = Number(rKwhB[i]) || 0;
+    var kwhI = Number(rKwhI[i]) || 0;
+    var kwhP = Number(rKwhP[i]) || 0;
+    var mxnB = Number(rMxnB[i]) || 0;
+    var mxnI = Number(rMxnI[i]) || 0;
+    var mxnP = Number(rMxnP[i]) || 0;
     // Require at least the base+punta pair to count this month
     if (kwhP > 0 && kwhB > 0 && mxnP > 0 && mxnB > 0) {
       sumKwhP += kwhP; sumKwhI += kwhI; sumKwhB += kwhB;
@@ -522,30 +530,39 @@ function buildBessLoadProfileFromInputCfe(ss) {
 // On any missing data, the corresponding array entry is 0. The simulator
 // handles 0-entries gracefully (no consumption that month -> no cost).
 function buildFullBillFromInputCfe(ss) {
-  var sh = ss.getSheetByName('INPUT_CFE');
-  if (!sh) return {
+  ss = ss || SpreadsheetApp.getActive();
+  // [A2b] header scalars (cfeTariff C4 / cfeRegion C5, type text default '')
+  // and 6 monthly rows via INPUT_MAP range reads. Sheet guarded first.
+  // text reads + String(...||'').trim().toUpperCase() reproduce the old header
+  // coercion; the per-cell Number(...)||0 over i=0..11 reproduces the old loop.
+  if (!ss.getSheetByName('INPUT_CFE')) return {
     tariff: '', region: '', monthlyBill: null, provenance: 'NO_INPUT_CFE_SHEET'
   };
   // Header
-  var tariff = String(sh.getRange(4, 3).getValue() || '').trim().toUpperCase();
-  var region = String(sh.getRange(5, 3).getValue() || '').trim().toUpperCase();
+  var tariff = String(readInput(ss, 'cfeTariff') || '').trim().toUpperCase();
+  var region = String(readInput(ss, 'cfeRegion') || '').trim().toUpperCase();
   // Bill rows (1-indexed in CFE sheet, 0-indexed in our arrays):
   // r10 = kWh base, r11 = kWh intermedia, r12 = kWh punta
   // r13 = kW base, r14 = kW intermedia, r15 = kW punta
-  var firstCol = 3, lastCol = 14;  // C..N = Jan..Dec
+  var rKwhBase  = readInput(ss, 'cfeKwhBase')[0];
+  var rKwhInter = readInput(ss, 'cfeKwhIntermedia')[0];
+  var rKwhPunta = readInput(ss, 'cfeKwhPunta')[0];
+  var rKwBase   = readInput(ss, 'cfeKwBase')[0];
+  var rKwInter  = readInput(ss, 'cfeKwIntermedia')[0];
+  var rKwPunta  = readInput(ss, 'cfeKwPunta')[0];
   var kwhBase = [], kwhInter = [], kwhPunta = [];
   var kwBase = [], kwInter = [], kwPunta = [];
-  for (var c = firstCol; c <= lastCol; c++) {
-    kwhBase.push(Number(sh.getRange(10, c).getValue()) || 0);
-    kwhInter.push(Number(sh.getRange(11, c).getValue()) || 0);
-    kwhPunta.push(Number(sh.getRange(12, c).getValue()) || 0);
-    kwBase.push(Number(sh.getRange(13, c).getValue()) || 0);
-    kwInter.push(Number(sh.getRange(14, c).getValue()) || 0);
-    kwPunta.push(Number(sh.getRange(15, c).getValue()) || 0);
+  for (var i = 0; i < 12; i++) {
+    kwhBase.push(Number(rKwhBase[i])  || 0);
+    kwhInter.push(Number(rKwhInter[i]) || 0);
+    kwhPunta.push(Number(rKwhPunta[i]) || 0);
+    kwBase.push(Number(rKwBase[i])   || 0);
+    kwInter.push(Number(rKwInter[i])  || 0);
+    kwPunta.push(Number(rKwPunta[i])  || 0);
   }
   // Check if we have enough data to be useful
   var totalKwh = 0;
-  for (var i = 0; i < 12; i++) totalKwh += kwhBase[i] + kwhInter[i] + kwhPunta[i];
+  for (var j = 0; j < 12; j++) totalKwh += kwhBase[j] + kwhInter[j] + kwhPunta[j];
   var provenance = (totalKwh > 0) ? 'INPUT_CFE' : 'EMPTY';
   return {
     tariff: tariff,
