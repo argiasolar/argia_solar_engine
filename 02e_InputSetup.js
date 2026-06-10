@@ -2191,94 +2191,54 @@ function setupInputBessInstallRows() {
            + 'Any value entered here is ignored by the engine.');
   sh.setRowHeight(43, ROW_H_BODY);
 
-  // ---- Row 44: DC bus voltage -------------------------------------------
-  sh.getRange(44, 2).setValue('Voltaje bus DC:');
-  if (sh.getRange(44, 3).getValue() === '') sh.getRange(44, 3).setValue(800);
-  styleLabel(44);
-  styleValue(44, { numberFormat: '#,##0' });
-  styleUnit(44, 'V');
+  // ---- Rows 44-53: map-driven (A2c) --------------------------------------
+  // Labels, seeds, units, dropdown lists and helpText all come from
+  // _MAP_BESS_S6 via INPUT_MAP -- single source of truth. Before this
+  // refactor every string here was a hand-maintained copy of the map (and
+  // they had already drifted: the hardcoded C44 seed was the stray 800
+  // placeholder behind the voltage-drift bug, and the cable-path seed
+  // disagreed with the map's value-audited seed).
+  //
+  // Write semantics preserved exactly: seed only fires when the cell is
+  // EMPTY (non-destructive overlay -- user values are never overwritten),
+  // numbers format '#,##0' (MXN gets '"$"#,##0'), dropdowns strict
+  // (setAllowInvalid(false)), unit hints in col E.
+  var S6_KEYS = [
+    'bessDcBusV', 'bessAcV', 'bessDcRunM', 'bessAcRunM', 'bessCablePath',
+    'bessS6BatteriesPerContainer', 'bessLocation', 'bessGroundingSystem',
+    'bessGecRunM', 'bessCommissioningMxn'
+  ];
+  S6_KEYS.forEach(function (key) {
+    var m = INPUT_MAP[key];
+    if (!m) throw new Error('setupInputBessInstallRows: INPUT_MAP missing "' + key + '"');
+    var r = m.row;
 
-  // ---- Row 45: AC voltage ----------------------------------------------
-  sh.getRange(45, 2).setValue('Voltaje AC sistema:');
-  if (sh.getRange(45, 3).getValue() === '') sh.getRange(45, 3).setValue(480);
-  styleLabel(45);
-  styleValue(45, { numberFormat: '#,##0' });
-  styleUnit(45, 'V');
+    // Label (col B) -- map label + ':' suffix, matching the tab's visual style
+    sh.getRange(r, 2).setValue(m.label + ':');
 
-  // ---- Row 46: DC run length -------------------------------------------
-  sh.getRange(46, 2).setValue('Distancia batería ↔ tablero:');
-  if (sh.getRange(46, 3).getValue() === '') sh.getRange(46, 3).setValue(25);
-  styleLabel(46);
-  styleValue(46, { numberFormat: '#,##0' });
-  styleUnit(46, 'm');
+    // Dropdown validation from the map list (strict, with map helpText)
+    if (m.type === 'dropdown' && m.dropdown) {
+      var ruleB = SpreadsheetApp.newDataValidation()
+        .requireValueInList(m.dropdown, true)
+        .setAllowInvalid(false);
+      if (m.helpText && ruleB.setHelpText) ruleB = ruleB.setHelpText(m.helpText);
+      sh.getRange(r, 3).setDataValidation(ruleB.build());
+    }
 
-  // ---- Row 47: AC run length -------------------------------------------
-  sh.getRange(47, 2).setValue('Distancia tablero ↔ interconexión CFE:');
-  if (sh.getRange(47, 3).getValue() === '') sh.getRange(47, 3).setValue(50);
-  styleLabel(47);
-  styleValue(47, { numberFormat: '#,##0' });
-  styleUnit(47, 'm');
+    // Seed only when empty (never clobber a user value)
+    var seed = _seedValueFor(m);
+    if (seed !== '' && sh.getRange(r, 3).getValue() === '') {
+      sh.getRange(r, 3).setValue(seed);
+    }
 
-  // ---- Row 48: cable path (dropdown) -----------------------------------
-  sh.getRange(48, 2).setValue('Trayectoria del cable:');
-  var pathRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['INTEMPERIE', 'CONDUIT_ENTERRADO', 'BANDEJA_INTERIOR'], true)
-    .setAllowInvalid(false)
-    .setHelpText('INTEMPERIE = exterior con PVC/RGS; CONDUIT_ENTERRADO = PVC sched 80 enterrado; BANDEJA_INTERIOR = cable tray interior.')
-    .build();
-  sh.getRange(48, 3).setDataValidation(pathRule);
-  if (sh.getRange(48, 3).getValue() === '') {
-    sh.getRange(48, 3).setValue('INTEMPERIE');
-  }
-  styleLabel(48);
-  styleValue(48, {});
-
-  // ---- Row 49: batteries per container ---------------------------------
-  sh.getRange(49, 2).setValue('Baterías por contenedor:');
-  if (sh.getRange(49, 3).getValue() === '') sh.getRange(49, 3).setValue(1);
-  styleLabel(49);
-  styleValue(49, { numberFormat: '#,##0' });
-
-  // ---- Row 50: location (dropdown) -------------------------------------
-  sh.getRange(50, 2).setValue('Ubicación física:');
-  var locRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['EXTERIOR', 'INTERIOR_TECHADO', 'SALA_ELECTRICA'], true)
-    .setAllowInvalid(false)
-    .build();
-  sh.getRange(50, 3).setDataValidation(locRule);
-  if (sh.getRange(50, 3).getValue() === '') {
-    sh.getRange(50, 3).setValue('EXTERIOR');
-  }
-  styleLabel(50);
-  styleValue(50, {});
-
-  // ---- Row 51: grounding system (dropdown) -----------------------------
-  sh.getRange(51, 2).setValue('Sistema de tierra:');
-  var grdRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['UFER', 'VARILLA', 'RED_EXISTENTE'], true)
-    .setAllowInvalid(false)
-    .setHelpText('UFER = electrodo en concreto; VARILLA = barra cobre; RED_EXISTENTE = malla del sitio.')
-    .build();
-  sh.getRange(51, 3).setDataValidation(grdRule);
-  if (sh.getRange(51, 3).getValue() === '') {
-    sh.getRange(51, 3).setValue('VARILLA');
-  }
-  styleLabel(51);
-  styleValue(51, {});
-
-  // ---- Row 52: GEC run length ------------------------------------------
-  sh.getRange(52, 2).setValue('Distancia a electrodo de tierra:');
-  if (sh.getRange(52, 3).getValue() === '') sh.getRange(52, 3).setValue(15);
-  styleLabel(52);
-  styleValue(52, { numberFormat: '#,##0' });
-  styleUnit(52, 'm');
-
-  // ---- Row 53: commissioning MXN ---------------------------------------
-  sh.getRange(53, 2).setValue('Comisionamiento:');
-  if (sh.getRange(53, 3).getValue() === '') sh.getRange(53, 3).setValue(250000);
-  styleLabel(53);
-  styleValue(53, { numberFormat: '"$"#,##0' });
-  styleUnit(53, 'MXN');
+    styleLabel(r);
+    if (m.type === 'dropdown') {
+      styleValue(r, {});
+    } else {
+      styleValue(r, { numberFormat: (m.unit === 'MXN') ? '"$"#,##0' : '#,##0' });
+    }
+    styleUnit(r, m.unit || '');
+  });
 
   // ---- Notes row 55 -----------------------------------------------------
   // Italic muted helper text spanning C-G. Sized larger to fit wrap.
