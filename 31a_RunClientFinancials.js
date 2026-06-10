@@ -44,7 +44,12 @@ var CLIENT_FIN_CELLS = {
 };
 
 var CLIENT_FIN_DEFAULTS = {
-  co2FactorTonPerMwh: 0.435,   // PLACEHOLDER -- verify official CRE factor
+  // Factor de Emisión del Sistema Eléctrico Nacional 2024 = 0.444 tCO2e/MWh
+  // (CRE/SEMARNAT aviso oficial, gob.mx "aviso_fesen_2024.pdf"; prior years:
+  // 2023 = 0.438, 2022 = 0.435). The aviso for 2025 publishes ~Feb 2026 --
+  // update this constant (and the REG_CLIENT_FINANCIALS_CULLIGAN_V2 CO2
+  // assertion) when it lands. Longer-term home: a MASTER_DB row.
+  co2FactorTonPerMwh: 0.444,
   panelDegradationPct: 0.005
 };
 

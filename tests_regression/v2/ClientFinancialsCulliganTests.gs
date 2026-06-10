@@ -16,7 +16,7 @@
 //   capex total   37,051,893.49     demand slice     502,793.88
 //   payback       11.0617 yr        discounted     never in 15y
 //   ROI 47.43%    NPV -14,170,417.83    IRR 4.792%
-//   LCOE 4.2202   CO2 Yr-1 574.79 t
+//   LCOE 4.2202   CO2 Yr-1 586.69 t (factor 0.444, FE-SEN 2024)
 //   scenarios y15: do-nothing 322,625,619.54 / cash +17,575,438.22
 //
 // DETERMINISM: the financial frame comes from INPUT_BAAS, which is the
@@ -82,7 +82,7 @@ registerTest({
     t.assertNear('NPV',                -14170417.83, c.npvMxn, 5);
     t.assertNear('IRR',                 0.04792,    c.irr, 0.0005);
     t.assertNear('LCOE MXN/kWh',        4.2202,     ret.fin.lcoe.mxnPerKwh, 0.005);
-    t.assertNear('CO2 Yr-1 tonnes',     574.79,     ret.fin.co2.year1Tons, 0.05);
+    t.assertNear('CO2 Yr-1 tonnes (FE-SEN 2024 = 0.444)', 586.69, ret.fin.co2.year1Tons, 0.05);
 
     // -- Scenario locks (y15) ----------------------------------------------------
     var s15 = ret.fin.scenarios[14];
