@@ -663,6 +663,7 @@ function onOpen() {
     .addItem('Generate Project Card',     'runWriteProjectCardV2')
     .addItem('Generate RFQs',             'runWriteAllRfqsV2')
     .addItem('Generate BaaS Projection',  'runBaasProjectionMenu')
+    .addItem('Generate Client Financials', 'runClientFinancialsMenu')
     .addSeparator()
     .addItem('Update Input Audit',        'auditInputs')
     .addSubMenu(ui.createMenu('Exports')
@@ -1825,5 +1826,54 @@ function runBaasProjectionMenu() {
     ui.alert('BaaS Projection', msg, ui.ButtonSet.OK);
   } catch (e) {
     ui.alert('BaaS Projection Error', e.message + '\n\n' + (e.stack || ''), ui.ButtonSet.OK);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// runClientFinancialsMenu() -- Track B P0 menu handler. Standalone (Option A,
+// same as the BaaS projection): renders CLIENT_FINANCIALS_v2 from the engine
+// outputs (BOM_v2, INSTALLATION_v2, CFE_OUTPUT_v2). Touches nothing in the
+// engine pipeline. For the 3-way comparison it first regenerates the BaaS
+// projection (fail-soft: a BaaS failure just drops the lease scenario).
+// ---------------------------------------------------------------------------
+function runClientFinancialsMenu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  try {
+    // 3-way input: regenerate the BaaS projection so the lease scenario uses
+    // the same fresh engine outputs. Fail-soft -- a BaaS problem must not
+    // block the cash analysis.
+    var baasNet = null;
+    try {
+      var baasRet = runBaasProjection(ss);
+      if (baasRet && baasRet.ok && baasRet.result && baasRet.result.projection) {
+        baasNet = baasRet.result.projection.map(function (r) { return r.ahorroNeto; });
+      }
+    } catch (baasErr) { /* lease scenario omitted; note rendered on the sheet */ }
+
+    var ret = runClientFinancials(ss, { baasNetSavingsByYear: baasNet });
+
+    var c = ret.fin.cash, h = ret.fin.headline;
+    var msg = 'CLIENT_FINANCIALS_v2 generated.\n\n'
+      + 'CAPEX total (BOM + instalacion): $' + _baasFmt(ret.capex.totalMxn) + ' MXN\n'
+      + 'Ahorro Ano 1: $' + _baasFmt(h.year1SavingsMxn)
+      + ' (' + _baasPct(h.savingsPctOfBill) + ' del recibo)\n'
+      + 'Recuperacion simple: ' + (c.simplePaybackYears != null
+          ? c.simplePaybackYears.toFixed(1) + ' anos' : 'no en el plazo') + '\n'
+      + 'TIR: ' + (c.irr != null ? _baasPct(c.irr) : 'n/d')
+      + '  ·  VPN: $' + _baasFmt(c.npvMxn) + '\n'
+      + 'Escenario BaaS en comparacion: ' + (baasNet ? 'SI' : 'NO');
+
+    if (ret.warnings && ret.warnings.length) {
+      msg += '\n\nAvisos:\n- ' + ret.warnings.join('\n- ');
+    }
+    if (!ret.ok) {
+      msg += '\n\n\u26A0 Datos incompletos: ejecute primero "Generate MDC and BOM", '
+           + '"Generate Installation" y el CFE Output para poblar las fuentes.';
+    }
+    ui.alert('Client Financials', msg, ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('Client Financials Error', e.message + '\n\n' + (e.stack || ''), ui.ButtonSet.OK);
   }
 }
