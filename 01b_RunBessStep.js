@@ -100,7 +100,7 @@ function runBessStep(ss) {
 
   if (bess.capexMxn <= 0) {
     warnings.push('Battery CAPEX is 0 — financial outputs will be incomplete '
-      + 'until INPUT_BESS C20 is set.');
+      + 'until INPUT_BESS C22 (CAPEX MXN) is set.');
   }
 
   // -- Battery circuit sizing (Increment 4b-2) -----------------------------

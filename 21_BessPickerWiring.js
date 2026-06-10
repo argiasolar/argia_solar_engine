@@ -4,7 +4,7 @@
 //
 // PURPOSE
 //   When the designer changes the Battery_ID picker (INPUT_BESS!C6), the
-//   technical-spec cells (C10..C14, C20) auto-populate. The picker handles
+//   technical-spec cells (C10..C14, C22) auto-populate. The picker handles
 //   THREE source types:
 //     1. CATALOG product (e.g. "BYD_2MWH"). Specs come from 16M_PRODUCTS_BESS.
 //     2. STACKED recommendation (e.g. "2 × BYD_2MWH (4000 kWh, 2000 kW)").
@@ -236,7 +236,7 @@ function readRecommendationsForPicker(ss) {
 // ===========================================================================
 // applyBessPickerForCell -- write spec cells based on C6 selection
 // ===========================================================================
-// Side-effecting: writes to INPUT_BESS!C10..C14, C20. Also writes the hidden
+// Side-effecting: writes to INPUT_BESS!C10..C14, C22. Also writes the hidden
 // marker block (cols Q..V, rows 10..20) so override-detection conditional
 // formatting can light up cells that diverge from the auto value.
 //
@@ -256,6 +256,7 @@ function applyBessPickerForCell(ss, c6Value) {
   if (!sh) {
     return { source: 'NO_INPUT_BESS', found: false, cellsWritten: [] };
   }
+  _migrateLegacyCapexC20(sh);
   var catalog = (typeof getAllBatteryProducts === 'function')
                  ? getAllBatteryProducts(ss)
                  : [];
@@ -271,14 +272,17 @@ function applyBessPickerForCell(ss, c6Value) {
   }
 
   // Write spec cells with literal values from the picked selection.
-  // Cells: C10 capacity, C11 power, C12 minSoc, C13 maxSoc, C14 rte, C20 capex.
+  // Cells: C10 capacity, C11 power, C12 minSoc, C13 maxSoc, C14 rte,
+  // C22 capex (the INPUT_MAP bessCapexMxn cell -- the engine reader; the old
+  // C20 target was a legacy row the reader never consumed, see
+  // _migrateLegacyCapexC20).
   var writes = [
     { row: 10, val: picked.capacityKwh,  numFmt: '#,##0" kWh"' },
     { row: 11, val: picked.powerKw,      numFmt: '#,##0" kW"' },
     { row: 12, val: picked.minSocPct,    numFmt: '0.00%' },
     { row: 13, val: picked.maxSocPct,    numFmt: '0.00%' },
     { row: 14, val: picked.rtePct,       numFmt: '0.00%' },
-    { row: 20, val: picked.capexMxn,     numFmt: '"$"#,##0' },
+    { row: 22, val: picked.capexMxn,     numFmt: '"$"#,##0' },
   ];
   var cellsWritten = [];
   for (var w = 0; w < writes.length; w++) {
@@ -300,13 +304,40 @@ function applyBessPickerForCell(ss, c6Value) {
 // Clear hidden marker block (cols Q rows 10..20) so override-indicator
 // formatting goes inactive on CUSTOM_MANUAL.
 function _clearBessPickerMarkers(sh) {
-  for (var r = 10; r <= 20; r++) {
+  // Rows 10-20 cover the legacy marker block; 22 is the capex marker's home
+  // since the C20 -> C22 unification.
+  for (var r = 10; r <= 22; r++) {
     sh.getRange(r, 17).clearContent();
   }
   // Clear the provenance indicator too
   sh.getRange(6, 4).clearContent().clearFormat();
   sh.getRange(6, 4).setValue('(manual)')
     .setFontStyle('italic').setFontColor('#666666').setFontSize(9);
+}
+
+
+// ---------------------------------------------------------------------------
+// _migrateLegacyCapexC20(sh)   [A2c capex unification, 2026-06-10]
+// ---------------------------------------------------------------------------
+// Older sheets carry the battery CAPEX at C20 (the original picker target),
+// but the engine reader has always consumed the INPUT_MAP cell bessCapexMxn
+// at C22 -- so on the CUSTOM_MANUAL path a C20-only sheet silently read 0.
+// (On the catalog path the in-memory picked.capexMxn masked the split.)
+//
+// One-time, idempotent migration: when C20 holds a positive number and C22 is
+// empty/0, move the value into C22 (with the capex format) and clear the
+// legacy C20 cell + its col-Q marker. Runs at the top of every picker apply,
+// so existing sheets self-heal on the next battery selection or refresh.
+// ---------------------------------------------------------------------------
+function _migrateLegacyCapexC20(sh) {
+  var legacy = Number(sh.getRange(20, 3).getValue());
+  if (!(legacy > 0)) return false;
+  var current = Number(sh.getRange(22, 3).getValue());
+  if (current > 0) return false;   // C22 already authoritative; leave C20 to the designer
+  sh.getRange(22, 3).setValue(legacy).setNumberFormat('"$"#,##0');
+  sh.getRange(20, 3).clearContent();
+  sh.getRange(20, 17).clearContent();   // stale col-Q marker
+  return true;
 }
 
 

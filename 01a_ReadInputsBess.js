@@ -99,7 +99,7 @@ function readInputBess(ss) {
   // catalog Battery_ID) doesn't break downstream DB lookups.
   //
   // For CUSTOM_MANUAL or unknown labels, picked.found === false and we fall
-  // back to the formula-cell values in C10..C14, C20 (the legacy contract).
+  // back to the formula-cell values in C10..C14, C22 (bessCapexMxn).
   var c6Value = String(readInput(ss, 'bessBatteryId') || 'CUSTOM_MANUAL');
   var catalog = (typeof getAllBatteryProducts === 'function')
                 ? getAllBatteryProducts(ss) : [];

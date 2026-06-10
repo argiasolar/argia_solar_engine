@@ -208,7 +208,11 @@ var CULLIGAN_BASELINE = {
       bessAcV: 480,
 
       // section 6+ -- direct cell writes (see writeCulliganInputs for handling)
-      _cell_C20: 28800000,  // legacy CAPEX cell at C20 (manual carry-forward)
+      // NOTE (2026-06-10 capex unification): the old `_cell_C20: 28800000`
+      // legacy CAPEX write was removed. Nothing ever read C20 -- the engine
+      // reader is the INPUT_MAP cell bessCapexMxn (C22, written above as 0,
+      // matching the pre-unification live state), and the catalog picker path
+      // supplies capex in-memory. See _migrateLegacyCapexC20 in 21.
       _cell_C46: 25,
       _cell_C47: 50,
       _cell_C48: 'INTEMPERIE',
