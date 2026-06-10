@@ -91,52 +91,15 @@ function runHourlySimulation(ss) {
   } else if (rateTable.provenance === 'INCOMPLETE') {
     tariffRatesByMonth = rateTable.months;  // use what we have
   }
-  // Demanda Facturable per month (INPUT_CFE row 19), FP (row 20),
-  // 2% Baja Tension toggle (row 7)
-  var inputCfe = ss.getSheetByName('INPUT_CFE');
-  var demandaFacturableKw = null;
-  var fpByMonth = null;
-  var bajaTensionToggle = false;
-  // BDF-11: kWMaxAñoMovil per month, computed with Option B + safety net:
-  //   global_rolling_max = MAX( MAX(rows 13-15 across all 12 months),
-  //                             MAX(row 16 across all 12 months) )
-  // Then assigned as a constant to every month (CFE's rolling 12-month window
-  // is global, not per-month). Option B (rows 13-15) reflects ALL demand
-  // readings; safety net uses row 16 to catch partial-year-data scenarios.
-  // Empty cells skipped; if NO data available, returns null and the engine
-  // falls back to legacy (no BESS Capacidad effect, pre-BDF-11 behavior).
-  var kWMaxAnoMovilKw = null;
-  if (inputCfe) {
-    demandaFacturableKw = [];
-    fpByMonth = [];
-    for (var c = 3; c <= 14; c++) {
-      demandaFacturableKw.push(Number(inputCfe.getRange(19, c).getValue()) || 0);
-      fpByMonth.push(Number(inputCfe.getRange(20, c).getValue()) || 1.0);
-    }
-    bajaTensionToggle = String(inputCfe.getRange(7, 3).getValue() || '')
-                          .trim().toUpperCase() === 'YES';
-
-    // BDF-11: compute Option B (max of rows 13-15)
-    var optionBMax = 0;
-    for (var rB = 13; rB <= 15; rB++) {
-      for (var cB = 3; cB <= 14; cB++) {
-        var vB = Number(inputCfe.getRange(rB, cB).getValue()) || 0;
-        if (vB > optionBMax) optionBMax = vB;
-      }
-    }
-    // BDF-11: compute safety net (max of row 16)
-    var safetyMax = 0;
-    for (var cS = 3; cS <= 14; cS++) {
-      var vS = Number(inputCfe.getRange(16, cS).getValue()) || 0;
-      if (vS > safetyMax) safetyMax = vS;
-    }
-    // BDF-11: take the larger of the two — defends against incomplete row 13-15
-    // data when row 16 was filled from bills.
-    var globalRollingMax = Math.max(optionBMax, safetyMax);
-    if (globalRollingMax > 0) {
-      kWMaxAnoMovilKw = new Array(12).fill(globalRollingMax);
-    }
-  }
+  // [A2b] CFE monthly context (demanda facturable row 19, FP row 20, 2% baja-
+  // tensión toggle row 7, BDF-11 kWMaxAñoMovil rolling max from rows 13-16)
+  // extracted to _readCfeMonthlyContextForHourlySim, a readInput/INPUT_MAP-based
+  // helper so it is unit-testable. Same four outputs as the old inline block.
+  var _cfeCtx = _readCfeMonthlyContextForHourlySim(ss);
+  var demandaFacturableKw = _cfeCtx.demandaFacturableKw;
+  var fpByMonth           = _cfeCtx.fpByMonth;
+  var bajaTensionToggle   = _cfeCtx.bajaTensionToggle;
+  var kWMaxAnoMovilKw     = _cfeCtx.kWMaxAnoMovilKw;
 
   // -- Run the simulator (proposed design: with PV + battery as configured)
   var proposedResult = calcHourlySimulation({
@@ -288,6 +251,60 @@ function _hourlyBlocked(reason) {
 
 // Read battery spec from INPUT_BESS. Returns null if the project doesn't
 // have a battery configured. Uses the cells already mapped in 02c_InputMap.
+// [A2b] CFE monthly context for the hourly sim, extracted from runHourlySimulation
+// so it can be unit-tested. Reads via readInput/INPUT_MAP. Returns the same four
+// values the old inline INPUT_CFE block produced, with identical empty-cell
+// coercion (Number||0 ; FP Number||1.0) and the BDF-11 rolling-max logic
+// (global max of kW rows 13-15 and row 16; null when no data). Defaults
+// (nulls / false) when INPUT_CFE is absent.
+function _readCfeMonthlyContextForHourlySim(ss) {
+  ss = ss || SpreadsheetApp.getActive();
+  var out = {
+    demandaFacturableKw: null,
+    fpByMonth: null,
+    bajaTensionToggle: false,
+    kWMaxAnoMovilKw: null
+  };
+  if (!ss.getSheetByName('INPUT_CFE')) return out;
+  var rDemanda = readInput(ss, 'cfeDemandaFacturable')[0];  // C19:N19
+  var rFp      = readInput(ss, 'cfeFpPct')[0];               // C20:N20
+  var rKwBase  = readInput(ss, 'cfeKwBase')[0];              // C13:N13
+  var rKwInter = readInput(ss, 'cfeKwIntermedia')[0];        // C14:N14
+  var rKwPunta = readInput(ss, 'cfeKwPunta')[0];             // C15:N15
+  var rKwMax   = readInput(ss, 'cfeKwMaxAnoMovil')[0];       // C16:N16
+  out.demandaFacturableKw = [];
+  out.fpByMonth = [];
+  for (var i = 0; i < 12; i++) {
+    out.demandaFacturableKw.push(Number(rDemanda[i]) || 0);
+    out.fpByMonth.push(Number(rFp[i]) || 1.0);
+  }
+  // Toggle compares against 'YES' as before (pre-existing; the dropdown is
+  // SI/NO). cfeBajaTension2pct default 'NO' preserves the empty-cell result
+  // ('NO' !== 'YES' -> false), matching the old empty-string behavior.
+  out.bajaTensionToggle = String(readInput(ss, 'cfeBajaTension2pct') || '')
+                            .trim().toUpperCase() === 'YES';
+  // BDF-11: Option B = max of kW rows 13-15 across all months
+  var optionBMax = 0;
+  var kwRows = [rKwBase, rKwInter, rKwPunta];
+  for (var rB = 0; rB < kwRows.length; rB++) {
+    for (var cB = 0; cB < 12; cB++) {
+      var vB = Number(kwRows[rB][cB]) || 0;
+      if (vB > optionBMax) optionBMax = vB;
+    }
+  }
+  // BDF-11: safety net = max of row 16
+  var safetyMax = 0;
+  for (var cS = 0; cS < 12; cS++) {
+    var vS = Number(rKwMax[cS]) || 0;
+    if (vS > safetyMax) safetyMax = vS;
+  }
+  var globalRollingMax = Math.max(optionBMax, safetyMax);
+  if (globalRollingMax > 0) {
+    out.kWMaxAnoMovilKw = new Array(12).fill(globalRollingMax);
+  }
+  return out;
+}
+
 function _readBatterySpecForHourlySim(ss) {
   ss = ss || SpreadsheetApp.getActive();
   // [A2b] reads via INPUT_MAP (_MAP_BESS); sheet guarded first because readInput

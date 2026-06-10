@@ -434,20 +434,21 @@ function deriveFullTariffRatesFromInputCfe(ss) {
 // Returns { punta, base } where each is null when blank/zero, or a positive
 // number when the designer has typed in an override.
 function readInputBessTariffOverride(ss) {
-  var sh = ss.getSheetByName('INPUT_BESS');
-  if (!sh) return { punta: null, base: null };
+  ss = ss || SpreadsheetApp.getActive();
+  // [A2b] r38/r39 via readInput/INPUT_MAP (bessPuntaRateOverride C38 /
+  // bessBaseRateOverride C39, both map default 0). Sheet guarded first because
+  // readInput throws on a missing sheet (the old code returned nulls). The
+  // blank/0/negative -> null semantics are preserved exactly: readInput returns
+  // 0 on a blank cell and 0 fails the (>0) test, so the result is null just as
+  // when Number('') -> 0 before.
+  if (!ss.getSheetByName('INPUT_BESS')) return { punta: null, base: null };
   // INPUT_BESS layout (BDF-3 economics section):
   //   row 36 B = "5. ECONOMICS GUARDRAILS" (section header)
-  //   row 37 C = min annual savings threshold MXN
+  //   row 37 C = min annual savings threshold MXN  (see readBessMinSavingsThreshold)
   //   row 38 C = punta override MXN/kWh   (BESS_PUNTA_RATE_MXN_KWH)
   //   row 39 C = base override MXN/kWh    (BESS_BASE_RATE_MXN_KWH)
-  // If sheet doesn't have these rows yet (pre-BDF-3 workbook), these
-  // reads return blank values and the function returns nulls -- which is
-  // exactly the "no override" behavior we want.
-  var puntaRaw = sh.getRange(38, 3).getValue();
-  var baseRaw  = sh.getRange(39, 3).getValue();
-  var punta = Number(puntaRaw);
-  var base  = Number(baseRaw);
+  var punta = Number(readInput(ss, 'bessPuntaRateOverride'));
+  var base  = Number(readInput(ss, 'bessBaseRateOverride'));
   return {
     punta: (isFinite(punta) && punta > 0) ? punta : null,
     base:  (isFinite(base)  && base  > 0) ? base  : null,
@@ -471,6 +472,12 @@ function readInputBessTariffOverride(ss) {
 function readBessMinSavingsThreshold(ss) {
   var sh = ss.getSheetByName('INPUT_BESS');
   if (!sh) return { thresholdMxn: 0, provenance: 'DISABLED' };
+  // [A2b] r37 read intentionally NOT migrated to readInput (parity hazard):
+  // bessMinAnnualSavingMxn's map default is 2,000,000, but this reader treats a
+  // BLANK C37 as DISABLED (0). readInput would return the 2M default on a blank
+  // cell, ENABLING the threshold where the old code disabled it. The 2M default
+  // also drives setup seeding, so reconciling it (map default 0 + a separate
+  // "suggested initial value") belongs with the A2c setup collapse, not here.
   var raw = sh.getRange(37, 3).getValue();
   var n = Number(raw);
   if (!isFinite(n) || n <= 0) {
