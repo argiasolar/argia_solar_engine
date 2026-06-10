@@ -1849,9 +1849,32 @@ var _MAP_CFE = {
   cfeSuministroMxn:     { sheet: SH.INPUT_CFE, mode: 'range', rangeA1: 'C29:N29', label: 'Suministro MXN (12 meses)',  type: 'number', section: '02 FACTURA 12 MESES', consumedBy: ['engine'] }
 };
 
+
+// ===========================================================================
+// _MAP_BESS_S6 -- INPUT_BESS §6 "DISTANCIAS Y UBICACIÓN FÍSICA" (rows 44-53).
+// ---------------------------------------------------------------------------
+// Physical-install context read by readBessInstallContext (01a) via direct
+// getRange(row,3) calls (provenance 'INPUT_BESS_S6'). Mapping it lets A2b
+// migrate that reader onto readInput. Defaults mirror the direct reader
+// (numbers -> 0, dropdowns -> '' when blank) so the migration is behavior-
+// preserving. Layout verified live against ARGIA_ENGINE__64_ INPUT_BESS. [A2a]
+// ===========================================================================
+var _MAP_BESS_S6 = {
+  bessDcBusV:                { sheet: SH.INPUT_BESS, row: 44, col: 3, label: 'Voltaje bus DC',                         type: 'number',   default: 0,  unit: 'V',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessAcV:                   { sheet: SH.INPUT_BESS, row: 45, col: 3, label: 'Voltaje AC sistema',                     type: 'number',   default: 0,  unit: 'V',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessDcRunM:                { sheet: SH.INPUT_BESS, row: 46, col: 3, label: 'Distancia batería ↔ tablero',           type: 'number',   default: 0,  unit: 'm',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessAcRunM:                { sheet: SH.INPUT_BESS, row: 47, col: 3, label: 'Distancia tablero ↔ interconexión CFE', type: 'number',   default: 0,  unit: 'm',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessCablePath:             { sheet: SH.INPUT_BESS, row: 48, col: 3, label: 'Trayectoria del cable',                  type: 'dropdown', default: '', dropdown: ['INTEMPERIE', 'CONDUIT_ENTERRADO', 'BANDEJA_INTERIOR'], section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessS6BatteriesPerContainer: { sheet: SH.INPUT_BESS, row: 49, col: 3, label: 'Baterías por contenedor',               type: 'number',   default: 0,  unit: 'pcs', section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessLocation:              { sheet: SH.INPUT_BESS, row: 50, col: 3, label: 'Ubicación física',                       type: 'dropdown', default: '', dropdown: ['EXTERIOR', 'INTERIOR_TECHADO', 'SALA_ELECTRICA'],     section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessGroundingSystem:       { sheet: SH.INPUT_BESS, row: 51, col: 3, label: 'Sistema de tierra',                      type: 'dropdown', default: '', dropdown: ['UFER', 'VARILLA', 'RED_EXISTENTE'],                  section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessGecRunM:               { sheet: SH.INPUT_BESS, row: 52, col: 3, label: 'Distancia a electrodo de tierra',        type: 'number',   default: 0,  unit: 'm',   section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] },
+  bessCommissioningMxn:      { sheet: SH.INPUT_BESS, row: 53, col: 3, label: 'Comisionamiento',                        type: 'number',   default: 0,  unit: 'MXN', section: 'BESS 6 DISTANCIAS', consumedBy: ['engine'] }
+};
+
 var INPUT_MAP = {};
 (function _mergeMaps() {
-  var parts = [_MAP_PROJECT, _MAP_DESIGN, _MAP_INSTALL, _MAP_INSTALL_BESS, _MAP_BESS, _MAP_BAAS, _MAP_CFE];
+  var parts = [_MAP_PROJECT, _MAP_DESIGN, _MAP_INSTALL, _MAP_INSTALL_BESS, _MAP_BESS, _MAP_BAAS, _MAP_CFE, _MAP_BESS_S6];
   for (var p = 0; p < parts.length; p++) {
     var src = parts[p];
     for (var k in src) {
