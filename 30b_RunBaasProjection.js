@@ -197,6 +197,21 @@ function runBaasProjection(ss) {
   var capex = _baasReadCapexMxn(ss);
   warnings = warnings.concat(capex.warnings);
 
+  // [G6] Batch 2: O&M zero-guard. In BaaS, O&M = $0 CAN be legitimate (often
+  // bundled into the lease) -- so the wording asks for confirmation instead
+  // of asserting an error. Reserve is a customer-side ClientFin concern (the
+  // lessor owns the battery), so only OM_ZERO is surfaced here.
+  var baasGuards = argiaFinancialGuardNotes({
+    omCostMxnPerYear: inp.omCostMxnPerYear,
+    replacementReserveMxnPerYear: inp.replacementReserveMxnPerYear,
+    bessMaterialsMxn: capex.materialsMxn
+  });
+  if (baasGuards.some(function (g) { return g.code === 'OM_ZERO'; })) {
+    warnings.push('BaaS: O&M anual = $0 (INPUT_BAAS fila 16). Si el O&M NO '
+      + 'est\u00e1 incluido en la mensualidad, el ahorro neto del cliente '
+      + 'est\u00e1 sobreestimado \u2014 confirmar.');
+  }
+
   // Solar CAPEX for the tax benefit: BaaS is battery-only, so by default
   // there is NO solar CAPEX attributable to the battery lease. The tax
   // benefit therefore does not apply unless the designer explicitly says

@@ -126,6 +126,16 @@ function writeClientFinancialsV2(ss, fin, opts) {
               + ' tCO2e/MWh (verificar factor oficial CRE vigente).'))
     .setFontSize(8).setFontColor(token('TEXT_MUTED')).setFontStyle('italic').setWrap(true);
 
+  // [G6] Batch 2: zero-guard notes (O&M / reserva). Rendered into the SINGLE
+  // spacer row between the CO2 note and the cash table, so tableTop -- and
+  // every golden-locked cell below it -- stays exactly where it was. When no
+  // guard fires the row stays empty: byte-identical legacy layout.
+  if (opts.guardNotes && opts.guardNotes.length) {
+    sh.getRange(co2Row + 2 + co2Lines.length, 2, 1, 8).merge()
+      .setValue('\u26A0 ' + opts.guardNotes.join('  |  '))
+      .setFontSize(9).setFontColor('#B71C1C').setFontStyle('italic').setWrap(true);
+  }
+
   // -- Cash projection table --------------------------------------------------
   var tableTop = co2Row + co2Lines.length + 3;
   var headers = ['Año', 'Ahorro en\nrecibo', 'O&M', 'Reserva\nreemplazo',

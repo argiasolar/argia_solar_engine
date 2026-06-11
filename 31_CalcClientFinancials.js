@@ -225,3 +225,39 @@ function calcClientFinancials(o) {
     },
   };
 }
+
+
+// ---------------------------------------------------------------------------
+// [G6] Batch 2 -- PURE zero-guards for the client financial story. The live
+// workbook shipped a BESS proposal with O&M = $0 and replacement reserve =
+// $0: inputs wired (INPUT_BAAS filas 16/17) but blank, silently overstating
+// net savings and LCOE. Rules:
+//   OM_ZERO       fires when O&M <= 0 -- every solar project has real O&M.
+//   RESERVE_ZERO  fires when reserve <= 0 AND the project has BESS materials
+//                 (battery wear is a real cost; PV-only projects are exempt).
+// Returns [{code, msg}] -- callers prefix with their context tag.
+// ---------------------------------------------------------------------------
+function argiaFinancialGuardNotes(o) {
+  o = o || {};
+  var om      = Number(o.omCostMxnPerYear) || 0;
+  var reserve = Number(o.replacementReserveMxnPerYear) || 0;
+  var bess    = Number(o.bessMaterialsMxn) || 0;
+  var notes = [];
+  if (!(om > 0)) {
+    notes.push({
+      code: 'OM_ZERO',
+      msg : 'O&M anual = $0 (INPUT_BAAS fila 16). Ahorro neto y LCOE '
+          + 'sobreestimados \u2014 capture el costo real de operaci\u00f3n y '
+          + 'mantenimiento antes de enviar al cliente.'
+    });
+  }
+  if (!(reserve > 0) && bess > 0) {
+    notes.push({
+      code: 'RESERVE_ZERO',
+      msg : 'Reserva de reemplazo BESS = $0 (INPUT_BAAS fila 17) en un '
+          + 'proyecto con bater\u00eda. El desgaste del banco no est\u00e1 '
+          + 'provisionado \u2014 ahorro neto sobreestimado.'
+    });
+  }
+  return notes;
+}

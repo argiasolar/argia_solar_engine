@@ -1,3 +1,42 @@
+## [4.14.0] — 2026-06-11
+
+**Batch 2 (code side): commercial-calibration guards — G3 SIN COTIZAR policy + G6 O&M/reserve zero-guards.**
+
+> Scope note: B-1 (BESS screening Óptimo cap) was found ALREADY SHIPPED at
+> HEAD (clamp + cap note in WriteCfeOutputV2_Chunk5, covered by
+> CfeOutputChunk5Tests) — not re-done here. G1 (BESS re-quote ≤$350/kWh) and
+> G2 (burdened labor + 94_INSTALL_BENCHMARKS) remain DATA tasks; the single
+> golden refresh is deferred until that data lands in the DBs.
+
+**G3 — SIN COTIZAR zero-line policy (BOM_v2):**
+- Every rendered line with qty > 0 and price status MISSING_PRICE is now
+  tracked; its empty PRECIO U cell is tinted (#FDECEA) so the gap survives
+  PDF export (hover notes do not).
+- GRAND TOTAL label flags the sheet-level consequence: "⚠ N PARTIDA(S) SIN
+  COTIZAR — TOTAL PRELIMINAR", red font, with a note listing the offending
+  rows. Label built by PURE `bomGrandTotalLabel()` (unit-locked); 0 missing
+  → exact legacy string. Generalizes the B-2 empty-structure banner to every
+  line. CULLIGAN goldens assert BOM VALUES, not this label — values
+  unchanged. NOTE: CULLIGAN may now legitimately show the flag (transformer
+  / inverter-rack $0 lines were the audit finding).
+
+**G6 — O&M / replacement-reserve zero-guards (financial story):**
+- PURE `argiaFinancialGuardNotes()` in 31_CalcClientFinancials: OM_ZERO
+  fires when O&M ≤ 0 (every solar project has real O&M); RESERVE_ZERO fires
+  when reserve ≤ 0 AND BESS materials > 0 (PV-only exempt).
+- 31a_RunClientFinancials: guards feed ret.warnings (menu alert +
+  orchestrator) AND render on-sheet via opts.guardNotes — written into the
+  single spacer row between the CO2 note and the cash table, so tableTop and
+  all golden-locked cells below are position-identical. Row stays empty when
+  clean.
+- 30b_RunBaasProjection: OM_ZERO surfaced as a confirm-style warning (O&M
+  may legitimately be bundled into the lease); reserve is customer-side and
+  not warned in BaaS. BESS detection = BOM_v2 §8 materials subtotal.
+
+**Tests:** +3 pure Node-runnable tests (tests_unit/writers/Batch2GuardTests.gs):
+UNIT_BOM_GRAND_TOTAL_LABEL, UNIT_FIN_GUARD_OM_ZERO_FIRES,
+UNIT_FIN_GUARD_RESERVE_BESS_ONLY.
+
 ## [4.13.1] — 2026-06-11
 
 **Hotfix: persistent input backup wrote a ragged matrix.**

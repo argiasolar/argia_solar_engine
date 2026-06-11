@@ -203,6 +203,23 @@ function runClientFinancials(ss, opts) {
   var capex = _cfinReadCapexTotalMxn(ss);
   warnings = warnings.concat(capex.warnings);
 
+  // [G6] Batch 2: O&M / replacement-reserve zero-guards. The live workbook
+  // shipped a BESS financial story with O&M = $0 and reserve = $0 -- inputs
+  // wired (INPUT_BAAS rows 16/17) but blank, silently overstating net
+  // savings and LCOE. Pure rule in argiaFinancialGuardNotes (31_Calc...).
+  var bessMatMxn = 0;
+  try {
+    if (typeof _baasReadCapexMxn === 'function') {
+      bessMatMxn = Number(_baasReadCapexMxn(ss).materialsMxn) || 0;
+    }
+  } catch (gErr) { /* BESS detection is best-effort */ }
+  var guardNotes = argiaFinancialGuardNotes({
+    omCostMxnPerYear: inp.omCostMxnPerYear,
+    replacementReserveMxnPerYear: inp.replacementReserveMxnPerYear,
+    bessMaterialsMxn: bessMatMxn
+  });
+  guardNotes.forEach(function (g) { warnings.push('ClientFin: ' + g.msg); });
+
   var demandSavings = _cfinReadDemandSavings(ss);
   var energyKwh     = _cfinReadEnergyKwh(ss);
   if (!(energyKwh > 0)) {
@@ -229,7 +246,8 @@ function runClientFinancials(ss, opts) {
   var wrote = writeClientFinancialsV2(ss, fin, {
     co2FactorNote: 'Factor de emisión ' + CLIENT_FIN_DEFAULTS.co2FactorTonPerMwh
                  + ' tCO2e/MWh (verificar factor oficial CRE vigente).',
-    capexBreakdown: capex
+    capexBreakdown: capex,
+    guardNotes: guardNotes.map(function (g) { return g.msg; })   // [G6] on-sheet
   });
 
   return {

@@ -150,6 +150,12 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   var itemNo      = 1;
   var trayM       = parseFloat(rdInput('trayM')) || 0;
 
+  // [G3] Batch 2: rows rendered with qty > 0 but NO price (MISSING_PRICE).
+  // Collected by wp() below; the GRAND TOTAL block flags the sheet-level
+  // consequence -- a $0 line inside a five-figure total is invisible, and
+  // the per-line hover note never survives a PDF export.
+  var bomMissingPriceRows = [];
+
   // ---- Local write helpers ------------------------------------------------
   function w(r, c, val) {
     if (val !== null && val !== undefined && val !== '') {
@@ -181,6 +187,18 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
       if (info.priceUsd === undefined) info.priceUsd = priceUsd;
       if (info.priceMxn === undefined) info.priceMxn = priceMxn;
       var status = classifyBomLinePriceStatus(info);
+      // [G3] A line with real quantity and no price silently contributes $0
+      // to the total. Track it and tint the empty price cell so it is
+      // visible on screen AND in the exported PDF (notes are hover-only).
+      if (status === 'MISSING_PRICE') {
+        var _g3Qty = Number(bom.getRange(r, BOM_COL.QTY).getValue()) || 0;
+        if (_g3Qty > 0) {
+          bomMissingPriceRows.push(r);
+          try {
+            bom.getRange(r, BOM_COL.UNIT_PRICE).setBackground('#FDECEA');
+          } catch (_g3BgErr) { /* cosmetic; never break the BOM write */ }
+        }
+      }
       if (status !== 'CATALOG_PRICE') {
         var LABEL = {
           SUPPLIER_QUOTED : 'Estado precio: SUPPLIER_QUOTED (cotizado por proveedor)',
@@ -967,7 +985,21 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   // ====================================================================
   // GRAND TOTAL
   // ====================================================================
-  w(BOM_ROW.GRAND_TOTAL, BOM_COL.DESCRIPTION, 'TOTAL MATERIAL + SERVICIOS (USD)');
+  // [G3] Batch 2: when any rendered line has qty > 0 and no price, the
+  // total is structurally understated. Same loud-display policy as the B-2
+  // empty-structure fix, generalized to EVERY line. Label built by the pure
+  // bomGrandTotalLabel() so the wording is unit-locked in the Node rig.
+  w(BOM_ROW.GRAND_TOTAL, BOM_COL.DESCRIPTION,
+    bomGrandTotalLabel(bomMissingPriceRows.length));
+  if (bomMissingPriceRows.length > 0) {
+    try {
+      bom.getRange(BOM_ROW.GRAND_TOTAL, BOM_COL.DESCRIPTION)
+        .setFontColor('#B71C1C')
+        .setNote('Partidas sin precio (qty > 0): fila(s) '
+                 + bomMissingPriceRows.join(', ')
+                 + '. El total excluye su costo -- cotizar antes de enviar.');
+    } catch (_g3TotErr) { /* styling is advisory */ }
+  }
   bom.getRange(BOM_ROW.GRAND_TOTAL, BOM_COL.TOTAL_USD)
     .setFormula(
       '=F' + BOM_ROW.SUBTOTAL_PANELS + '+F' + BOM_ROW.SUBTOTAL_INVERTERS +
@@ -1060,4 +1092,20 @@ function _bomV2_resolveBessBosPrice(bosLine, bosDb, ss, opts) {
   }
 
   return null;
+}
+
+
+// ---------------------------------------------------------------------------
+// [G3] Batch 2 -- PURE label builder for the BOM grand total. Unit-locked in
+// the Node rig (UNIT_BOM_GRAND_TOTAL_LABEL) so the SIN COTIZAR wording and
+// the zero-flag legacy string can never drift apart silently.
+//   0 missing  -> exact legacy label (golden-safe)
+//   n missing  -> legacy label + loud SIN COTIZAR / PRELIMINAR flag
+// ---------------------------------------------------------------------------
+function bomGrandTotalLabel(missingCount) {
+  var base = 'TOTAL MATERIAL + SERVICIOS (USD)';
+  var n = Number(missingCount) || 0;
+  if (n <= 0) return base;
+  return base + '  \u26A0 ' + n + ' PARTIDA' + (n === 1 ? '' : 'S')
+       + ' SIN COTIZAR \u2014 TOTAL PRELIMINAR';
 }
