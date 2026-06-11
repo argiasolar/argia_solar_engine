@@ -274,11 +274,27 @@ var INPUT_BACKUP_SHEET = '_INPUT_BACKUP';
  * @param {Object} snap  result of snapshotInputSheets()
  * @return {number}
  */
-function persistInputSnapshot(ss, snap) {
-  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  if (!snap) throw new Error('persistInputSnapshot: empty snapshot');
+/**
+ * Build the row matrix for the _INPUT_BACKUP sheet from a snapshot.
+ * PURE (Node-testable). EVERY row is exactly INPUT_BACKUP_COLS wide --
+ * Sheets' setValues throws on ragged matrices, which is precisely the
+ * v4.13.0 bug this extraction pins down (header was 3 wide, data 5 wide;
+ * the Node rig's setValues stub doesn't validate widths, so only the
+ * in-sheet run caught it). UNIT_BACKUP_ROWS_UNIFORM_WIDTH now locks it.
+ *
+ * Row 1: ['ARGIA_INPUT_BACKUP', isoTimestamp, formatVersion, '', '']
+ * Row 2+: [tabName, row(1-based), col(1-based), 'F'|'V', content]
+ *
+ * @param {Object} snap  result of snapshotInputSheets()
+ * @param {string} isoTimestamp
+ * @return {Array<Array>} uniform-width row matrix
+ */
+var INPUT_BACKUP_COLS = 5;
 
-  var rows = [['ARGIA_INPUT_BACKUP', new Date().toISOString(), 1]];
+function argiaBuildBackupRows(snap, isoTimestamp) {
+  if (!snap) throw new Error('argiaBuildBackupRows: empty snapshot');
+  // Header padded to the full width -- NEVER ship a ragged matrix.
+  var rows = [['ARGIA_INPUT_BACKUP', isoTimestamp, 1, '', '']];
   Object.keys(snap).forEach(function (name) {
     var s = snap[name];
     for (var r = 0; r < s.rows; r++) {
@@ -291,6 +307,14 @@ function persistInputSnapshot(ss, snap) {
       }
     }
   });
+  return rows;
+}
+
+function persistInputSnapshot(ss, snap) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  if (!snap) throw new Error('persistInputSnapshot: empty snapshot');
+
+  var rows = argiaBuildBackupRows(snap, new Date().toISOString());
 
   var sh = ss.getSheetByName(INPUT_BACKUP_SHEET);
   if (sh) sh.clearContents();
@@ -298,7 +322,7 @@ function persistInputSnapshot(ss, snap) {
   // Plain-text format on the content column so '=FORMULA' strings are inert
   // and survive download round-trips (same belt-and-suspenders as 97_InputAudit).
   sh.getRange(1, 5, Math.max(rows.length, 1), 1).setNumberFormat('@');
-  sh.getRange(1, 1, rows.length, 5).setValues(rows);
+  sh.getRange(1, 1, rows.length, INPUT_BACKUP_COLS).setValues(rows);
   try { sh.hideSheet(); } catch (e) { /* already hidden / single-sheet edge */ }
   return rows.length - 1;
 }

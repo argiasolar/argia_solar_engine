@@ -187,3 +187,55 @@ registerTest({
     });
   }
 });
+
+
+registerTest({
+  id      : 'UNIT_BACKUP_ROWS_UNIFORM_WIDTH',
+  group   : 'unit',
+  module  : 'engine/input_backup',
+  scenarios: [],
+  tags    : ['lifecycle', 'backup', 'batch1', 'regression'],
+  source  : 'tests_unit/engine/InputsHashTests.gs',
+  fn      : function (t, ctx) {
+    t.suite('UNIT engine/input_backup: backup row matrix is uniform width');
+    // v4.13.0 SHIPPED BUG: the _INPUT_BACKUP header row was 3 columns wide
+    // while data rows were 5, and Sheets' setValues throws on ragged
+    // matrices ("The data has 3 but the range has 5") -- aborting both
+    // INT_LIFECYCLE_PERSISTENT_BACKUP_ROUNDTRIP and START_NEW_PROJECT in
+    // the live suite. The Node rig's setValues stub does not validate
+    // widths, so this PURE check over argiaBuildBackupRows is the lock.
+    var snap = {
+      INPUT_PROJECT: {
+        rows: 2, cols: 3,
+        formulas: [['', '', ''], ['', '=B1*2', '']],
+        values:   [['CULLIGAN', '', ''], ['', 4, 'x']]
+      },
+      INPUT_BAAS: {
+        rows: 1, cols: 1,
+        formulas: [['']],
+        values:   [[15]]
+      }
+    };
+    var rows = argiaBuildBackupRows(snap, '2026-06-11T00:00:00Z');
+
+    t.assertTrue('at least header + 1 data row', rows.length >= 2);
+    var ragged = rows.filter(function (r) { return r.length !== INPUT_BACKUP_COLS; });
+    t.assert('EVERY row is exactly ' + INPUT_BACKUP_COLS + ' wide (ragged: '
+             + ragged.length + ')', 0, ragged.length);
+
+    // Header shape (padded, not truncated).
+    t.assert('header marker', 'ARGIA_INPUT_BACKUP', rows[0][0]);
+    t.assert('header timestamp', '2026-06-11T00:00:00Z', rows[0][1]);
+    t.assert('header format version', 1, rows[0][2]);
+
+    // Content rows: formula precedence + empty-skip.
+    var dataRows = rows.slice(1);
+    t.assert('4 non-empty cells captured', 4, dataRows.length);
+    var formulaRow = dataRows.filter(function (r) { return r[3] === 'F'; })[0];
+    t.assertTrue('formula row present with F flag', !!formulaRow);
+    t.assert('formula content preserved', '=B1*2', formulaRow[4]);
+    var baasRow = dataRows.filter(function (r) { return r[0] === 'INPUT_BAAS'; })[0];
+    t.assertTrue('INPUT_BAAS cell captured (copyTo gap stays closed)', !!baasRow);
+    t.assert('value flag on plain cell', 'V', baasRow[3]);
+  }
+});

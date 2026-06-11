@@ -1,3 +1,25 @@
+## [4.13.1] — 2026-06-11
+
+**Hotfix: persistent input backup wrote a ragged matrix.**
+
+> **PATCH.** v4.13.0's `persistInputSnapshot` built a 3-column header row
+> alongside 5-column data rows and pushed both through one
+> `setValues(...,5)` — Google Sheets rejects ragged matrices ("The data has
+> 3 but the range has 5"), aborting INT_LIFECYCLE_PERSISTENT_BACKUP_ROUNDTRIP
+> and INT_LIFECYCLE_START_NEW_PROJECT_CLEAN in the live suite and breaking
+> Start New Project + the new backup path. The banner/stamp/export-guard
+> machinery was unaffected (INT_LIFECYCLE_STALE_BANNER_APPLY_CLEAR fully
+> green in the same run); CULLIGAN E2E 105/105 on v4.13.0.
+
+- 00d_InputSnapshot.js: row construction extracted to PURE
+  `argiaBuildBackupRows(snap, iso)` with the header padded to the full
+  `INPUT_BACKUP_COLS` (5) width; `persistInputSnapshot` consumes it.
+- Why the Node rig missed it: the rig's `setValues` stub doesn't validate
+  matrix widths. New pure test `UNIT_BACKUP_ROWS_UNIFORM_WIDTH` asserts
+  every emitted row is exactly 5 wide (plus header shape, formula
+  precedence, empty-skip, INPUT_BAAS coverage) — this class of bug now
+  fails in Node before any push.
+
 ## [4.13.0] — 2026-06-10
 
 **Batch 1 — Workbook Lifecycle & Trust.** One push closing launch gates G4,
