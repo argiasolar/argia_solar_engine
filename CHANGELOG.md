@@ -1,3 +1,30 @@
+## [4.14.2] — 2026-06-11
+
+**Hotfix: persistent backup setValues — flush after grid expansion + resilient fallback.**
+
+> **PATCH.** 4.14.1's grid fix deployed correctly (stack moved 325→338) yet
+> the SAME setValues call still threw "Service error: Spreadsheets" in both
+> lifecycle tests. Evidence gathered before this fix: the live workbook's
+> input tabs were replayed offline through the real argiaBuildBackupRows —
+> 1075×5 matrix, content fully clean (no oversized strings, no NaN, no
+> invalid UTF-16, only string/number/Date). Size and content exonerated, the
+> remaining deterministic trigger is the bulk write spanning rows freshly
+> inserted by insertRowsAfter in the same execution without a flush.
+
+- 00d_InputSnapshot.js: SpreadsheetApp.flush() after grid expansion, before
+  the writes (targeted fix).
+- Belt-and-suspenders: if bulk setValues still throws, fall back to 200-row
+  chunks, then per-cell writes for any failing chunk — every failing cell is
+  logged with backup row + source tab/r/c. The backup lands regardless, and
+  a genuinely poisoned cell now NAMES ITSELF in LOGS instead of aborting
+  Start New Project behind an opaque service error. Same resilience pattern
+  restoreInputSheets has always had.
+- PURE argiaChunkRanges() planner + UNIT_BACKUP_CHUNK_RANGES_COVER (chunks
+  tile [0,total) exactly once — no gap, no overlap).
+- Honest note: the Node rig cannot reproduce Sheets service errors; in-sheet
+  INT_LIFECYCLE_* remain the gate. If they still error after this, the LOGS
+  sheet will now contain the per-cell diagnosis to fix from.
+
 ## [4.14.1] — 2026-06-11
 
 **Hotfix: persistent backup write exceeded the sheet grid.**

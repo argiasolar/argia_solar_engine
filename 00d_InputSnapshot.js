@@ -321,21 +321,66 @@ function persistInputSnapshot(ss, snap) {
   else    sh = ss.insertSheet(INPUT_BACKUP_SHEET);
   // [4.14.1] Guarantee grid capacity BEFORE touching ranges. A fresh sheet
   // has a 1000-row grid; the snapshot emits one row PER NON-EMPTY INPUT
-  // CELL and a full project routinely exceeds that. setNumberFormat /
-  // setValues on a range beyond the grid throw the opaque "Service error:
-  // Spreadsheets" (the 4.14.0 live-suite abort at this line). 4.13.0's
-  // ragged-matrix bug aborted earlier in this function, so the live sheet
-  // never executed far enough to expose the grid limit until the 4.13.1 fix.
+  // CELL and a full project routinely exceeds that (CULLIGAN: ~1075 rows).
+  // setValues beyond the grid throws the opaque "Service error:
+  // Spreadsheets" (the 4.14.0 live-suite abort).
   if (sh.getMaxRows() < rows.length) {
     sh.insertRowsAfter(sh.getMaxRows(), rows.length - sh.getMaxRows());
   }
   if (sh.getMaxColumns() < INPUT_BACKUP_COLS) {
     sh.insertColumnsAfter(sh.getMaxColumns(), INPUT_BACKUP_COLS - sh.getMaxColumns());
   }
+  // [4.14.2] Commit the structural changes BEFORE bulk-writing across the
+  // freshly inserted rows. On 4.14.1 the SAME setValues call still threw
+  // "Service error: Spreadsheets" with the grid correctly expanded and a
+  // content-clean matrix (replayed offline from the live workbook: 1075x5,
+  // no oversized strings / NaN / invalid UTF-16). Bulk writes spanning
+  // unflushed insertRowsAfter rows are a known deterministic trigger.
+  SpreadsheetApp.flush();
   // Plain-text format on the content column so '=FORMULA' strings are inert
   // and survive download round-trips (same belt-and-suspenders as 97_InputAudit).
   sh.getRange(1, 5, Math.max(rows.length, 1), 1).setNumberFormat('@');
-  sh.getRange(1, 1, rows.length, INPUT_BACKUP_COLS).setValues(rows);
+
+  // [4.14.2] RESILIENT write -- same lesson restoreInputSheets already
+  // encodes: if the bulk setValues throws, fall back to 200-row chunks, and
+  // any chunk that still throws is written cell-by-cell with every failing
+  // cell logged (backup row, tab, r, c). The backup then lands regardless,
+  // and a genuinely poisoned cell names itself in the LOGS sheet instead of
+  // aborting Start New Project behind an opaque service error.
+  var failedCells = 0;
+  try {
+    sh.getRange(1, 1, rows.length, INPUT_BACKUP_COLS).setValues(rows);
+  } catch (bulkErr) {
+    var chunks = argiaChunkRanges(rows.length, 200);
+    for (var ci = 0; ci < chunks.length; ci++) {
+      var start = chunks[ci][0], count = chunks[ci][1];
+      var slice = rows.slice(start, start + count);
+      try {
+        sh.getRange(start + 1, 1, count, INPUT_BACKUP_COLS).setValues(slice);
+      } catch (chunkErr) {
+        for (var ri = 0; ri < slice.length; ri++) {
+          for (var cc = 0; cc < INPUT_BACKUP_COLS; cc++) {
+            try {
+              sh.getRange(start + 1 + ri, cc + 1).setValue(slice[ri][cc]);
+            } catch (cellErr) {
+              failedCells++;
+              if (typeof engineLog === 'function') {
+                engineLog(ss, 'persistInputSnapshot', 'WARN',
+                  'cell write failed @backup row ' + (start + 1 + ri)
+                  + ' col ' + (cc + 1) + ' [' + slice[ri][0] + ' r' + slice[ri][1]
+                  + ' c' + slice[ri][2] + ' ' + slice[ri][3] + ']: ' + cellErr);
+              }
+            }
+          }
+        }
+      }
+    }
+    if (typeof engineLog === 'function') {
+      engineLog(ss, 'persistInputSnapshot', 'WARN',
+        'bulk setValues failed (' + bulkErr + '); chunked fallback used'
+        + (failedCells ? ', FAILED CELLS: ' + failedCells : ', all rows landed'));
+    }
+  }
   try { sh.hideSheet(); } catch (e) { /* already hidden / single-sheet edge */ }
   return rows.length - 1;
 }
@@ -406,4 +451,21 @@ function clearPersistedInputBackup(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(INPUT_BACKUP_SHEET);
   if (sh) ss.deleteSheet(sh);
+}
+
+
+// ---------------------------------------------------------------------------
+// [4.14.2] PURE chunk planner for the resilient backup write. Unit-locked
+// (UNIT_BACKUP_CHUNK_RANGES_COVER): chunks tile [0, total) exactly once --
+// no gap, no overlap -- so the fallback can never silently drop or
+// duplicate backup rows.
+// ---------------------------------------------------------------------------
+function argiaChunkRanges(total, chunkSize) {
+  var out = [];
+  var n = Math.max(0, total | 0);
+  var size = Math.max(1, chunkSize | 0);
+  for (var start = 0; start < n; start += size) {
+    out.push([start, Math.min(size, n - start)]);
+  }
+  return out;
 }

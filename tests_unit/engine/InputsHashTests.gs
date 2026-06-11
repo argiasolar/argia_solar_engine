@@ -239,3 +239,35 @@ registerTest({
     t.assert('value flag on plain cell', 'V', baasRow[3]);
   }
 });
+
+
+registerTest({
+  id      : 'UNIT_BACKUP_CHUNK_RANGES_COVER',
+  group   : 'unit',
+  module  : 'engine/input_backup',
+  scenarios: [],
+  tags    : ['lifecycle', 'backup', 'regression'],
+  source  : 'tests_unit/engine/InputsHashTests.gs',
+  fn      : function (t, ctx) {
+    t.suite('UNIT engine/input_backup: chunk planner tiles rows exactly [4.14.2]');
+    // The resilient persist fallback writes rows in chunks; a planner bug
+    // (gap or overlap) would silently corrupt the backup -- the one artifact
+    // whose whole job is to be trustworthy when everything else breaks.
+    [0, 1, 199, 200, 201, 1075].forEach(function (total) {
+      var chunks = argiaChunkRanges(total, 200);
+      var covered = 0;
+      var prevEnd = 0;
+      var contiguous = true;
+      chunks.forEach(function (ch) {
+        if (ch[0] !== prevEnd) contiguous = false;
+        covered += ch[1];
+        prevEnd = ch[0] + ch[1];
+      });
+      t.assert('total=' + total + ': rows covered exactly once', total, covered);
+      t.assertTrue('total=' + total + ': chunks contiguous from 0', contiguous);
+      t.assertTrue('total=' + total + ': no chunk exceeds size 200',
+                   chunks.every(function (ch) { return ch[1] >= 1 && ch[1] <= 200; }));
+    });
+    t.assert('total=0 -> no chunks', 0, argiaChunkRanges(0, 200).length);
+  }
+});
