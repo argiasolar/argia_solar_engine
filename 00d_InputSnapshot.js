@@ -319,6 +319,19 @@ function persistInputSnapshot(ss, snap) {
   var sh = ss.getSheetByName(INPUT_BACKUP_SHEET);
   if (sh) sh.clearContents();
   else    sh = ss.insertSheet(INPUT_BACKUP_SHEET);
+  // [4.14.1] Guarantee grid capacity BEFORE touching ranges. A fresh sheet
+  // has a 1000-row grid; the snapshot emits one row PER NON-EMPTY INPUT
+  // CELL and a full project routinely exceeds that. setNumberFormat /
+  // setValues on a range beyond the grid throw the opaque "Service error:
+  // Spreadsheets" (the 4.14.0 live-suite abort at this line). 4.13.0's
+  // ragged-matrix bug aborted earlier in this function, so the live sheet
+  // never executed far enough to expose the grid limit until the 4.13.1 fix.
+  if (sh.getMaxRows() < rows.length) {
+    sh.insertRowsAfter(sh.getMaxRows(), rows.length - sh.getMaxRows());
+  }
+  if (sh.getMaxColumns() < INPUT_BACKUP_COLS) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), INPUT_BACKUP_COLS - sh.getMaxColumns());
+  }
   // Plain-text format on the content column so '=FORMULA' strings are inert
   // and survive download round-trips (same belt-and-suspenders as 97_InputAudit).
   sh.getRange(1, 5, Math.max(rows.length, 1), 1).setNumberFormat('@');

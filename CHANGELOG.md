@@ -1,3 +1,26 @@
+## [4.14.1] — 2026-06-11
+
+**Hotfix: persistent backup write exceeded the sheet grid.**
+
+> **PATCH.** First live execution past the 4.13.1 fix surfaced the next bug
+> in the same path: `setNumberFormat`/`setValues` over a range larger than
+> the _INPUT_BACKUP sheet's grid (fresh sheets = 1000 rows; a full input
+> snapshot is one row per non-empty cell and routinely exceeds that) throws
+> the opaque "Service error: Spreadsheets", aborting
+> INT_LIFECYCLE_PERSISTENT_BACKUP_ROUNDTRIP and START_NEW_PROJECT at
+> 00d:325. Deterministic, not transient — both tests, same line, same run.
+
+- 00d_InputSnapshot.js: grid capacity (rows AND columns) is guaranteed via
+  insertRowsAfter/insertColumnsAfter before any range operation.
+- Honest test note: the Node rig's Sheets stub has no grid limits, so this
+  class of bug is NOT catchable offline. The in-sheet lifecycle integration
+  tests are the regression gate for this path — they have now caught two
+  consecutive bugs here, which is exactly their job. Verify in-sheet after
+  push.
+- Batch 2 (4.14.0) live results otherwise clean: full suite 3825/3838 with
+  ZERO new failures (13 FAILs = pre-existing TESTPROJ001 fixtures + CULLIGAN
+  standalone artifact); CULLIGAN E2E 105/105.
+
 ## [4.14.0] — 2026-06-11
 
 **Batch 2 (code side): commercial-calibration guards — G3 SIN COTIZAR policy + G6 O&M/reserve zero-guards.**
