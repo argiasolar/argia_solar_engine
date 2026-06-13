@@ -891,9 +891,37 @@ function _setupDesignTab(force) {
     }
   }
 
-  // ---- Wipe and recreate
-  if (existing) ss.deleteSheet(existing);
-  var sh = ss.insertSheet(SH.INPUT_DESIGN);
+  // ---- Wipe IN PLACE and reuse -- NEVER delete the tab.
+  // [4.15.1] This was the ONLY input setup still doing deleteSheet +
+  // insertSheet. Two bugs from that one line:
+  //   (1) it is the exact pattern the 4.14.3 CHANGELOG forbade -- deleting a
+  //       sheet permanently #REF!s every cross-sheet formula that references
+  //       INPUT_DESIGN (the dashboard tiles and downstream calcs read it).
+  //   (2) it threw "You must select all cells in a merged range to merge or
+  //       unmerge them" during repairInputLayouts / Start New Project: the
+  //       custom design layout leaves merged ranges (rows 5-7 dashboard,
+  //       two-column section), and re-merging without a clean unmerge first
+  //       is what raised the error caught by 4.15.0's loud logging.
+  // Same in-place sequence the shared _setupOneTab uses: unfreeze -> unmerge
+  // (merges must not straddle frozen boundaries) -> drop rules / validations
+  // / notes -> clear contents+formats (in-cell logo goes too; reinserted
+  // below).
+  var sh;
+  if (existing) {
+    try { existing.setFrozenRows(0); existing.setFrozenColumns(0); } catch (eF) {}
+    try {
+      existing.getRange(1, 1, existing.getMaxRows(), existing.getMaxColumns()).breakApart();
+    } catch (eM) {}
+    try { existing.clearConditionalFormatRules(); } catch (eC) {}
+    try {
+      existing.getRange(1, 1, existing.getMaxRows(), existing.getMaxColumns()).clearDataValidations();
+    } catch (eV) {}
+    try { existing.clearNotes(); } catch (eN) {}
+    existing.clear();   // contents + formats; in-cell logo image goes too
+    sh = existing;
+  } else {
+    sh = ss.insertSheet(SH.INPUT_DESIGN);
+  }
 
   // ---- Canvas: 12 columns, custom widths
   _applyDesignCanvas(sh);

@@ -1,3 +1,37 @@
+## [4.15.1] — 2026-06-13
+
+**INPUT_DESIGN rebuild fixed at the root — the last input setup still using deleteSheet now wipes in place. (Caught by 4.15.0's loud logging working exactly as designed.)**
+
+> 4.15.0 made rebuild failures loud, and on the very next live run the LOGS
+> named the culprit precisely:
+>   InputRebuild ERROR  rebuildInputsToDefault step 0 (anon) failed:
+>     "You must select all cells in a merged range to merge or unmerge them."
+>   LayoutRepair WARNING repairInputLayouts: rebuildFailures=11, logos=6
+> step 0 == setupInputDesign(true). _setupDesignTab was the ONLY input setup
+> never migrated off the deleteSheet()+insertSheet() pattern — the exact
+> pattern the 4.14.3 CHANGELOG forbade because deleting a sheet permanently
+> #REF!s every cross-sheet formula referencing it. The custom two-column /
+> dashboard layout leaves merged ranges, and re-merging on the
+> stale/deleted-then-recreated sheet raised the merge error. Every OTHER tab
+> rebuilt + re-logoed fine (5/6 in the screenshots); INPUT_DESIGN was the
+> lone holdout.
+>
+> THIS RELEASE:
+> - _setupDesignTab now wipes IN PLACE (unfreeze -> breakApart -> clear
+>   rules/validations/notes -> clear contents+formats -> reuse the same
+>   sheet), identical to the shared _setupOneTab path. No deleteSheet. This
+>   fixes BOTH the merge error AND the latent #REF! cascade that delete would
+>   have caused on every successful run.
+> - Test 507 -> 508: UNIT_INPUT_DESIGN_WIPES_IN_PLACE_NEVER_DELETES drives the
+>   real _setupDesignTab against a recording mock and asserts deleteSheet is
+>   never called, insertSheet is skipped when the tab exists, and the in-place
+>   clean sequence runs. Verified to FAIL against the old deleteSheet code and
+>   PASS against the fix.
+>
+> ACTION: after pushing, run "Repair Input Layout (keeps values)" once more —
+> all six tabs (INPUT_DESIGN included) should now report OK, and the CULLIGAN
+> E2E's closing dialog should show the green layout-invariant line.
+
 ## [4.15.0] — 2026-06-12
 
 **Test hygiene: tests now PROVE they leave the workbook exactly as found — layout invariant enforced, logos deterministic, one repair button, admin panel slimmed.**
