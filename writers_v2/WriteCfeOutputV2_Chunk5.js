@@ -115,6 +115,34 @@ function _cfeOutV2_renderConsExpUpside(sh, startRow, autoOpt, expectedAnnualMxn,
     if (cons > addressable) { cons = addressable; }
   }
 
+  // [B-4] HOURLY-MODEL IDLE GUARD -- never render three silent $0 tiles.
+  // When the monthly planner schedules zero discharge for EVERY strategy
+  // (no typical-day PV surplus for PS/SC; LS arbitrage gated off outside
+  // NET_BILLING), cons/exp/ups all collapse to 0 while the MONTHLY model
+  // (Section 2) still credits real BESS savings. Showing $0/$0/$0 next to
+  // Section 2's non-zero number is a silent model-vs-model contradiction.
+  // Replace the tiles with ONE loud explanatory banner that points the
+  // reader at the monthly model. Root cause + repro: CHANGELOG 4.14.4.
+  if (cons <= 0 && ups <= 0 && exp <= 0) {
+    sh.getRange(startRow, 2, 1, 14).breakApart().merge()
+      .setValue('RANGO DE AHORRO BESS \u2014 Conservador / Esperado / \u00d3ptimo')
+      .setBackground('#ECEFF1').setFontWeight('bold').setFontSize(11)
+      .setVerticalAlignment('middle');
+    sh.getRange(startRow + 1, 2, 1, 14).breakApart().merge()
+      .setValue('\u26a0 MODELO HORARIO SIN VALOR BESS DESPACHABLE \u2014 el '
+        + 'planificador horario no encontr\u00f3 excedente FV en el d\u00eda '
+        + 't\u00edpico para cargar la bater\u00eda y el arbitraje de red est\u00e1 '
+        + 'deshabilitado bajo el modo de interconexi\u00f3n actual'
+        + (interconnMode ? ' (' + interconnMode + ')' : '') + '. Las cifras '
+        + 'Conservador / Esperado / \u00d3ptimo del modelo horario no aplican. '
+        + 'El ahorro BESS estimado de la propuesta proviene del modelo MENSUAL '
+        + '\u2014 ver secci\u00f3n 2 (RECIBO CON PV + BESS).')
+      .setBackground('#FFF3E0').setFontColor('#995700').setFontWeight('bold')
+      .setFontSize(10).setWrap(true).setVerticalAlignment('middle');
+    sh.setRowHeight(startRow + 1, 64);
+    return startRow + 1;
+  }
+
   // Section header
   sh.getRange(startRow, 2, 1, 14).breakApart().merge()
     .setValue('RANGO DE AHORRO BESS — Conservador / Esperado / Óptimo')
@@ -226,6 +254,20 @@ function _cfeOutV2_renderDemandChargeBreakdown(sh, startRow, hourlySim) {
   var avoidedPunta = (Number(pvOnlyBucket.punta) || 0) - (Number(pvBessBucket.punta) || 0);
   var avoidedInter = (Number(pvOnlyBucket.intermedia) || 0) - (Number(pvBessBucket.intermedia) || 0);
   var avoidedBase  = (Number(pvOnlyBucket.base) || 0) - (Number(pvBessBucket.base) || 0);
+
+  // [B-4] Same idle guard as the range tiles: a 0-kW / $0 / $0 / $0 table is
+  // the silent-failure rendering of "the hourly model dispatched nothing".
+  // Render one explicit omission note instead of a table of zeros.
+  if (maxPeakRedKw <= 0.005 && avoidedPunta <= 0.005
+      && avoidedInter <= 0.005 && avoidedBase <= 0.005) {
+    sh.getRange(startRow, 2, 1, 14).breakApart().merge()
+      .setValue('DESGLOSE DE AHORRO BESS omitido \u2014 el modelo horario no '
+        + 'registr\u00f3 despacho de BESS (ver la nota del RANGO DE AHORRO '
+        + 'arriba). El desglose de la propuesta est\u00e1 en la secci\u00f3n 2.')
+      .setBackground('#FFF3E0').setFontColor('#995700').setFontSize(10)
+      .setWrap(true);
+    return startRow;
+  }
 
   sh.getRange(startRow, 2, 1, 14).breakApart().merge()
     .setValue('DESGLOSE DE AHORRO BESS (estimación de propuesta)')

@@ -283,3 +283,98 @@ registerTest({
                  text2.indexOf('limitado al monto de la') < 0);
   }
 });
+
+
+// =============================================================================
+// TEST [B-4]: hourly-idle state renders a LOUD banner, never three silent $0
+// tiles or a zero demand-breakdown table.
+// -----------------------------------------------------------------------------
+//   Root cause (repro'd in Node with live CULLIGAN bill data): the monthly
+//   planner's PEAK_SHAVING / SELF_CONSUMPTION_MAX charge only from typical-day
+//   PV surplus, and LOAD_SHIFTING arbitrage is gated to NET_BILLING. A
+//   partial-offset ZERO_EXPORT site (CULLIGAN) therefore plans ZERO discharge
+//   for every strategy -> cons/exp/ups = $0 and a 0-kW breakdown, rendered
+//   silently next to Section 2's non-zero monthly BESS savings. These tests
+//   lock the loud-banner replacement for both blocks.
+// =============================================================================
+registerTest({
+  id      : 'UNIT_CFE_HOURLY_IDLE_LOUD_BANNER',
+  group   : 'unit',
+  module  : 'writers/cfe_chunk5',
+  scenarios: [],
+  tags    : ['writers', 'cfe', 'chunk5', 'regression'],
+  source  : 'tests_unit/writers/CfeOutputChunk5Tests.gs',
+  fn      : function (t, ctx) {
+    t.suite('UNIT writers/cfe_chunk5 [B-4]: hourly-idle loud banner');
+
+    // All-zero (CULLIGAN live state): banner replaces the tiles.
+    var sh = _mkMockSheet();
+    var autoOpt = { conservativeMxn: 0, upsideMxn: 0, optimalByMonth: [] };
+    _cfeOutV2_renderConsExpUpside(sh, 50, autoOpt, 0, 'ZERO_EXPORT', 10110616);
+    var text = _allWrittenText(sh);
+
+    t.assertTrue('idle banner is rendered (SIN VALOR BESS DESPACHABLE)',
+                 text.indexOf('SIN VALOR BESS DESPACHABLE') >= 0);
+    t.assertTrue('banner points the reader to the monthly model (secci\u00f3n 2)',
+                 text.indexOf('RECIBO CON PV + BESS') >= 0);
+    t.assertTrue('banner names the interconnection mode',
+                 text.indexOf('ZERO_EXPORT') >= 0);
+    t.assertTrue('no CONSERVADOR tile in idle state',
+                 text.indexOf('CONSERVADOR') < 0);
+    t.assertTrue('no \u00d3PTIMO tile in idle state',
+                 text.indexOf('\u00d3PTIMO\n') < 0);
+
+    // Control: non-zero range renders the three tiles, no idle banner.
+    var sh2 = _mkMockSheet();
+    var autoOpt2 = { conservativeMxn: 500000, upsideMxn: 650000, optimalByMonth: [] };
+    _cfeOutV2_renderConsExpUpside(sh2, 50, autoOpt2, 580000, 'NET_BILLING', 13000000);
+    var text2 = _allWrittenText(sh2);
+    t.assertTrue('control: CONSERVADOR tile rendered', text2.indexOf('CONSERVADOR') >= 0);
+    t.assertTrue('control: no idle banner', text2.indexOf('SIN VALOR BESS DESPACHABLE') < 0);
+  }
+});
+
+
+registerTest({
+  id      : 'UNIT_CFE_DEMAND_BREAKDOWN_IDLE_OMITTED',
+  group   : 'unit',
+  module  : 'writers/cfe_chunk5',
+  scenarios: [],
+  tags    : ['writers', 'cfe', 'chunk5', 'regression'],
+  source  : 'tests_unit/writers/CfeOutputChunk5Tests.gs',
+  fn      : function (t, ctx) {
+    t.suite('UNIT writers/cfe_chunk5 [B-4]: zero demand breakdown is omitted loudly');
+
+    // pvOnly == pvBess (battery idled): omission note, no zero table.
+    var flatPeaks = [500,500,500,500,500,500,500,500,500,500,500,500];
+    var idleAttr = { attribution: {
+      pvOnly: { monthlyPeakPuntaKw: flatPeaks,
+                costByBucket: { punta: 100, intermedia: 200, base: 300 } },
+      pvBess: { monthlyPeakPuntaKw: flatPeaks,
+                costByBucket: { punta: 100, intermedia: 200, base: 300 } }
+    }};
+    var sh = _mkMockSheet();
+    _cfeOutV2_renderDemandChargeBreakdown(sh, 70, idleAttr);
+    var text = _allWrittenText(sh);
+    t.assertTrue('omission note rendered',
+                 text.indexOf('DESGLOSE DE AHORRO BESS omitido') >= 0);
+    t.assertTrue('no zero-kW table row in idle state',
+                 text.indexOf('Reducci\u00f3n de pico') < 0);
+
+    // Control: real reduction renders the table, no omission note.
+    var redAttr = { attribution: {
+      pvOnly: { monthlyPeakPuntaKw: [800,800,800,800,800,800,800,800,800,800,800,800],
+                costByBucket: { punta: 900000, intermedia: 200, base: 300 } },
+      pvBess: { monthlyPeakPuntaKw: [500,500,500,500,500,500,500,500,500,500,500,500],
+                costByBucket: { punta: 400000, intermedia: 200, base: 300 } }
+    }};
+    var sh2 = _mkMockSheet();
+    _cfeOutV2_renderDemandChargeBreakdown(sh2, 70, redAttr);
+    var text2 = _allWrittenText(sh2);
+    t.assertTrue('control: table rendered (Reducci\u00f3n de pico)',
+                 text2.indexOf('Reducci\u00f3n de pico') >= 0);
+    t.assertTrue('control: 300 kW reduction shown', text2.indexOf('300 kW') >= 0);
+    t.assertTrue('control: no omission note',
+                 text2.indexOf('DESGLOSE DE AHORRO BESS omitido') < 0);
+  }
+});

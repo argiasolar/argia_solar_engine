@@ -1,3 +1,40 @@
+## [4.14.4] — 2026-06-12
+
+**B-4: hourly-model idle state made LOUD — no more silent $0/$0/$0 screening tiles next to Section 2's real BESS savings.**
+
+> Root cause (reproduced in Node with the live CULLIGAN bill data): the
+> monthly planner's PEAK_SHAVING and SELF_CONSUMPTION_MAX charge ONLY from
+> typical-day PV surplus (20b _planPeakShaving), and LOAD_SHIFTING's
+> P4_ARBITRAGE is gated to NET_BILLING (20b:379). A partial-offset
+> ZERO_EXPORT site — CULLIGAN, and most C&I deals — has no typical-day
+> surplus, so EVERY strategy plans zero discharge: the level-2 dispatcher
+> idles the battery all year, attribution pvBess == pvOnly to the peso,
+> auto-optimize cons/ups = 0, and CFE_OUTPUT_v2 rendered Conservador /
+> Esperado / Óptimo as $0/$0/$0 plus a 0-kW demand breakdown — directly
+> below Section 2's monthly-model $800k/yr BESS savings. Silent
+> model-vs-model contradiction shown to the client; the golden master never
+> caught it because no assertion covers the tile block.
+>
+> THIS RELEASE (display layer only — no dispatch/model change):
+> - _cfeOutV2_renderConsExpUpside: when cons/exp/ups are all <= 0, render
+>   ONE loud orange banner explaining WHY the hourly screening found no
+>   dispatchable value (no typical-day PV surplus; arbitrage gated off for
+>   the project's interconnection mode, named in the banner) and pointing
+>   the reader at the MONTHLY model in Section 2. Tiles are not rendered.
+> - _cfeOutV2_renderDemandChargeBreakdown: same idle condition renders an
+>   explicit omission note instead of a 0 kW / $0 / $0 / $0 table.
+> - Tests: UNIT_CFE_HOURLY_IDLE_LOUD_BANNER and
+>   UNIT_CFE_DEMAND_BREAKDOWN_IDLE_OMITTED (502 -> 504), each with a
+>   non-zero control case locking that healthy ranges still render tiles
+>   and the table. B-1's clamp tests unaffected.
+>
+> DELIBERATELY NOT in this release (separate modeling decision, own chunk):
+> un-gating battery grid-charging from NET_BILLING. Grid-charging a battery
+> does not violate a zero-export interconnection (the limit is on PV
+> export), and the monthly model already credits demand savings the hourly
+> planner cannot reach under the current gate. Changing dispatch economics
+> must land as its own verified push with recalibrated expectations.
+
 ## [4.14.3] — 2026-06-11
 
 **Root cause closed + two design bugs owned: CellImage logos poisoned the backup write; force tab rebuild #REF!'d the workbook; per-cell fallback caused the API storm.**
