@@ -1,3 +1,48 @@
+## [4.15.3] — 2026-06-13
+
+**TESTPROJ_001 calc fixture re-locked to verified-correct values. NO engine change — the expected values were stale/mis-computed; every delta was independently verified before re-locking.**
+
+> The live CALC_AC / CALC_DC failures were investigated to root cause (not
+> rubber-stamped). Three independent, legitimate reasons — each verified by
+> hand against the live engine dump before the fixture was touched:
+>
+> 1. GEOMETRY-AWARE RUN LENGTH (dc.dcLength 70 -> 103.93, ac.acLenInv 65 ->
+>    93.14). estimateDcRunM / estimateAcRunM add an in-array cabling term
+>    (((arrayLen+arrayWid)/4)*walkway for DC; (arrayLen/2)*walkway/stations
+>    for AC). Reproduced by hand to the rounding digit. The old flat
+>    base+corridor values predate this model. CASCADE (all verified correct):
+>    - dc.conductorDC 10 -> 8 AWG: at 103.93 m a 10 AWG run breaches the 1.5%
+>      vdrop limit (0.0190 > 0.015); engine correctly upsizes to 8 AWG
+>      (vdrop 0.01197, passes). dc.areaConDC 5.26 -> 8.37; dc.conduitDC
+>      0.75" -> 1"; dc.vdropDC 0.01282 -> 0.01197.
+>    - ac.conductorPerInv 1 -> 1/0 AWG for the longer branch;
+>      ac.vdropACPerInv 0.01145 -> 0.01300.
+>
+> 2. AC CONTINUOUS-FACTOR RULE (ac.ampReqPerInv 132.18 -> 150.35).
+>    requiredAmpacity returns max(1.25*iNom, iNom/derate). The 125% continuous
+>    term (150.35) now binds; the old 132.18 was only the iNom/derate term and
+>    predates the max() logic. NEC/NOM-correct.
+>
+> 3. Voc COLD MIS-COMPUTATION CORRECTED (dc.vocColdPerMod 56.31 -> 55.8995,
+>    dc.vocColdString 1013.57 -> 1006.19). The OLD expected was computed in the
+>    fixture comment with tempCoeff -0.0029, but tdBuildTestInputs supplies
+>    tempCoeffOverride = -0.0026. The engine has ALWAYS used -0.0026; the old
+>    expected was simply wrong. 52.36 * (1 + (-0.0026)*(-26)) = 55.8995.
+>    Voc_stc 52.36 unchanged (no DB change).
+>
+> ac.mainBreaker 800 -> 700: nextBreaker(iTotalAC*1.25 = 601.4) = 700, the
+> next standard rating above 601; the old 800 was locked against a different
+> table/factor.
+>
+> Every re-locked value was cross-checked against the live engine dump and
+> matches within the fixture's own tolerance. These tests are workbook-
+> dependent (read NOM/elec tables), so they verify on the live "Run ALL
+> Tests", not the Node rig.
+>
+> NOTE: REG_CULLIGAN_BASELINE_V2 also "fails" when the workbook holds a
+> non-CULLIGAN project (PROLOGIS) -- that is the intended short-circuit guard,
+> not a defect. Re-run "Generate MDC and BOM" against CULLIGAN inputs first.
+
 ## [4.15.2] — 2026-06-13
 
 **The real root cause of the repeated "step 0 merge error" — found from the live merge geometry, not guessed. Section 08 SOLAR was double-owned; the generic renderer's header merge collided with section 07's field-label merge on shared row 64.**

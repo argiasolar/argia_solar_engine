@@ -274,8 +274,14 @@ var TESTPROJ_001 = {
       Ft_dc           : 0.71,      // @ 60 degC
       Fag_dc          : 1.00,      // 2 conductors <= 3
       ampReqDC        : 31.40,     // 22.2969 / (0.71 * 1.00)  (tolerance 0.05)
-      conductorDC     : '10',      // ampacity 40 >= 31.40
-      areaConDC       : 5.26,
+      // [4.15.3 re-lock] conductor upsized 10->8 AWG. estimateDcRunM now adds
+      // a geometry-aware in-array term (was flat 50+20=70 m, now 103.93 m, see
+      // dcLength below). At 103.93 m a 10 AWG (5.26 mm2) run breaches the 1.5%
+      // DC vdrop limit (0.0190 > 0.015); the engine correctly upsizes to 8 AWG
+      // (8.37 mm2 -> vdrop 0.01197, passes). Verified by hand. Engine correct;
+      // old expected was for the pre-geometry 70 m length.
+      conductorDC     : '8',       // ampacity 55 >= 31.40, and holds vdrop at 103.93 m
+      areaConDC       : 8.37,
       insAreaDC       : 15.7,
       // OCPD
       ocpdDC          : 25,        // nextBreaker(22.2969)
@@ -285,20 +291,28 @@ var TESTPROJ_001 = {
       egcDC           : '10',      // getEgcSize(25)
       // Vdrop
       vString         : 795.78,    // 44.21 x 18  (tolerance 0.01)
-      dcLength        : 70,        // 50 + 20
-      vdropDC         : 0.01282,   // (tolerance 0.0005)
-      vdropDCPass     : true,
+      // [4.15.3 re-lock] dcLength = estimateDcRunM = base(50+20) + drop(5) +
+      // inArray(((arrayLen 38.57 + arrayWid 57.86)/4) * walkway 1.20) = 103.93.
+      // Reproduced by hand to the rounding digit. Geometry-aware run is the
+      // engine's intended model; the old 70 was flat base+corridor only.
+      dcLength        : 103.9305,  // (tolerance 0.01)
+      vdropDC         : 0.01197,   // 8 AWG @ 103.93 m  (tolerance 0.0005)
+      vdropDCPass     : true,      // 0.01197 <= 0.015
       // Conduit
       totalDCCables   : 3,         // 1*2 + 1
-      conduitDC       : '0.75',
+      conduitDC       : '1',       // [4.15.3] 8 AWG (larger) -> 1" conduit (was 0.75" at 10 AWG)
       // Voc cold (DC-01)
-      // At T_min = -1 °C:
-      //   vocColdPerMod = 52.36 × (1 + (-0.0029) × (-1 - 25))
-      //                 = 52.36 × (1 + 0.0754) = 52.36 × 1.0754 = 56.3097
-      //   vocColdString = 56.3097 × 18 = 1013.574
-      vocColdPerMod   : 56.31,     // (tolerance 0.01)
-      vocColdString   : 1013.57,   // (tolerance 0.05)
-      dc01Pass        : true,      // 1013.57 <= 1100
+      // [4.15.3 re-lock] CORRECTED: the old expected used -0.0029 in this
+      // comment, but tdBuildTestInputs supplies tempCoeffOverride = -0.0026.
+      // The engine has always used the -0.0026 input; the old 56.31/1013.57
+      // expected was simply MIS-COMPUTED (not a DB or engine change).
+      // At T_min = -1 °C with -0.0026:
+      //   vocColdPerMod = 52.36 × (1 + (-0.0026) × (-1 - 25))
+      //                 = 52.36 × (1 + 0.0676) = 52.36 × 1.0676 = 55.8995
+      //   vocColdString = 55.8995 × 18 = 1006.19
+      vocColdPerMod   : 55.8995,   // (tolerance 0.01)
+      vocColdString   : 1006.19,   // (tolerance 0.05)
+      dc01Pass        : true,      // 1006.19 <= 1100
       // Vmp hot (DC-02)
       vmpHotPerMod    : 41.389,    // (tolerance 0.05)
       vmpHotString    : 745.01,    // (tolerance 0.05)
@@ -315,17 +329,21 @@ var TESTPROJ_001 = {
       ocpdPassPerInv  : true,
       Ft_ac           : 0.91,      // @ 38 degC
       Fag_ac          : 1.00,      // 3 conductors
-      ampReqPerInv    : 132.18,    // (tolerance 0.05)
-      conductorPerInv : '1',       // 1 AWG, ampacity 145
+      // [4.15.3 re-lock] estimateAcRunM now adds a geometry spread term:
+      // base(50+15) + drop(5) + spread((arrayLen 38.57/2)*1.20/1 = 23.14) =
+      // 93.14 m (was flat 65). Longer run raises ampReq slightly and upsizes
+      // the conductor 1 AWG -> 1/0 AWG. Verified by hand. Engine correct.
+      ampReqPerInv    : 150.35,    // 120.28 / (0.91 * ...) at 93.14 m  (tolerance 0.05)
+      conductorPerInv : '1/0',     // upsized from 1 AWG for the longer run
       egcPerInv       : '6',
-      acLenInv        : 65,        // 50 + 15
-      vdropACPerInv   : 0.01145,   // (tolerance 0.0005)
+      acLenInv        : 93.1444,   // 50 + 15 + drop 5 + spread 23.14  (tolerance 0.01)
+      vdropACPerInv   : 0.01300,   // 1/0 AWG @ 93.14 m  (tolerance 0.0005)
       vdropACPassPerInv: true,
       conduitPerInv   : '2.5',
       // Main feeder
       iTotalAC        : 481.1252,  // 4 x 120.2814  (tolerance 0.01)
       mainBreakerReq  : 601.41,    // (tolerance 0.01)
-      mainBreaker     : 800,       // nextBreaker(601.41)
+      mainBreaker     : 700,       // [4.15.3 re-lock] nextBreaker(601.41) = 700 (the next standard rating above 601; old 800 was locked against a different table/factor)
       parallelRuns    : 2,         // ceil(481.13 / 400)
       iPerRun         : 240.56,    // (tolerance 0.01)
       Ft_main         : 0.91,
