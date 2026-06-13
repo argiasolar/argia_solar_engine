@@ -18,7 +18,7 @@
 // asserts the structural invariant directly:
 //   - deleteSheet() is NEVER called on the existing INPUT_DESIGN tab
 //   - insertSheet() is NOT called when the tab already exists (reuse)
-//   - the in-place clean sequence runs (unfreeze -> breakApart -> clear)
+//   - the in-place clean sequence runs (unfreeze -> per-merge unmerge -> clear)
 // The heavy render helpers are stubbed (this test is about the wipe contract,
 // not pixel layout -- layout is covered by the live workbook run), and every
 // global override is restored in finally so the workbook is left untouched.
@@ -38,6 +38,13 @@ registerTest({
     function mkRangeRecorder(rec) {
       var self = {
         breakApart:            function () { rec.breakApart = true; return self; },
+        getMergedRanges:       function () {
+                                 // Simulate one stale merge so the per-merge
+                                 // unmerge path runs and records breakApart.
+                                 if (!rec._mergesServed) { rec._mergesServed = true;
+                                   return [{ breakApart: function () { rec.breakApart = true; } }]; }
+                                 return [];
+                               },
         merge:                 function () { return self; },
         clearConditionalFormatRules: function () { return self; },
         clearDataValidations:  function () { rec.clearedValidations = true; return self; },
@@ -146,7 +153,7 @@ registerTest({
       t.assertTrue('insertSheet NOT called when the tab already exists (reuse)',
                    insertCalls.length === 0);
       t.assertTrue('in-place wipe unfroze rows before unmerge', rec.unfrozeRows === true);
-      t.assertTrue('in-place wipe broke apart merged ranges', rec.breakApart === true);
+      t.assertTrue('in-place wipe broke apart merged ranges (per-merge)', rec.breakApart === true);
       t.assertTrue('in-place wipe cleared contents+formats', rec.cleared === true);
       t.assertTrue('logo re-inserted after the wipe', rec.logoInserted === true);
       t.assertTrue('banner/dashboard frozen at row 7', rec.frozeRows === 7);

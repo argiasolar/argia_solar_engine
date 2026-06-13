@@ -1375,6 +1375,7 @@ var _MAP_BESS = {
     default: 'YES', required: false,
     dropdown: ['YES', 'NO'],
     section: '08 SOLAR',
+    renderedBy: 'dedicated',  // [4.15.2] setupInputProjectPvSection (01d) owns this section's layout; the generic _setupOneTab MUST skip it to avoid the row-64 header/label merge collision with section 07.
     consumedBy: ['engine'],
     notes: 'YES (default) => model new PV. NO => battery-only project '
          + '(scenarios 3 / 4A); the hourly sim runs with monthlyPv=null.'
@@ -1385,6 +1386,7 @@ var _MAP_BESS = {
     default: 'NO', required: false,
     dropdown: ['YES', 'NO'],
     section: '08 SOLAR',
+    renderedBy: 'dedicated',  // [4.15.2] setupInputProjectPvSection (01d) owns this section's layout; the generic _setupOneTab MUST skip it to avoid the row-64 header/label merge collision with section 07.
     consumedBy: ['engine'],
     notes: 'Only meaningful when installPv=NO. YES => scenario 4A/4B '
          + '(existing-solar disclaimer). NO => scenario 3 (greenfield).'
@@ -1394,6 +1396,7 @@ var _MAP_BESS = {
     label: 'PV existente (kWp)', type: 'number',
     default: 0, required: false,
     section: '08 SOLAR',
+    renderedBy: 'dedicated',  // [4.15.2] setupInputProjectPvSection (01d) owns this section's layout; the generic _setupOneTab MUST skip it to avoid the row-64 header/label merge collision with section 07.
     consumedBy: ['engine'],
     notes: 'Scenario 4B input (roadmap). Existing PV size; not yet used for '
          + 'capture modeling.'
@@ -1403,6 +1406,7 @@ var _MAP_BESS = {
     label: 'PV existente (kWh/año)', type: 'number',
     default: 0, required: false,
     section: '08 SOLAR',
+    renderedBy: 'dedicated',  // [4.15.2] setupInputProjectPvSection (01d) owns this section's layout; the generic _setupOneTab MUST skip it to avoid the row-64 header/label merge collision with section 07.
     consumedBy: ['engine'],
     notes: 'Scenario 4B: existing PV annual production (PROPOSAL-level input '
          + 'for export-capture context).'
@@ -1412,6 +1416,7 @@ var _MAP_BESS = {
     label: 'PV existente: exportación (kWh/año)', type: 'number',
     default: 0, required: false,
     section: '08 SOLAR',
+    renderedBy: 'dedicated',  // [4.15.2] setupInputProjectPvSection (01d) owns this section's layout; the generic _setupOneTab MUST skip it to avoid the row-64 header/label merge collision with section 07.
     consumedBy: ['engine'],
     notes: 'Scenario 4B GATE: measured exported kWh/year (from the CFE bill '
          + 'export line or inverter portal). > 0 enables the export-capture '

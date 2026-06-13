@@ -252,14 +252,32 @@ function inputKeysForSection(tabName, sectionLabel) {
  * section headers in the right order.
  */
 function inputSectionsForTab(tabName) {
+  // [4.15.2] A section whose EVERY key is renderedBy:'dedicated' is laid out
+  // by a dedicated idempotent setup (e.g. setupInputProjectPvSection owns
+  // '08 SOLAR'), NOT the generic _setupOneTab renderer. Returning it here
+  // made _setupOneTab compute a section-header merge that collided with the
+  // previous section's field-label merge on the shared boundary row (the
+  // row-64 C64:E64 vs B64:C64 partial overlap that threw "You must select
+  // all cells in a merged range..." and aborted the whole rebuild). Skip
+  // fully-dedicated sections so the dedicated owner is the single source.
+  var sectionKeys = {};   // section -> { total, dedicated }
+  Object.keys(INPUT_MAP).forEach(function(k) {
+    var m = INPUT_MAP[k];
+    if (m.sheet !== tabName || !m.section) return;
+    var s = sectionKeys[m.section] || (sectionKeys[m.section] = { total: 0, dedicated: 0 });
+    s.total++;
+    if (m.renderedBy === 'dedicated') s.dedicated++;
+  });
+
   var seen = {};
   var result = [];
   Object.keys(INPUT_MAP).forEach(function(k) {
     var m = INPUT_MAP[k];
-    if (m.sheet === tabName && m.section && !seen[m.section]) {
-      seen[m.section] = true;
-      result.push(m.section);
-    }
+    if (m.sheet !== tabName || !m.section || seen[m.section]) return;
+    seen[m.section] = true;
+    var s = sectionKeys[m.section];
+    if (s && s.total > 0 && s.dedicated === s.total) return;  // fully dedicated -> skip
+    result.push(m.section);
   });
   return result;
 }

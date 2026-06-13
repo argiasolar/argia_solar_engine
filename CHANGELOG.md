@@ -1,3 +1,52 @@
+## [4.15.2] — 2026-06-13
+
+**The real root cause of the repeated "step 0 merge error" — found from the live merge geometry, not guessed. Section 08 SOLAR was double-owned; the generic renderer's header merge collided with section 07's field-label merge on shared row 64.**
+
+> Honest note: 4.15.0 and 4.15.1 reduced the symptom (rebuildFailures 11 -> 2,
+> tabs render correctly) but did NOT close it. The breakthrough was reading the
+> ACTUAL live merge list off INPUT_PROJECT instead of theorizing:
+>   INPUT_PROJECT: 47 merges ... C17:E17, C23:E23, C32:E32 (section headers,
+>   cols 3-5) and B8:C8 ... B41:C41 (field labels, cols 2-3).
+> Mapping that against INPUT_MAP:
+>   - _setupOneTab renders each section header as a C:E merge at (minRow-2).
+>   - Section 08 SOLAR's fields start at row 66 -> generic header computed to
+>     row 64 (C64:E64).
+>   - Section 07 ALMACENAMIENTO's only field, installBattery, is at row 64 ->
+>     label merge B64:C64.
+>   - B64:C64 (cols 2-3) and C64:E64 (cols 3-5) share col 3 and neither
+>     contains the other, so breakApart() on the label PARTIALLY OVERLAPS the
+>     header and throws "You must select all cells in a merged range...",
+>     aborting the rebuild at that point (which is why the live merges stopped
+>     at row 41 / the early sections).
+> '08 SOLAR' is in fact laid out by a DEDICATED idempotent setup
+> (setupInputProjectPvSection, 01d) — header in col B at row 65, no merge — so
+> the generic renderer should never have rendered it at all.
+>
+> FIX (map-driven, per the standing preference — no keyword heuristics):
+> - The five '08 SOLAR' keys are tagged renderedBy:'dedicated'.
+> - inputSectionsForTab now SKIPS any section whose every key is
+>   renderedBy:'dedicated', so _setupOneTab no longer renders 08 SOLAR and the
+>   row-64 collision cannot occur. Section 07 (no dedicated owner) is
+>   unaffected and still rendered generically.
+> - Defense in depth: the in-place wipe in both _setupOneTab and
+>   _setupDesignTab now unmerges PER EXISTING MERGE via getMergedRanges()
+>   (_unmergeAllInPlace_) instead of one big-range breakApart, so a stale
+>   merge from an older layout can never survive or throw.
+>
+> SEPARATE FIX, same chunk (rebuild robustness): step 10
+> setupInputCFE -> _styleInputCFETab threw "INPUT_CFE_RAW tab not found" and
+> inflated rebuildFailures. INPUT_CFE_RAW is an OPTIONAL manual-paste tab; a
+> missing tab is not a failure. It now logs INFO and returns.
+>
+> Tests 508 -> 510:
+> - UNIT_NO_SECTION_HEADER_OVERLAPS_FIELD_ROW reconstructs what _setupOneTab
+>   actually merges per tab (via the real inputSectionsForTab /
+>   inputKeysForSection) and asserts no header row equals a field row.
+>   Verified to FAIL (naming the exact row-64 installBattery/SOLAR collision)
+>   when the dedicated flag is removed, PASS with the fix.
+> - UNIT_DEDICATED_SECTION_EXCLUDED_FROM_GENERIC_RENDER locks the flag on all
+>   five SOLAR keys and the skip behavior.
+
 ## [4.15.1] — 2026-06-13
 
 **INPUT_DESIGN rebuild fixed at the root — the last input setup still using deleteSheet now wipes in place. (Caught by 4.15.0's loud logging working exactly as designed.)**

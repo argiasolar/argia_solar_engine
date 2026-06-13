@@ -139,6 +139,37 @@ function _ensureDropdownsTab(ss) {
 
 
 // ---------------------------------------------------------------------------
+// [4.15.2] Bulletproof in-place unmerge.
+// -----------------------------------------------------------------------------
+// breakApart() on a big block range THROWS "You must select all cells in a
+// merged range to merge or unmerge them" if ANY existing merge only partially
+// overlaps that range. That happens when the live sheet was built by an OLDER
+// layout whose merge spans differ from the current code's -- precisely the
+// INPUT_DESIGN situation after repeated format churn. The big-range breakApart
+// in the wipe was swallowed by try/catch, so stale merges survived and the
+// FIRST render breakApart() that clipped one threw (unguarded) -> the repeated
+// "step 0" failures.
+//
+// getMergedRanges() returns each existing merge as its OWN range; calling
+// breakApart() on a merge's exact range can never partially overlap anything,
+// so this clears EVERY merge no matter what layout created it. Idempotent and
+// safe on a merge-free sheet (empty list).
+// ---------------------------------------------------------------------------
+function _unmergeAllInPlace_(sh) {
+  try {
+    var full = sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns());
+    var merged = full.getMergedRanges();
+    for (var i = 0; i < merged.length; i++) {
+      try { merged[i].breakApart(); } catch (e1) { /* per-merge guard */ }
+    }
+    // Belt-and-suspenders: a final whole-range breakApart now that the grid
+    // holds no merges (no-op if already clean; cannot partially overlap).
+    try { full.breakApart(); } catch (e2) {}
+  } catch (e) { /* never block the wipe on unmerge trouble */ }
+}
+
+
+// ---------------------------------------------------------------------------
 // CORE: render one tab from INPUT_MAP entries
 // ---------------------------------------------------------------------------
 function _setupOneTab(tabName, docTitle, force) {
@@ -176,9 +207,7 @@ function _setupOneTab(tabName, docTitle, force) {
   var sh;
   if (existing) {
     try { existing.setFrozenRows(0); existing.setFrozenColumns(0); } catch (eF) {}
-    try {
-      existing.getRange(1, 1, existing.getMaxRows(), existing.getMaxColumns()).breakApart();
-    } catch (eM) {}
+    _unmergeAllInPlace_(existing);   // [4.15.2] per-merge, never throws
     try { existing.clearConditionalFormatRules(); } catch (eC) {}
     try {
       existing.getRange(1, 1, existing.getMaxRows(), existing.getMaxColumns()).clearDataValidations();
@@ -909,9 +938,7 @@ function _setupDesignTab(force) {
   var sh;
   if (existing) {
     try { existing.setFrozenRows(0); existing.setFrozenColumns(0); } catch (eF) {}
-    try {
-      existing.getRange(1, 1, existing.getMaxRows(), existing.getMaxColumns()).breakApart();
-    } catch (eM) {}
+    _unmergeAllInPlace_(existing);   // [4.15.2] per-merge, never throws
     try { existing.clearConditionalFormatRules(); } catch (eC) {}
     try {
       existing.getRange(1, 1, existing.getMaxRows(), existing.getMaxColumns()).clearDataValidations();
@@ -1469,7 +1496,15 @@ function _styleInputCFETab() {
 
   var sh = ss.getSheetByName('INPUT_CFE_RAW');
   if (!sh) {
-    throw new Error('INPUT_CFE_RAW tab not found.');
+    // [4.15.2] INPUT_CFE_RAW is the optional manual-paste target. When it is
+    // absent this styling-only refresh has nothing to do -- that is NOT a
+    // rebuild failure. Log + return so rebuildInputsToDefault does not count
+    // it (it was inflating rebuildFailures and aborting step 10 needlessly).
+    if (typeof engineLog === 'function') {
+      try { engineLog(ss, 'InputSetup', 'INFO',
+        '_styleInputCFETab: INPUT_CFE_RAW absent -- styling skipped (optional tab).'); } catch (_) {}
+    }
+    return;
   }
 
   // ---- 1. CANVAS RESET -----------------------------------------------------
