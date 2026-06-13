@@ -1,3 +1,37 @@
+## [4.15.5] — 2026-06-13
+
+**Fix: "Repair Input Layout" produced duplicate / stale SOLAR rows. Section 08 was being written TWICE by the rebuild — once by the generic renderer (4.15.4), once by the leftover dedicated step. Removed the double-write; made the rebuild step list introspectable and test-guarded.**
+
+> Symptom (live, after Repair Input Layout): INPUT_PROJECT section 08 SOLAR
+> showed a greyed/valueless "Instalar PV nuevo" plus DUPLICATE rows ("PV
+> existente (kWh/año)" and "...exportación" appearing twice).
+>
+> Root cause: 4.15.4 correctly moved section 08 back into the generic
+> setupInputProject(true) renderer (step 0 of rebuildInputsToDefault) with full
+> styling -- BUT setupInputProjectPvSection, the OLD dedicated owner, was still
+> a separate rebuild step (step 8). A full rebuild therefore wrote section 08
+> twice. My 4.15.4 fix was half-complete: I moved the rows and restored styling
+> but did not remove the now-redundant dedicated step.
+>
+> Why the unit suite missed it: the rebuild step list was a LOCAL array, not
+> introspectable, so no test could assert against it.
+>
+> THIS RELEASE:
+> - Removed setupInputProjectPvSection from the rebuild sequence. The generic
+>   setupInputProject(true) is the single owner/renderer of section 08 SOLAR.
+>   The dedicated function is retained ONLY as a standalone menu item.
+> - Extracted the step list into rebuildInputSteps_(ss) -- named entries with
+>   stable ids -- so it is introspectable and testable. Failure logging now
+>   reports the step id instead of "anon".
+> - New test UNIT_REBUILD_NO_DOUBLE_OWNED_SECTION (511): asserts the dedicated
+>   section-08 setup is NOT in the rebuild sequence while section 08 is
+>   rendered generically, that setupInputProject IS, and that no step id is
+>   duplicated. Verified to FAIL when the double-write step is re-added.
+>
+> ACTION: after pushing, run "Repair Input Layout (keeps values)" again -- the
+> SOLAR section should now render ONCE, fully styled like sections 01-07, with
+> no duplicate rows.
+
 ## [4.15.4] — 2026-06-13
 
 **Two fixes from the live "Run ALL Tests": (1) the last two CALC FAILs were a missing-tolerance bug, not a value mismatch; (2) INPUT_PROJECT section 08 SOLAR rendered UNSTYLED (rows 65-70) — fixed properly by row spacing so the generic renderer styles it like every other section.**

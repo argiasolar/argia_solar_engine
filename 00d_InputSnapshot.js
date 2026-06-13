@@ -214,8 +214,9 @@ function _restoreInputsCellByCell_(sh, s) {
  *   - setupInputBessResilienceSection runs AFTER setupInputBessInstallRows
  *     (the §6 rows it must not collide with -- see 27b_RepairResilienceCollision,
  *     which exists precisely because the reverse order once happened).
- *   - setupInputProjectPvSection runs AFTER setupInputProject (it extends the
- *     INPUT_PROJECT layout -- 01d_SetupInputProjectPv.js).
+ *   - [4.15.5] section 08 SOLAR is rendered by setupInputProject(true) itself
+ *     (generic map-driven renderer); the standalone setupInputProjectPvSection
+ *     is NO LONGER a rebuild step (it would double-write the section).
  *   - setupInputCFE last: independent tab, array formulas written in one pass.
  * Covered by INT_LIFECYCLE_START_NEW_PROJECT_CLEAN, which rebuilds and then
  * asserts the INPUT_BESS layout contract + zero residue.
@@ -229,21 +230,34 @@ function rebuildInputsToDefault(ss) {
   return rebuildInputsToDefault_(ss);
 }
 
+// [4.15.5] Rebuild step list as NAMED, introspectable entries so a test can
+// verify no INPUT_PROJECT section is written by two steps (the section-08
+// double-write that produced duplicate SOLAR rows after Repair Input Layout).
+// Each entry: { id, fn }. id is a stable string a test can assert against.
+function rebuildInputSteps_(ss) {
+  return [
+    { id: 'setupInputProject',              fn: function () { setupInputProject(true); } },
+    { id: 'setupInputDesign',               fn: function () { setupInputDesign(true); } },
+    { id: 'setupInputInstall',              fn: function () { setupInputInstall(true); } },
+    { id: 'setupInputBess',                 fn: function () { setupInputBess(); } },
+    { id: 'setupInputBessEconomicsRows',    fn: function () { setupInputBessEconomicsRows(); } },
+    { id: 'setupInputBessInstallRows',      fn: function () { setupInputBessInstallRows(); } },
+    { id: 'setupInputBessStyling',          fn: function () { setupInputBessStyling(); } },
+    { id: 'setupInputBaasSheet',            fn: function () { setupInputBaasSheet(true); } },
+    // [4.15.5] setupInputProjectPvSection REMOVED: as of 4.15.4 the generic
+    // setupInputProject(true) renders AND styles section 08 SOLAR (rows 66-72)
+    // itself, so running the dedicated setup here wrote the section a SECOND
+    // time -> duplicate / stale SOLAR rows after Repair Input Layout. The
+    // dedicated function stays only as a standalone menu item.
+    { id: 'setupInputBessResilienceSection',fn: function () { setupInputBessResilienceSection(ss); } },
+    { id: 'setupInputCFE',                  fn: function () { setupInputCFE(true); } }
+  ];
+}
+
 function rebuildInputsToDefault_(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
-  var steps = [
-    function () { setupInputProject(true); },
-    function () { setupInputDesign(true); },
-    function () { setupInputInstall(true); },
-    function () { setupInputBess(); },
-    function () { setupInputBessEconomicsRows(); },
-    function () { setupInputBessInstallRows(); },
-    function () { setupInputBessStyling(); },
-    function () { setupInputBaasSheet(true); },
-    function () { setupInputProjectPvSection(ss); },
-    function () { setupInputBessResilienceSection(ss); },
-    function () { setupInputCFE(true); }
-  ];
+  var stepDefs = rebuildInputSteps_(ss);
+  var steps = stepDefs.map(function (s) { return s.fn; });
   // [4.15.0 test-hygiene] Step failures were Logger-only (invisible). A
   // setup step that throws AFTER its in-place clear() leaves a bare,
   // unstyled tab -- exactly the silent INPUT_DESIGN format wipe of 4.14.3's
@@ -254,7 +268,7 @@ function rebuildInputsToDefault_(ss) {
     try { steps[i](); }
     catch (e) {
       var note = 'rebuildInputsToDefault step ' + i + ' (' +
-                 (steps[i].name || 'anon') + ') failed: ' + e.message;
+                 (stepDefs[i] ? stepDefs[i].id : 'anon') + ') failed: ' + e.message;
       failures.push(note);
       if (typeof engineLog === 'function') {
         try { engineLog(ss, 'InputRebuild', 'ERROR', note); } catch (_) {}
