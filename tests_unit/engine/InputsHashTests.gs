@@ -271,3 +271,56 @@ registerTest({
     t.assert('total=0 -> no chunks', 0, argiaChunkRanges(0, 200).length);
   }
 });
+
+
+registerTest({
+  id      : 'UNIT_BACKUP_ROWS_FILTER_NON_PRIMITIVE',
+  group   : 'unit',
+  module  : 'engine/input_backup',
+  scenarios: [],
+  tags    : ['lifecycle', 'backup', 'regression'],
+  source  : 'tests_unit/engine/InputsHashTests.gs',
+  fn      : function (t, ctx) {
+    t.suite('UNIT engine/input_backup: non-primitive values excluded [4.14.3]');
+    // ROOT CAUSE of the 4.14.0-4.14.2 persist failures: the ARGIA logo is
+    // an in-cell image at B2 of every input tab. getValues() returns a
+    // CellImage OBJECT there, and one non-serializable object poisons the
+    // whole bulk setValues ("Service error: Spreadsheets"). Invisible to
+    // offline replays because xlsx export drops in-cell images. The builder
+    // must pass only string/number/boolean/Date and skip everything else.
+    var fakeCellImage = { getUrl: function () { return ''; },
+                          toString: function () { return 'CellImage'; } };
+    var when = new Date('2026-06-11T00:00:00Z');
+    var snap = {
+      INPUT_PROJECT: {
+        rows: 2, cols: 3,
+        formulas: [['', '', ''], ['', '', '']],
+        values:   [['', fakeCellImage, ''], ['CULLIGAN', 42, when]]
+      }
+    };
+    var rows = argiaBuildBackupRows(snap, '2026-06-11T00:00:00Z');
+    var data = rows.slice(1);
+
+    t.assert('only the 3 primitive cells captured', 3, data.length);
+    t.assertTrue('no row carries the image object',
+                 data.every(function (r) { return r[4] !== fakeCellImage; }));
+    t.assertTrue('r1c2 (logo cell) absent entirely',
+                 data.every(function (r) { return !(r[1] === 1 && r[2] === 2); }));
+    t.assert('string kept', 'CULLIGAN',
+             data.filter(function (r) { return r[1] === 2 && r[2] === 1; })[0][4]);
+    t.assert('number kept', 42,
+             data.filter(function (r) { return r[1] === 2 && r[2] === 2; })[0][4]);
+    t.assertTrue('Date kept',
+                 data.filter(function (r) { return r[1] === 2 && r[2] === 3; })[0][4] instanceof Date);
+    t.assertTrue('widths still uniform 5',
+                 rows.every(function (r) { return r.length === 5; }));
+
+    // Predicate contract directly.
+    t.assertTrue('safe: string/number/boolean/Date',
+      argiaIsBackupSafeValue('x') && argiaIsBackupSafeValue(0)
+      && argiaIsBackupSafeValue(false) && argiaIsBackupSafeValue(when));
+    t.assertTrue('unsafe: object / null-ish object / array',
+      !argiaIsBackupSafeValue(fakeCellImage) && !argiaIsBackupSafeValue({})
+      && !argiaIsBackupSafeValue([1, 2]));
+  }
+});

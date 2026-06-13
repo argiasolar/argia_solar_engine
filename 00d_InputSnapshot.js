@@ -303,7 +303,16 @@ function argiaBuildBackupRows(snap, isoTimestamp) {
         var v = s.values[r][c];
         if (f === '' && (v === '' || v === null)) continue;   // skip empties
         if (f !== '') rows.push([name, r + 1, c + 1, 'F', f]);
-        else          rows.push([name, r + 1, c + 1, 'V', v]);
+        else if (argiaIsBackupSafeValue(v)) {
+          rows.push([name, r + 1, c + 1, 'V', v]);
+        }
+        // else: non-primitive cell value. The ARGIA logo is an IN-CELL image
+        // at B2 of every input tab; getValues() returns it as a CellImage
+        // object, and ONE such object in the matrix makes the whole bulk
+        // setValues throw "Service error: Spreadsheets" (the 4.14.0-4.14.2
+        // persist failures -- invisible to the offline replay because xlsx
+        // export drops in-cell images). Images are not restorable input
+        // data; the setup function reinserts the logo. SKIP.
       }
     }
   });
@@ -347,38 +356,32 @@ function persistInputSnapshot(ss, snap) {
   // cell logged (backup row, tab, r, c). The backup then lands regardless,
   // and a genuinely poisoned cell names itself in the LOGS sheet instead of
   // aborting Start New Project behind an opaque service error.
+  // [4.14.3] Fallback is now BOUNDED: bisect each failing chunk instead of
+  // degrading to per-cell writes. 4.14.2's per-cell mode issued ~1000
+  // setValue calls per failing 200-row chunk (~5000 total with the five
+  // logo cells) -- the API storm that triggered the document-wide service
+  // timeouts mid-suite. Bisection isolates a poisoned row in ~8 extra calls.
   var failedCells = 0;
   try {
     sh.getRange(1, 1, rows.length, INPUT_BACKUP_COLS).setValues(rows);
   } catch (bulkErr) {
+    var failedRows = [];
     var chunks = argiaChunkRanges(rows.length, 200);
     for (var ci = 0; ci < chunks.length; ci++) {
-      var start = chunks[ci][0], count = chunks[ci][1];
-      var slice = rows.slice(start, start + count);
-      try {
-        sh.getRange(start + 1, 1, count, INPUT_BACKUP_COLS).setValues(slice);
-      } catch (chunkErr) {
-        for (var ri = 0; ri < slice.length; ri++) {
-          for (var cc = 0; cc < INPUT_BACKUP_COLS; cc++) {
-            try {
-              sh.getRange(start + 1 + ri, cc + 1).setValue(slice[ri][cc]);
-            } catch (cellErr) {
-              failedCells++;
-              if (typeof engineLog === 'function') {
-                engineLog(ss, 'persistInputSnapshot', 'WARN',
-                  'cell write failed @backup row ' + (start + 1 + ri)
-                  + ' col ' + (cc + 1) + ' [' + slice[ri][0] + ' r' + slice[ri][1]
-                  + ' c' + slice[ri][2] + ' ' + slice[ri][3] + ']: ' + cellErr);
-              }
-            }
-          }
-        }
-      }
+      _argiaBisectWrite(sh, rows, chunks[ci][0], chunks[ci][1], failedRows);
     }
+    failedCells = failedRows.length;
     if (typeof engineLog === 'function') {
+      var detail = failedRows.slice(0, 10).map(function (fr) {
+        var row = rows[fr];
+        return 'backup row ' + (fr + 1) + ' [' + row[0] + ' r' + row[1]
+             + ' c' + row[2] + ' ' + row[3] + ' type='
+             + (row[4] instanceof Date ? 'Date' : typeof row[4]) + ']';
+      }).join('; ');
       engineLog(ss, 'persistInputSnapshot', 'WARN',
-        'bulk setValues failed (' + bulkErr + '); chunked fallback used'
-        + (failedCells ? ', FAILED CELLS: ' + failedCells : ', all rows landed'));
+        'bulk setValues failed (' + bulkErr + '); bisect fallback'
+        + (failedCells ? ' -- UNWRITABLE ROWS: ' + failedCells + ' -> ' + detail
+                       : ' -- all rows landed'));
     }
   }
   try { sh.hideSheet(); } catch (e) { /* already hidden / single-sheet edge */ }
@@ -460,6 +463,14 @@ function clearPersistedInputBackup(ss) {
 // no gap, no overlap -- so the fallback can never silently drop or
 // duplicate backup rows.
 // ---------------------------------------------------------------------------
+// [4.14.3] A backup row's content cell may only carry what Sheets can
+// serialize back: string / number / boolean / Date. Everything else
+// (CellImage logos, future rich objects) is excluded by the builder.
+function argiaIsBackupSafeValue(v) {
+  return typeof v === 'string' || typeof v === 'number' ||
+         typeof v === 'boolean' || (v instanceof Date);
+}
+
 function argiaChunkRanges(total, chunkSize) {
   var out = [];
   var n = Math.max(0, total | 0);
@@ -468,4 +479,24 @@ function argiaChunkRanges(total, chunkSize) {
     out.push([start, Math.min(size, n - start)]);
   }
   return out;
+}
+
+
+// ---------------------------------------------------------------------------
+// [4.14.3] Bounded bisect writer for the persist fallback. A failing range
+// is split in half recursively; a single unwritable ROW is recorded (index
+// into the rows matrix) and skipped. Cost per poisoned row is O(log chunk)
+// extra setValues calls -- never the per-cell storm.
+// ---------------------------------------------------------------------------
+function _argiaBisectWrite(sh, rows, start, count, failedRows) {
+  if (count <= 0) return;
+  var slice = rows.slice(start, start + count);
+  try {
+    sh.getRange(start + 1, 1, count, slice[0].length).setValues(slice);
+  } catch (e) {
+    if (count === 1) { failedRows.push(start); return; }
+    var half = Math.floor(count / 2);
+    _argiaBisectWrite(sh, rows, start, half, failedRows);
+    _argiaBisectWrite(sh, rows, start + half, count - half, failedRows);
+  }
 }

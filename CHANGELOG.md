@@ -1,3 +1,41 @@
+## [4.14.3] — 2026-06-11
+
+**Root cause closed + two design bugs owned: CellImage logos poisoned the backup write; force tab rebuild #REF!'d the workbook; per-cell fallback caused the API storm.**
+
+> The 4.14.2 bisect-style diagnostics worked: LOGS isolated five unwritable
+> cells, all [TAB r2 c2 V] — B2 of each input tab. B2 holds the ARGIA logo
+> as an IN-CELL image; getValues() returns a CellImage object and ONE such
+> object makes the whole bulk setValues throw "Service error: Spreadsheets".
+> This was the true cause of ALL persist failures since 4.14.0 (the offline
+> replay missed it because xlsx export drops in-cell images). Two further
+> findings from the same run, both mine to own:
+> (1) startNewProjectCore step 2 (force rebuild) DELETED+recreated the input
+> tabs — deleting a sheet permanently #REF!s every cross-sheet formula that
+> references it. FINANCE, _AUDIT_INPUTS, 41M_FINANCE_CALCULATOR and
+> BESS_SIMULATION were contaminated, cascading $0 BESS values into
+> CFE_OUTPUT_v2 (the 89/105 CULLIGAN run). This would occur on EVERY
+> successful Start New Project — latent Batch 1 design bug, storm or not.
+> (2) 4.14.2's per-cell fallback issued ~5000 sequential setValue calls
+> (1000 per failing 200-row chunk), very likely triggering the document-wide
+> service timeouts that aborted 26 integration tests mid-run.
+
+- 00d: argiaIsBackupSafeValue() — backup rows carry only
+  string/number/boolean/Date; CellImage and other rich objects are skipped
+  (logos are not restorable input data; setup reinserts them). PURE,
+  unit-locked (UNIT_BACKUP_ROWS_FILTER_NON_PRIMITIVE).
+- 00d: fallback now bisects failing chunks (_argiaBisectWrite) — a poisoned
+  row is isolated in ~8 extra calls and logged with its TYPE; the per-cell
+  storm path is gone.
+- 02e_InputSetup: _setupOneTab force path rebuilds IN PLACE (unfreeze →
+  unmerge → drop rules/validations/notes → clear) — the sheet object
+  survives, so cross-sheet references never break again. Applies to every
+  force setup caller, not just Start New Project.
+
+**WORKBOOK RECOVERY REQUIRED (code cannot heal existing #REF!s):** restore
+the spreadsheet via File → Version history to a state between the 15:35
+CULLIGAN run (105/105) and 15:47 — script code is unaffected by sheet
+version restore. Then push this hotfix and re-run Integration + CULLIGAN.
+
 ## [4.14.2] — 2026-06-11
 
 **Hotfix: persistent backup setValues — flush after grid expansion + resilient fallback.**

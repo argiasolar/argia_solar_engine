@@ -165,9 +165,30 @@ function _setupOneTab(tabName, docTitle, force) {
     }
   }
 
-  // ---- Wipe and recreate
-  if (existing) ss.deleteSheet(existing);
-  var sh = ss.insertSheet(tabName);
+  // ---- Wipe IN PLACE and reuse -- NEVER delete an existing tab here.
+  // [4.14.3] Deleting a sheet turns every cross-sheet formula that
+  // references it into #REF! permanently (recreating it does NOT heal
+  // them). Start New Project's force rebuild did exactly that and
+  // #REF!-contaminated FINANCE, _AUDIT_INPUTS, 41M_FINANCE_CALCULATOR and
+  // BESS_SIMULATION (which cascades into CFE_OUTPUT_v2's BESS rows).
+  // In-place: unfreeze -> unmerge (merges must not straddle frozen
+  // boundaries) -> drop rules/validations/notes -> clear contents+formats.
+  var sh;
+  if (existing) {
+    try { existing.setFrozenRows(0); existing.setFrozenColumns(0); } catch (eF) {}
+    try {
+      existing.getRange(1, 1, existing.getMaxRows(), existing.getMaxColumns()).breakApart();
+    } catch (eM) {}
+    try { existing.clearConditionalFormatRules(); } catch (eC) {}
+    try {
+      existing.getRange(1, 1, existing.getMaxRows(), existing.getMaxColumns()).clearDataValidations();
+    } catch (eV) {}
+    try { existing.clearNotes(); } catch (eN) {}
+    existing.clear();   // contents + formats; in-cell logo image goes too
+    sh = existing;
+  } else {
+    sh = ss.insertSheet(tabName);
+  }
 
   // ---- Page canvas (hidden gridlines, column widths)
   _applyInputCanvas(sh);
