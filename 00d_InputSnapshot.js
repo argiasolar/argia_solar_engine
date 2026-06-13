@@ -61,10 +61,57 @@ function snapshotInputSheets(ss) {
       rows: r,
       cols: c,
       formulas: sh.getRange(1, 1, r, c).getFormulas(),
-      values:   sh.getRange(1, 1, r, c).getValues()
+      values:   _snapshotSanitizeValues_(sh.getRange(1, 1, r, c).getValues())
     };
   }
   return snap;
+}
+
+
+/**
+ * [4.15.0 test-hygiene] Sanitize a getValues() matrix IN PLACE: any rich
+ * object (CellImage logo at B2, future rich types) becomes '' so bulk
+ * setValues on restore can NEVER throw "Service error: Spreadsheets".
+ * Dates are legitimate cell values and pass through untouched.
+ *
+ * WHY HERE (not only in the persist builder): the 4.14.3 filter cleaned the
+ * PERSISTED backup, but the IN-MEMORY snapshot used by the E2E/test restore
+ * still carried the CellImage -- every restore's bulk write threw, fell back
+ * to the slow per-cell path (the chronic "Service error: Spreadsheets;
+ * 1 cell(s) skipped" on every E2E in LOGS), and burned ~hundreds of
+ * sequential setValue calls per run. Logos are template chrome, not input
+ * data: they are re-asserted after every restore (argiaReassertInputLogos).
+ */
+function _snapshotSanitizeValues_(values) {
+  for (var r = 0; r < values.length; r++) {
+    for (var c = 0; c < values[r].length; c++) {
+      var v = values[r][c];
+      if (v !== null && typeof v === 'object' && !(v instanceof Date)) {
+        values[r][c] = '';
+      }
+    }
+  }
+  return values;
+}
+
+
+/**
+ * [4.15.0 test-hygiene] Re-insert the ARGIA logo at B2 of every input tab.
+ * Logos are CHROME re-derived from the template, never round-tripped through
+ * snapshots. Called after every restoreInputSheets and by the layout repair.
+ * Fail-soft per tab; returns the tab names where a re-insert was attempted.
+ */
+function argiaReassertInputLogos(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var done = [];
+  if (typeof _insertArgiaLogo !== 'function') return done;
+  for (var i = 0; i < INPUT_SNAPSHOT_TABS.length; i++) {
+    var sh = ss.getSheetByName(INPUT_SNAPSHOT_TABS[i]);
+    if (!sh) continue;
+    try { _insertArgiaLogo(sh, 2, 2); done.push(INPUT_SNAPSHOT_TABS[i]); }
+    catch (e) { /* logo is cosmetic; never block a restore */ }
+  }
+  return done;
 }
 
 
@@ -114,6 +161,12 @@ function restoreInputSheets(ss, snap) {
                            + '; ' + skipped + ' cell(s) skipped)');
     }
   });
+
+  // [4.15.0 test-hygiene] Logos are chrome, not data: the snapshot
+  // deliberately drops them (rich objects poison bulk setValues), so every
+  // restore ends by re-asserting them. This is what guarantees "logo present
+  // before tests => logo present after tests".
+  report.logosReasserted = argiaReassertInputLogos(ss);
 
   return report;
 }
@@ -191,14 +244,25 @@ function rebuildInputsToDefault_(ss) {
     function () { setupInputBessResilienceSection(ss); },
     function () { setupInputCFE(true); }
   ];
+  // [4.15.0 test-hygiene] Step failures were Logger-only (invisible). A
+  // setup step that throws AFTER its in-place clear() leaves a bare,
+  // unstyled tab -- exactly the silent INPUT_DESIGN format wipe of 4.14.3's
+  // Start New Project storm. Failures are now collected, engineLog'd, and
+  // RETURNED so every caller can surface them to the user.
+  var failures = [];
   for (var i = 0; i < steps.length; i++) {
     try { steps[i](); }
     catch (e) {
-      if (typeof Logger !== 'undefined' && Logger.log) {
-        Logger.log('rebuildInputsToDefault_ step ' + i + ' failed: ' + e.message);
+      var note = 'rebuildInputsToDefault step ' + i + ' (' +
+                 (steps[i].name || 'anon') + ') failed: ' + e.message;
+      failures.push(note);
+      if (typeof engineLog === 'function') {
+        try { engineLog(ss, 'InputRebuild', 'ERROR', note); } catch (_) {}
       }
+      if (typeof Logger !== 'undefined' && Logger.log) Logger.log(note);
     }
   }
+  return failures;
 }
 
 
@@ -499,4 +563,172 @@ function _argiaBisectWrite(sh, rows, start, count, failedRows) {
     _argiaBisectWrite(sh, rows, start, half, failedRows);
     _argiaBisectWrite(sh, rows, start + half, count - half, failedRows);
   }
+}
+
+
+// =============================================================================
+// INPUT LAYOUT INVARIANT  (4.15.0 test-hygiene)
+// -----------------------------------------------------------------------------
+// Contract: ANY operation that snapshots + restores the input tabs (E2E,
+// fixture load, Start New Project) must leave the LAYOUT exactly as it found
+// it -- merges, frozen panes, title styling, logos. Values are guaranteed by
+// the snapshot; this layer guarantees the presentation, and PROVES it with a
+// cheap before/after fingerprint instead of assuming it.
+//
+//   argiaInputLayoutFingerprint(ss)        -> {tab: {merges,frozenR,frozenC,
+//                                                    titleWeight}}
+//   argiaDiffLayoutFingerprints(a, b)      -> [human-readable drift strings]
+//   repairInputLayouts(ss)                 -> snapshot values -> styled
+//                                             DEFAULT rebuild -> restore
+//                                             values -> logos -> report
+//   runRepairInputLayouts()                -> menu wrapper (confirm+summary)
+// =============================================================================
+
+/**
+ * Cheap structural fingerprint of every input tab's layout. 4 reads per tab:
+ * merged-range count (the observed failure mode was 25 -> 0), frozen rows,
+ * frozen cols, and the D2 title font weight as a styling sentinel.
+ * @param {Spreadsheet} ss
+ * @return {Object} keyed by tab name
+ */
+function argiaInputLayoutFingerprint(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var fp = {};
+  for (var i = 0; i < INPUT_SNAPSHOT_TABS.length; i++) {
+    var name = INPUT_SNAPSHOT_TABS[i];
+    var sh = ss.getSheetByName(name);
+    if (!sh) continue;
+    var entry = { merges: -1, frozenR: -1, frozenC: -1, titleWeight: '?' };
+    try {
+      entry.merges = sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns())
+                       .getMergedRanges().length;
+    } catch (e) {}
+    try { entry.frozenR = sh.getFrozenRows(); } catch (e) {}
+    try { entry.frozenC = sh.getFrozenColumns(); } catch (e) {}
+    try { entry.titleWeight = String(sh.getRange('D2').getFontWeight()); } catch (e) {}
+    fp[name] = entry;
+  }
+  return fp;
+}
+
+
+/**
+ * PURE diff of two layout fingerprints. Returns [] when identical, else one
+ * human-readable line per drifted field. Tabs present in `before` but absent
+ * in `after` (or vice versa) are reported too.
+ * @param {Object} before  argiaInputLayoutFingerprint result
+ * @param {Object} after   argiaInputLayoutFingerprint result
+ * @return {string[]}
+ */
+function argiaDiffLayoutFingerprints(before, after) {
+  var drift = [];
+  before = before || {}; after = after || {};
+  var names = {};
+  Object.keys(before).forEach(function (n) { names[n] = true; });
+  Object.keys(after).forEach(function (n) { names[n] = true; });
+  Object.keys(names).forEach(function (n) {
+    var b = before[n], a = after[n];
+    if (!b) { drift.push(n + ': tab appeared after the operation'); return; }
+    if (!a) { drift.push(n + ': tab missing after the operation');  return; }
+    ['merges', 'frozenR', 'frozenC', 'titleWeight'].forEach(function (f) {
+      if (String(b[f]) !== String(a[f])) {
+        drift.push(n + '.' + f + ': ' + b[f] + ' -> ' + a[f]);
+      }
+    });
+  });
+  return drift;
+}
+
+
+/**
+ * ONE repair for input presentation: rebuild the styled DEFAULT layout on
+ * all six tabs while keeping every user value. Sequence (each step loud):
+ *   1. snapshot values+formulas (in-memory) AND persist to _INPUT_BACKUP
+ *   2. rebuildInputsToDefault  (styled templates; failures returned)
+ *   3. restoreInputSheets      (user values back; logos re-asserted)
+ *   4. fingerprint the result for the report
+ * NEVER proceeds past step 1 if the snapshot/persist failed.
+ * @param {Spreadsheet} ss
+ * @return {Object} report
+ */
+function repairInputLayouts(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var report = { ok: false, persistedCells: 0, rebuildFailures: [],
+                 restore: null, fingerprint: null, error: null };
+
+  var snap;
+  try {
+    snap = snapshotInputSheets(ss);
+    report.persistedCells = persistInputSnapshot(ss, snap);
+  } catch (e) {
+    report.error = 'snapshot/persist failed -- repair ABORTED before any ' +
+                   'destructive step: ' + e.message;
+    if (typeof engineLog === 'function') {
+      try { engineLog(ss, 'LayoutRepair', 'ERROR', report.error); } catch (_) {}
+    }
+    return report;
+  }
+
+  report.rebuildFailures = rebuildInputsToDefault(ss) || [];
+  SpreadsheetApp.flush();
+  report.restore = restoreInputSheets(ss, snap);
+  SpreadsheetApp.flush();
+  report.fingerprint = argiaInputLayoutFingerprint(ss);
+  report.ok = report.rebuildFailures.length === 0;
+
+  if (typeof engineLog === 'function') {
+    try {
+      engineLog(ss, 'LayoutRepair', report.ok ? 'INFO' : 'WARNING',
+        'repairInputLayouts: rebuildFailures=' + report.rebuildFailures.length
+        + ', restore fallback=' + (report.restore.fallback || []).length
+        + ', logos=' + (report.restore.logosReasserted || []).length);
+    } catch (_) {}
+  }
+  return report;
+}
+
+
+/**
+ * Menu wrapper: confirm -> repairInputLayouts -> summary alert.
+ */
+function runRepairInputLayouts() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  var resp = ui.alert(
+    'Repair Input Layout',
+    'Rebuilds the styled layout (merges, headers, logos) of ALL SIX input '
+    + 'tabs while KEEPING every value you have entered.\n\n'
+    + 'Your values are backed up to the persistent _INPUT_BACKUP sheet '
+    + 'first; the repair aborts before touching anything if that backup '
+    + 'fails.\n\nContinue?',
+    ui.ButtonSet.OK_CANCEL);
+  if (resp !== ui.Button.OK) return;
+
+  var rep = repairInputLayouts(ss);
+
+  if (rep.error) {
+    ui.alert('Repair Input Layout \u2014 ABORTED', rep.error, ui.ButtonSet.OK);
+    return;
+  }
+  var lines = [];
+  lines.push((rep.ok ? '\u2705' : '\u26a0') + ' Styled rebuild: '
+             + (rep.rebuildFailures.length === 0
+                ? 'all 6 tabs OK'
+                : rep.rebuildFailures.length + ' step(s) FAILED (see LOGS)'));
+  lines.push('\u2705 Values restored'
+             + ((rep.restore.fallback || []).length
+                ? ' (fallback on: ' + rep.restore.fallback.join(', ') + ')'
+                : ''));
+  lines.push('\u2705 Logos re-asserted on '
+             + (rep.restore.logosReasserted || []).length + ' tab(s)');
+  if (rep.fingerprint) {
+    var m = Object.keys(rep.fingerprint).map(function (n) {
+      return n.replace('INPUT_', '') + ':' + rep.fingerprint[n].merges;
+    }).join('  ');
+    lines.push('Merges now \u2014 ' + m);
+  }
+  lines.push('\nBackup of your values: ' + rep.persistedCells
+             + ' cells in _INPUT_BACKUP.');
+  ui.alert('Repair Input Layout \u2014 done', lines.join('\n'), ui.ButtonSet.OK);
 }

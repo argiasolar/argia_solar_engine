@@ -690,6 +690,14 @@ function onOpen() {
       .addItem('Export All (MDC+BOM+Install+PC)',    'exportAll'))
     .addSeparator()
     .addSubMenu(ui.createMenu('Administrator Panel')
+      // [4.15.0] Panel slimmed to what a USER actually needs. The removed
+      // items were one-time migration repairs (CFE_SIM Totals / Capacidad,
+      // resilience collision, Delete Legacy Tabs), partial dev-time setups
+      // now fully covered by the map-driven DEFAULT rebuild (the six Setup
+      // entries), and plumbing (dropdown / logo-cache refresh -- both are
+      // re-asserted automatically by the rebuild and every restore). The
+      // functions still exist and run from the Apps Script editor if a
+      // migration case ever resurfaces; they are just no longer UI.
       // -- Test ------------------------------------------------
       .addSubMenu(ui.createMenu('Test')
         .addItem('Run Unit Tests (fast)',                     'runUnitTests')
@@ -697,35 +705,17 @@ function onOpen() {
         .addItem('Run Regression Tests',                      'runRegressionTests')
         .addItem('Run ALL Tests',                             'runTests')
         .addItem('Run CULLIGAN E2E (load/generate/verify/restore)', 'runCulliganE2E'))
-      // -- Setup -----------------------------------------------
-      .addSubMenu(ui.createMenu('Setup')
-        .addItem('Setup Install Inputs',                'runSetupInstallInputs')
-        .addItem('Setup BESS Install \u00a76',          'setupInputBessInstallRows')
-        .addItem('Setup BESS Steady-state (BDF-11.1)',  'runSetupBessSimulationSteady')
-        .addItem('Setup INPUT_BESS Styling',            'setupInputBessStyling')
-        .addItem('Setup SOLAR Section (PV toggle)',     'runSetupInputProjectPvSection')
-        .addItem('Setup RESILIENCE Section (backup)',   'runSetupInputBessResilienceSection'))
       .addSeparator()
-      // -- Repair ----------------------------------------------
-      .addItem('Repair CFE_SIM Totals',                 'runRepairCfeSimulationTotals')
-      .addItem('Repair CFE_SIM Capacidad (BDF-11)',     'runRepairCfeSimulationCapacidad')
-      .addItem('Repair: resilience collision',          'runRepairResilienceCollision')
+      // -- The one repair --------------------------------------
+      .addItem('Repair Input Layout (keeps values)',    'runRepairInputLayouts')
       .addSeparator()
-      // -- Refresh ---------------------------------------------
-      .addItem('Refresh BESS Strategy Dropdown',        'refreshBessStrategyDropdown')
-      .addItem('Refresh Logo Cache',                    'refreshArgiaLogoCache')
-      .addSeparator()
-      // -- Delete ----------------------------------------------
-      .addItem('Delete Legacy Tabs',                    'runDeleteLegacyTabs')
-      .addSeparator()
-      // -- Load / fixtures / lifecycle --------------------------
+      // -- Lifecycle -------------------------------------------
       .addItem('Start New Project (reset to defaults)', 'runStartNewProject')
       .addItem('Load CULLIGAN Fixture',                 'runLoadCulliganFixture')
       .addItem('Restore Inputs from Backup',            'runRestoreInputsFromBackup')
       .addSeparator()
       // -- Operational -----------------------------------------
-      .addItem('Update CFE Output',                     'runUpdateCfeOutputV2')
-      .addItem('Audit Config (auto-discover sheets)',   'auditConfigSetup'))
+      .addItem('Update CFE Output',                     'runUpdateCfeOutputV2'))
     .addToUi();
 }
 
@@ -1405,6 +1395,16 @@ function runCulliganE2E() {
   _setArgiaProgress(0, 14, 'E2E: respaldando tus inputs\u2026');
   _showArgiaProgress('ARGIA \u2014 CULLIGAN E2E');
 
+  // [4.15.0 test-hygiene] Layout invariant: the E2E must leave the input
+  // tabs' PRESENTATION exactly as it found it. Fingerprint before, verify
+  // after restore, auto-repair on drift -- proven, not assumed.
+  var lfBefore = null, layoutNote = '';
+  try {
+    if (typeof argiaInputLayoutFingerprint === 'function') {
+      lfBefore = argiaInputLayoutFingerprint(ss);
+    }
+  } catch (lfErr) { /* fingerprint is diagnostics; never blocks the E2E */ }
+
   try {
     phase = 'snapshot inputs';
     snap = snapshotInputSheets(ss);
@@ -1461,6 +1461,38 @@ function runCulliganE2E() {
           try { engineLog(ss, 'E2E', 'ERROR', 'restore raised: ' + rErr.message); } catch (_) {}
         }
       }
+
+      // [4.15.0 test-hygiene] PROVE the layout invariant. On drift: repair
+      // automatically (keeps values), re-verify, and report either way.
+      try {
+        if (lfBefore && typeof argiaDiffLayoutFingerprints === 'function') {
+          var drift = argiaDiffLayoutFingerprints(
+            lfBefore, argiaInputLayoutFingerprint(ss));
+          if (drift.length === 0) {
+            layoutNote = '\n\n\u2705 Layout invariant: input tabs identical '
+                       + 'before/after (merges, frozen panes, title style).';
+          } else {
+            if (typeof engineLog === 'function') {
+              try { engineLog(ss, 'E2E', 'WARNING',
+                'layout drift after restore: ' + drift.join(' | ')
+                + ' -- running auto-repair'); } catch (_) {}
+            }
+            var repaired = false;
+            if (typeof repairInputLayouts === 'function') {
+              var rrep = repairInputLayouts(ss);
+              var drift2 = argiaDiffLayoutFingerprints(
+                lfBefore, argiaInputLayoutFingerprint(ss));
+              repaired = rrep && !rrep.error && drift2.length === 0;
+            }
+            layoutNote = repaired
+              ? '\n\n\u26a0 Layout drifted during the run (' + drift.length
+                + ' change(s), see LOGS) -- AUTO-REPAIRED, invariant now holds.'
+              : '\n\n\u274c LAYOUT DRIFT NOT FULLY REPAIRED: '
+                + drift.join(' | ')
+                + '\nRun "Repair Input Layout" from the Administrator Panel.';
+          }
+        }
+      } catch (lfErr2) { /* diagnostics only */ }
     }
   }
 
@@ -1474,7 +1506,7 @@ function runCulliganE2E() {
     : '';
   ui.alert(
     'CULLIGAN E2E \u2014 Done',
-    testSummary + skipMsg +
+    testSummary + skipMsg + layoutNote +
     '\n\nYour INPUTS have been restored. Note: the output sheets (MDC_v2, ' +
     'BOM_v2, ...) now hold CULLIGAN data from this run -- re-run "Generate ' +
     'MDC and BOM" to refresh them for your project. See _TEST_RESULTS_V2 for ' +
@@ -1951,8 +1983,12 @@ function startNewProjectCore(ss) {
   var snap = snapshotInputSheets(ss);
   report.backedUpCells = persistInputSnapshot(ss, snap);
 
-  // 2. DEFAULT rebuild (per-step guarded inside)
-  rebuildInputsToDefault(ss);
+  // 2. DEFAULT rebuild. [4.15.0] Step failures are no longer silent: they
+  //    come back as a list and land in report.errors so the summary dialog
+  //    names exactly which tab's rebuild failed (a failure here is what
+  //    silently stripped INPUT_DESIGN's formats in the 4.14.3 storm).
+  var rebuildFailures = rebuildInputsToDefault(ss) || [];
+  rebuildFailures.forEach(function (f) { report.errors.push(f); });
 
   // 3. Clear outputs. ARGIA_STAMPED_TABS = the 13 deliverables; the driver
   //    map is internal but project-specific, so it goes too.

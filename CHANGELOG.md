@@ -1,3 +1,46 @@
+## [4.15.0] — 2026-06-12
+
+**Test hygiene: tests now PROVE they leave the workbook exactly as found — layout invariant enforced, logos deterministic, one repair button, admin panel slimmed.**
+
+> The contract was always "input tabs fully mapped, always restorable" — but
+> the snapshot/restore layer only guaranteed VALUES, and presentation was
+> assumed. Two real consequences: (1) the 4.14.3 Start New Project storm left
+> INPUT_DESIGN value-perfect but format-stripped (25 merges -> 0, all
+> bold/backgrounds gone) because a rebuild step that throws after its
+> in-place clear() was Logger-only silent; (2) logos vanished and every E2E
+> restore threw "Service error: Spreadsheets" on the bulk write and fell back
+> to the slow per-cell path, because the IN-MEMORY snapshot still carried the
+> CellImage logo object (4.14.3 filtered only the persisted backup).
+>
+> THIS RELEASE:
+> - snapshotInputSheets now sanitizes rich objects (_snapshotSanitizeValues_):
+>   bulk restore can never throw on a CellImage again; the chronic per-E2E
+>   fallback in LOGS ends.
+> - restoreInputSheets ends by RE-ASSERTING logos on every restored tab
+>   (argiaReassertInputLogos): logos are template chrome, re-derived, never
+>   round-tripped. Logo present before tests => logo present after.
+> - LAYOUT INVARIANT, PROVEN: argiaInputLayoutFingerprint (merges, frozen
+>   panes, title styling per tab, 4 reads/tab) + pure
+>   argiaDiffLayoutFingerprints. The CULLIGAN E2E fingerprints BEFORE its
+>   snapshot, verifies AFTER its restore, AUTO-REPAIRS on drift, re-verifies,
+>   and reports the result in its closing dialog — green check when
+>   identical, named drift + repair status when not.
+> - ONE repair: repairInputLayouts / "Repair Input Layout (keeps values)" —
+>   persisted value backup -> styled DEFAULT rebuild -> value restore ->
+>   logos -> fingerprint report. Aborts before any destructive step if the
+>   backup fails. This is the fix for the live INPUT_DESIGN format wipe.
+> - rebuildInputsToDefault step failures are no longer silent: collected,
+>   engineLog'd, returned; Start New Project surfaces them in its summary.
+> - Administrator Panel slimmed to: Test submenu, Repair Input Layout,
+>   Start New Project, Load CULLIGAN Fixture, Restore Inputs from Backup,
+>   Update CFE Output. Removed from UI (functions retained for editor use):
+>   the six dev-time Setup entries (covered by the map-driven rebuild), the
+>   three one-time migration repairs (CFE_SIM Totals / Capacidad, resilience
+>   collision), both Refresh entries (re-asserted automatically), Delete
+>   Legacy Tabs (migration complete), Audit Config.
+> - Tests 504 -> 507: UNIT_SNAPSHOT_SANITIZES_RICH_OBJECTS,
+>   UNIT_LAYOUT_FINGERPRINT_DIFF_PURE, UNIT_RESTORE_REASSERTS_LOGOS.
+
 ## [4.14.4] — 2026-06-12
 
 **B-4: hourly-model idle state made LOUD — no more silent $0/$0/$0 screening tiles next to Section 2's real BESS savings.**
