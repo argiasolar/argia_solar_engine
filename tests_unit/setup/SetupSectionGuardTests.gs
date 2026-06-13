@@ -271,7 +271,7 @@ registerTest({
   fn: function (t) {
     t.suite('INT setup/guard: setupInputProjectPvSection ABORTS if rows occupied');
     var ss = _ssgFullMockSs('INPUT_PROJECT', {
-      '66,2': 'Otra sección existente'   // collision at INSTALL_PV row
+      '68,2': 'Otra sección existente'   // [4.15.4] collision at INSTALL_PV row (moved 66->68)
     });
     var threw = false;
     try {
@@ -280,6 +280,6 @@ registerTest({
       threw = true;
     }
     t.assertTrue('SOLAR setup aborted on collision', threw);
-    t.assert('foreign cell preserved', 'Otra sección existente', ss._sheet._cells['66,2']);
+    t.assert('foreign cell preserved', 'Otra sección existente', ss._sheet._cells['68,2']);
   }
 });

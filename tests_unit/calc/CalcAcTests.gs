@@ -76,7 +76,7 @@ registerTest({
     t.assert('ampReq per inv',    exp.ac.ampReqPerInv,      ac.perInverter[0].ampReqAC, tol['loose']);
     t.assert('conductor per inv', exp.ac.conductorPerInv,   String(ac.perInverter[0].conductor));
     t.assert('egc per inv',       exp.ac.egcPerInv,         String(ac.perInverter[0].egc));
-    t.assert('acLenInv',          exp.ac.acLenInv,          ac.perInverter[0].acLenInv);
+    t.assert('acLenInv',          exp.ac.acLenInv,          ac.perInverter[0].acLenInv, tol['default']);
     t.assert('vdropAC per inv',   exp.ac.vdropACPerInv,     ac.perInverter[0].vdropAC,  tol['vdrop']);
     t.assert('conduit per inv',   exp.ac.conduitPerInv,     String(ac.perInverter[0].conduit));
 

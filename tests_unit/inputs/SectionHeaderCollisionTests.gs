@@ -79,34 +79,37 @@ registerTest({
 
 
 registerTest({
-  id      : 'UNIT_DEDICATED_SECTION_EXCLUDED_FROM_GENERIC_RENDER',
+  id      : 'UNIT_SOLAR_SECTION_RENDERED_AND_SPACED',
   group   : 'unit',
   module  : 'inputs/section_layout',
   scenarios: [],
   tags    : ['inputs', 'layout', 'regression'],
   source  : 'tests_unit/inputs/SectionHeaderCollisionTests.gs',
   fn      : function (t, ctx) {
-    t.suite('UNIT inputs/section_layout [4.15.2]: dedicated sections skipped ' +
-            'by the generic renderer');
+    t.suite('UNIT inputs/section_layout [4.15.4]: 08 SOLAR rendered ' +
+            'generically with enough row spacing (no collision, full styling)');
 
     var projSections = inputSectionsForTab('INPUT_PROJECT');
 
-    // 08 SOLAR is renderedBy:'dedicated' (setupInputProjectPvSection owns it).
-    t.assertTrue('08 SOLAR excluded from generic _setupOneTab render',
-                 projSections.indexOf('08 SOLAR') < 0);
+    // [4.15.4] 08 SOLAR is rendered by the generic _setupOneTab again (the
+    // 4.15.2 dedicated-skip was reverted) so it gets the SAME header band /
+    // merged labels / input-cell styling as sections 01-07. The collision is
+    // avoided by ROW SPACING instead: section 08's fields start at row 68, so
+    // its header (minRow-2 = 66) clears section 07's installBattery field at
+    // row 64. (The previous fix left 65-70 unstyled because the dedicated
+    // setup wrote bare cells.)
+    t.assertTrue('08 SOLAR rendered generically (styled like 01-07)',
+                 projSections.indexOf('08 SOLAR') >= 0);
 
-    // 07 ALMACENAMIENTO has NO dedicated owner -> still rendered generically.
-    t.assertTrue('07 ALMACENAMIENTO still rendered generically',
-                 projSections.indexOf('07 ALMACENAMIENTO') >= 0);
+    // installPv is the first SOLAR field -> header at row 66, NOT 64.
+    var hdr = INPUT_MAP.installPv ? INPUT_MAP.installPv.row - 2 : 0;
+    t.assertTrue('08 SOLAR header row is 66 (>= section-07 field 64 + 2 gap)',
+                 hdr === 66);
 
-    // The five SOLAR keys must all carry the dedicated flag (so a future
-    // edit that drops the flag from one of them re-enables the collision and
-    // this test catches it).
-    var solarKeys = ['installPv', 'hasExistingPv', 'existingPvKwp',
-                     'existingPvAnnualKwh', 'existingExportKwh'];
-    var allDedicated = solarKeys.every(function (k) {
-      return INPUT_MAP[k] && INPUT_MAP[k].renderedBy === 'dedicated';
-    });
-    t.assertTrue('all five 08 SOLAR keys are renderedBy:dedicated', allDedicated);
+    // The five SOLAR keys occupy the shifted rows 68-72 (lockstep with 01d).
+    t.assertTrue('installPv at row 68',            INPUT_MAP.installPv.row === 68);
+    t.assertTrue('existingExportKwh at row 72',    INPUT_MAP.existingExportKwh.row === 72);
+    t.assertTrue('no SOLAR key carries the (removed) dedicated flag',
+                 !INPUT_MAP.installPv.renderedBy);
   }
 });

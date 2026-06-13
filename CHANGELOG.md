@@ -1,3 +1,42 @@
+## [4.15.4] — 2026-06-13
+
+**Two fixes from the live "Run ALL Tests": (1) the last two CALC FAILs were a missing-tolerance bug, not a value mismatch; (2) INPUT_PROJECT section 08 SOLAR rendered UNSTYLED (rows 65-70) — fixed properly by row spacing so the generic renderer styles it like every other section.**
+
+> 1. CALC tolerance (dcLength / acLenInv). After the 4.15.3 re-lock, these two
+>    still "failed": expected 103.9305 vs got 103.9304969, and 93.1444 vs
+>    93.14439748 — EQUAL to 4 decimals. Root cause: both were asserted with
+>    EXACT equality (no tolerance arg) while every other decimal field in the
+>    suite uses tol['default'] (0.01). Added tol['default'] to both. The values
+>    were already correct (verified in 4.15.3); this only fixes the comparison.
+>
+> 2. SOLAR section styling. 4.15.2 stopped the row-64 merge collision by
+>    marking section 08 SOLAR renderedBy:'dedicated' so the generic
+>    _setupOneTab skipped it — but the dedicated setup
+>    (setupInputProjectPvSection) only wrote BARE cells (no merged header band,
+>    no merged labels, no input-cell styling), so rows 65-70 rendered unstyled
+>    (visible in the live screenshot: bare "8.0/SOLAR" + plain label rows).
+>    PROPER FIX: the real root cause was ROW SPACING — section 08's fields
+>    started at row 66, only 2 rows after section 07's installBattery field at
+>    64, so the generic header (minRow-2=64) landed on section 07's field.
+>    Section 08 SOLAR is now shifted DOWN 2 rows (fields 68-72, header 66,
+>    blank 67), which clears section 07 entirely. The renderedBy:'dedicated'
+>    flag is REMOVED and 08 SOLAR is rendered by the generic _setupOneTab
+>    again — so it now gets the SAME header band / merged labels / input-cell
+>    styling as sections 01-07. 02c_InputMap.js (installPv D68 ...
+>    existingExportKwh D72) and 01d_SetupInputProjectPv.js
+>    INPUT_PROJECT_PV_ROWS move in LOCKSTEP; readers use logical keys so they
+>    follow the map automatically.
+>
+> Tests (510, count unchanged):
+> - UNIT_DEDICATED_SECTION_EXCLUDED_FROM_GENERIC_RENDER (obsolete) replaced by
+>   UNIT_SOLAR_SECTION_RENDERED_AND_SPACED: asserts 08 SOLAR is rendered
+>   generically, header at row 66, fields at 68/72, no dedicated flag.
+> - UNIT_NO_SECTION_HEADER_OVERLAPS_FIELD_ROW still guards the collision class.
+> - Collision-guard + map-lockstep tests updated to the new rows
+>   (INT_SSG_SOLAR_SETUP_ABORTS_ON_COLLISION seeds B68; PV_SETUP_ROWS_MATCH).
+> - Verified: reverting installPv to row 66 fires THREE tests
+>   (overlap + spacing + map-lockstep). ALL GREEN at the shipped rows.
+
 ## [4.15.3] — 2026-06-13
 
 **TESTPROJ_001 calc fixture re-locked to verified-correct values. NO engine change — the expected values were stale/mis-computed; every delta was independently verified before re-locking.**

@@ -94,7 +94,7 @@ registerTest({
 
     // Voltage drops + conduit ------------------------------------------------
     t.assert('vString',       exp.dc.vString,       dc.vString,        tol['default']);
-    t.assert('dcLength',      exp.dc.dcLength,      dc.dcLength);
+    t.assert('dcLength',      exp.dc.dcLength,      dc.dcLength,       tol['default']);
     t.assert('vdropDC',       exp.dc.vdropDC,       dc.vdropDC,        tol['vdrop']);
     t.assert('vdropDCPass',   exp.dc.vdropDCPass,   dc.vdropDCPass);
     t.assert('conduitDC',     exp.dc.conduitDC,     String(dc.conduitDC));

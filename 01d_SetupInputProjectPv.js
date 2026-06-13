@@ -26,12 +26,17 @@
 // Single source of truth for the SOLAR-section cell coordinates. The input
 // map reads the SAME rows; the test cross-checks they agree.
 var INPUT_PROJECT_PV_ROWS = {
-  SECTION_HEADER:    65,   // "8.0" / "SOLAR"
-  INSTALL_PV:        66,   // D66
-  HAS_EXISTING_PV:   67,   // D67
-  EXISTING_PV_KWP:   68,   // D68
-  EXISTING_PV_KWH:   69,   // D69
-  EXISTING_PV_EXPORT: 70   // D70  (Chunk 7 4B: export-capture gate)
+  // [4.15.4] Shifted down 2 rows (was 65-70). Section 08 SOLAR's fields now
+  // start at 68 so the generic _setupOneTab header (minRow-2 = 66) clears
+  // section 07's installBattery field at row 64. MUST stay in lockstep with
+  // 02c_InputMap.js (installPv D68 ... existingExportKwh D72);
+  // SetupInputProjectPvTests cross-checks the two agree.
+  SECTION_HEADER:    66,   // "8.0" / "SOLAR"
+  INSTALL_PV:        68,   // D68
+  HAS_EXISTING_PV:   69,   // D69
+  EXISTING_PV_KWP:   70,   // D70
+  EXISTING_PV_KWH:   71,   // D71
+  EXISTING_PV_EXPORT: 72   // D72  (Chunk 7 4B: export-capture gate)
 };
 
 // ---------------------------------------------------------------------------

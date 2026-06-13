@@ -1370,53 +1370,48 @@ var _MAP_BESS = {
   // defaults to YES so pre-Chunk-7 projects (no cell) keep installing PV and
   // stay byte-identical. NO => battery-only (scenarios 3 / 4A).
   installPv: {
-    sheet: SH.INPUT_PROJECT, row: 66, col: 4,   // D66
+    sheet: SH.INPUT_PROJECT, row: 68, col: 4,   // D68 [4.15.4] moved 66->68: section 08 SOLAR shifted down 2 rows so its generic header (minRow-2=66) clears section 07's installBattery field at row 64. See CHANGELOG 4.15.4.
     label: 'Instalar PV nuevo', type: 'dropdown',
     default: 'YES', required: false,
     dropdown: ['YES', 'NO'],
     section: '08 SOLAR',
-    renderedBy: 'dedicated',  // [4.15.2] setupInputProjectPvSection (01d) owns this section's layout; the generic _setupOneTab MUST skip it to avoid the row-64 header/label merge collision with section 07.
     consumedBy: ['engine'],
     notes: 'YES (default) => model new PV. NO => battery-only project '
          + '(scenarios 3 / 4A); the hourly sim runs with monthlyPv=null.'
   },
   hasExistingPv: {
-    sheet: SH.INPUT_PROJECT, row: 67, col: 4,   // D67
+    sheet: SH.INPUT_PROJECT, row: 69, col: 4,   // D69 [4.15.4] moved 67->69
     label: 'Cliente ya tiene PV', type: 'dropdown',
     default: 'NO', required: false,
     dropdown: ['YES', 'NO'],
     section: '08 SOLAR',
-    renderedBy: 'dedicated',  // [4.15.2] setupInputProjectPvSection (01d) owns this section's layout; the generic _setupOneTab MUST skip it to avoid the row-64 header/label merge collision with section 07.
     consumedBy: ['engine'],
     notes: 'Only meaningful when installPv=NO. YES => scenario 4A/4B '
          + '(existing-solar disclaimer). NO => scenario 3 (greenfield).'
   },
   existingPvKwp: {
-    sheet: SH.INPUT_PROJECT, row: 68, col: 4,   // D68
+    sheet: SH.INPUT_PROJECT, row: 70, col: 4,   // D70 [4.15.4] moved 68->70
     label: 'PV existente (kWp)', type: 'number',
     default: 0, required: false,
     section: '08 SOLAR',
-    renderedBy: 'dedicated',  // [4.15.2] setupInputProjectPvSection (01d) owns this section's layout; the generic _setupOneTab MUST skip it to avoid the row-64 header/label merge collision with section 07.
     consumedBy: ['engine'],
     notes: 'Scenario 4B input (roadmap). Existing PV size; not yet used for '
          + 'capture modeling.'
   },
   existingPvAnnualKwh: {
-    sheet: SH.INPUT_PROJECT, row: 69, col: 4,   // D69
+    sheet: SH.INPUT_PROJECT, row: 71, col: 4,   // D71 [4.15.4] moved 69->71
     label: 'PV existente (kWh/año)', type: 'number',
     default: 0, required: false,
     section: '08 SOLAR',
-    renderedBy: 'dedicated',  // [4.15.2] setupInputProjectPvSection (01d) owns this section's layout; the generic _setupOneTab MUST skip it to avoid the row-64 header/label merge collision with section 07.
     consumedBy: ['engine'],
     notes: 'Scenario 4B: existing PV annual production (PROPOSAL-level input '
          + 'for export-capture context).'
   },
   existingExportKwh: {
-    sheet: SH.INPUT_PROJECT, row: 70, col: 4,   // D70
+    sheet: SH.INPUT_PROJECT, row: 72, col: 4,   // D72 [4.15.4] moved 70->72
     label: 'PV existente: exportación (kWh/año)', type: 'number',
     default: 0, required: false,
     section: '08 SOLAR',
-    renderedBy: 'dedicated',  // [4.15.2] setupInputProjectPvSection (01d) owns this section's layout; the generic _setupOneTab MUST skip it to avoid the row-64 header/label merge collision with section 07.
     consumedBy: ['engine'],
     notes: 'Scenario 4B GATE: measured exported kWh/year (from the CFE bill '
          + 'export line or inverter portal). > 0 enables the export-capture '
