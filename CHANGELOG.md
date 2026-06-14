@@ -1,3 +1,54 @@
+## [4.16.0] — 2026-06-13
+
+**PERMANENT FIX: "Repair Input Layout" no longer undoes its own work. Root cause of the entire 4.15.x layout saga found and eliminated — the repair was restoring the OLD layout on top of the clean rebuild.**
+
+> THE REAL ROOT CAUSE (proven by modeling the full cycle, byte-for-byte against
+> the live diagnostic): repairInputLayouts did
+>     snapshotInputSheets (whole grid, by cell address)
+>     -> rebuildInputsToDefault (clears + writes the clean, correct layout)
+>     -> restoreInputSheets (writes the WHOLE snapshot grid back, by address)
+> The whole-grid restore rewrote every captured cell -- labels AND values, at
+> their OLD addresses -- ON TOP of the clean rebuild. So a rebuild that MOVED a
+> field to a new row was immediately overwritten: stale labels and DUPLICATE
+> rows reappeared, the moved field's new row got clobbered. This is why EVERY
+> 4.15.x layout fix looked correct in the rebuild but had zero effect on the
+> live sheet -- the repair resurrected the broken layout each time. The unit
+> suite never caught it because no test exercised the FULL snapshot->rebuild->
+> restore cycle; tests only checked the rebuild in isolation.
+>
+> THE FIX -- values are owned by their FIELD, not their cell address:
+> - snapshotInputSheets now also captures a __fieldValues layer
+>   (_snapshotFieldValues_): every INPUT_MAP key's value via readInput, keyed
+>   by logical field name, position-independent. The whole CFE bill grid and
+>   the helioscope/secondary tables are covered too (they are range-mode map
+>   keys), so there are no un-mapped free cells.
+> - New restoreInputValues(): writes each saved value via writeInput, which
+>   targets wherever the CURRENT map places the field. Values FOLLOW fields to
+>   new rows. It writes ONLY value cells -- never labels/headers -- so the
+>   rebuild's layout is preserved. Blank snapshot values are NOT written over
+>   fresh defaults.
+> - repairInputLayouts now uses restoreInputValues (field-keyed), NOT
+>   restoreInputSheets (whole-grid). The repair finally does what its name
+>   says: fix the layout, keep the values.
+> - restoreInputSheets (whole-grid) is RETAINED for the CULLIGAN E2E, where an
+>   EXACT round-trip of the user's original workbook is the correct behavior.
+>   The two restores are now distinct tools for distinct needs -- the
+>   conflation of them was the architectural flaw.
+> - Both snap-iterating loops (restoreInputSheets, argiaBuildBackupRows) skip
+>   the __fieldValues meta key.
+>
+> Tests 511 -> 513: RepairCycleTests models the FULL cycle and asserts (1) a
+> moved field keeps its value at the NEW row, (2) no stale label survives at a
+> vacated row, (3) blank values don't clobber defaults. EMPIRICALLY VERIFIED:
+> under the old whole-grid restore these assertions FAIL (stray "8" survives);
+> under the field-keyed restore they pass. This is the test that was missing
+> for the whole saga.
+>
+> ACTION: push + clasp, then run "Repair Input Layout" ONCE. The SOLAR section
+> will finally render correctly (row 64 "Instalar batería", row 66 styled "08
+> SOLAR", fields 68-72, no duplicates) AND stay that way, because the repair no
+> longer fights the rebuild.
+
 ## [4.15.5] — 2026-06-13
 
 **Fix: "Repair Input Layout" produced duplicate / stale SOLAR rows. Section 08 was being written TWICE by the rebuild — once by the generic renderer (4.15.4), once by the leftover dedicated step. Removed the double-write; made the rebuild step list introspectable and test-guarded.**

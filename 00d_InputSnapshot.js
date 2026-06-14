@@ -64,7 +64,46 @@ function snapshotInputSheets(ss) {
       values:   _snapshotSanitizeValues_(sh.getRange(1, 1, r, c).getValues())
     };
   }
+
+  // [4.16.0] FIELD-VALUE layer -- the authoritative record of USER DATA, keyed
+  // by logical INPUT_MAP key (NOT by cell address). This is the fix for the
+  // repair/restore clobber: when a rebuild moves a field to a new row, the
+  // value must follow the FIELD, not stay pinned to the old cell. The raw
+  // grid above is retained only for the layout fingerprint and as a legacy
+  // fallback; restoreInputSheets prefers this field layer.
+  snap.__fieldValues = _snapshotFieldValues_(ss);
   return snap;
+}
+
+
+/**
+ * [4.16.0] Capture every INPUT_MAP field's current VALUE keyed by logical key.
+ * Position-independent: a value read here can be re-written by writeInput()
+ * to wherever the CURRENT map places the field, so values survive layout
+ * moves. Skips 'skip'-mode keys (docs only) and tabs not present.
+ * @param {Spreadsheet} ss
+ * @return {Object} { key: value }  (value is scalar or 2D array for range keys)
+ */
+function _snapshotFieldValues_(ss) {
+  var out = {};
+  if (typeof INPUT_MAP === 'undefined') return out;
+  var keys = Object.keys(INPUT_MAP);
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    var m = INPUT_MAP[key];
+    if (!m || m.mode === 'skip') continue;
+    // Only snapshot tabs we actually manage.
+    if (INPUT_SNAPSHOT_TABS.indexOf(m.sheet) < 0) continue;
+    var sh = ss.getSheetByName(m.sheet);
+    if (!sh) continue;
+    try {
+      out[key] = readInput(ss, key);
+    } catch (e) {
+      // A field that can't be read (tab/row absent) is simply not captured;
+      // restore will skip it. Never let one bad key abort the snapshot.
+    }
+  }
+  return out;
 }
 
 
@@ -132,6 +171,7 @@ function restoreInputSheets(ss, snap) {
   var report = { restored: [], fallback: [], failedCells: 0 };
 
   Object.keys(snap).forEach(function (name) {
+    if (name.charAt(0) === '_') return;   // [4.16.0] skip __fieldValues meta layer
     var sh = ss.getSheetByName(name);
     if (!sh) return;
     var s = snap[name];
@@ -374,6 +414,7 @@ function argiaBuildBackupRows(snap, isoTimestamp) {
   // Header padded to the full width -- NEVER ship a ragged matrix.
   var rows = [['ARGIA_INPUT_BACKUP', isoTimestamp, 1, '', '']];
   Object.keys(snap).forEach(function (name) {
+    if (name.charAt(0) === '_') return;   // [4.16.0] skip __fieldValues meta layer
     var s = snap[name];
     for (var r = 0; r < s.rows; r++) {
       for (var c = 0; c < s.cols; c++) {
@@ -665,6 +706,52 @@ function argiaDiffLayoutFingerprints(before, after) {
  * @param {Spreadsheet} ss
  * @return {Object} report
  */
+/**
+ * [4.16.0] FIELD-KEYED value restore -- the permanent fix for the repair
+ * clobber. Writes each captured field value to wherever the CURRENT INPUT_MAP
+ * places that field, via writeInput(). It writes ONLY value cells (by map
+ * position); it NEVER writes labels, headers, or any structural cell, so the
+ * fresh rebuild's layout is preserved and user data follows fields to new
+ * rows. Contrast restoreInputSheets(), which rewrites the whole grid by
+ * absolute address and therefore resurrects an old layout -- correct for an
+ * exact round-trip (E2E) but WRONG after a layout-changing rebuild (repair).
+ *
+ * @param {Spreadsheet} ss
+ * @param {Object} snap  a snapshot from snapshotInputSheets (uses __fieldValues)
+ * @return {Object} report { restoredKeys, skippedKeys, failedKeys:[] }
+ */
+function restoreInputValues(ss, snap) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var report = { restoredKeys: 0, skippedKeys: 0, failedKeys: [] };
+  var fv = snap && snap.__fieldValues;
+  if (!fv) {
+    // Older snapshot without the field layer -- nothing to do here; caller
+    // should fall back to restoreInputSheets if it needs the grid.
+    return report;
+  }
+  var keys = Object.keys(fv);
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    var val = fv[key];
+    // Don't write blanks back over a freshly-seeded default -- a blank in the
+    // snapshot means the user never entered anything; let the rebuild default
+    // stand. (Range values are arrays; always restore those.)
+    var isBlankScalar = !Array.isArray(val) &&
+                        (val === '' || val === null || val === undefined);
+    if (isBlankScalar) { report.skippedKeys++; continue; }
+    try {
+      writeInput(ss, key, val);
+      report.restoredKeys++;
+    } catch (e) {
+      report.failedKeys.push(key + ': ' + String(e.message || e).slice(0, 40));
+    }
+  }
+  // Logos are chrome (same contract as restoreInputSheets).
+  report.logosReasserted = argiaReassertInputLogos(ss);
+  return report;
+}
+
+
 function repairInputLayouts(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   var report = { ok: false, persistedCells: 0, rebuildFailures: [],
@@ -685,16 +772,23 @@ function repairInputLayouts(ss) {
 
   report.rebuildFailures = rebuildInputsToDefault(ss) || [];
   SpreadsheetApp.flush();
-  report.restore = restoreInputSheets(ss, snap);
+  // [4.16.0] FIELD-KEYED restore -- the permanent fix. Writes user values to
+  // wherever the FRESH map places each field, preserving the clean rebuilt
+  // layout. The old full-grid restoreInputSheets() resurrected the pre-repair
+  // layout (snapshot-by-address written over the rebuild), which is exactly
+  // why every prior layout fix was silently undone by its own repair.
+  report.restore = restoreInputValues(ss, snap);
   SpreadsheetApp.flush();
   report.fingerprint = argiaInputLayoutFingerprint(ss);
-  report.ok = report.rebuildFailures.length === 0;
+  report.ok = report.rebuildFailures.length === 0
+              && (report.restore.failedKeys || []).length === 0;
 
   if (typeof engineLog === 'function') {
     try {
       engineLog(ss, 'LayoutRepair', report.ok ? 'INFO' : 'WARNING',
         'repairInputLayouts: rebuildFailures=' + report.rebuildFailures.length
-        + ', restore fallback=' + (report.restore.fallback || []).length
+        + ', valuesRestored=' + (report.restore.restoredKeys || 0)
+        + ', failedKeys=' + (report.restore.failedKeys || []).length
         + ', logos=' + (report.restore.logosReasserted || []).length);
     } catch (_) {}
   }
@@ -730,9 +824,10 @@ function runRepairInputLayouts() {
              + (rep.rebuildFailures.length === 0
                 ? 'all 6 tabs OK'
                 : rep.rebuildFailures.length + ' step(s) FAILED (see LOGS)'));
-  lines.push('\u2705 Values restored'
-             + ((rep.restore.fallback || []).length
-                ? ' (fallback on: ' + rep.restore.fallback.join(', ') + ')'
+  lines.push('\u2705 Values restored: ' + (rep.restore.restoredKeys || 0)
+             + ' field(s)'
+             + ((rep.restore.failedKeys || []).length
+                ? ' (FAILED: ' + rep.restore.failedKeys.join(', ') + ')'
                 : ''));
   lines.push('\u2705 Logos re-asserted on '
              + (rep.restore.logosReasserted || []).length + ' tab(s)');
