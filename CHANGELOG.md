@@ -1,3 +1,45 @@
+## [4.16.2] — 2026-06-13
+
+**The CULLIGAN baseline "wrong workbook" guard now reports as INFO/skip, not FAIL. It was a false alarm on every test run against a real customer workbook.**
+
+> REG_CULLIGAN_BASELINE_V2 asserts CULLIGAN's exact engineering numbers, so it
+> first checks MDC_v2.C7 == "CULLIGAN" and short-circuits if not. That guard
+> used t.fail(), so any test run against a workbook holding a different project
+> (e.g. a live PROLOGIS deal) produced a red FAIL -- which repeatedly read as
+> "something broke" when nothing had. A workbook holding another project is a
+> "can't run this test here" condition (a SKIP), not an engine defect.
+>
+> FIX: the guard now uses t.info() (status INFO, does not count as a failure),
+> mirroring the existing "no spreadsheet context" skip in the same test. The
+> message explains it is the intended guard and points to Run CULLIGAN E2E
+> (which loads CULLIGAN, generates, asserts, and restores inputs) as the way
+> to actually exercise the baseline. Inside the E2E the workbook holds
+> CULLIGAN, so this branch is not taken and all real assertions run -- no loss
+> of coverage.
+>
+> No code/engine change; test-reporting semantics only. 514 tests, ALL GREEN.
+## [4.16.1] — 2026-06-13
+
+**Fix: the 20 CFE bill-grid range keys failed to restore in 4.16.0 ("175 restored, 20 CFE range keys FAILED"). writeInput now derives range dimensions from rangeA1.**
+
+> 4.16.0's field-keyed restore worked (175 fields, SOLAR layout finally fixed
+> and STABLE) but surfaced a latent pre-existing bug: the 20 CFE range keys
+> (cfeKwhBase ... cfeSuministroMxn, C10:N10 ... C29:N29) declared rangeA1 but
+> never rangeRows/rangeCols. writeInput's size check compared value dimensions
+> against undefined and always threw. It never mattered before because nothing
+> wrote these keys back -- the field-keyed restore is the first code path to do
+> so. (The 3 INPUT_DESIGN range keys DO declare dims, so they restored fine.)
+>
+> FIX: writeInput derives expected dimensions from rangeA1 via _rangeA1Dims_
+> when rangeRows/rangeCols are absent, falling back to the explicit values when
+> present. Handles all 23 range keys uniformly. readInput was always fine.
+>
+> Test 513 -> 514: UNIT_WRITEINPUT_RANGE_DERIVES_DIMS locks the read->write
+> round-trip for a dimensionless CFE range key. Verified to FAIL (writeInput
+> throws) when the derivation is reverted, PASS with it.
+>
+> Net effect with 4.16.0: "Repair Input Layout" now restores ALL input values
+> (scalar + every range grid) with zero failures, on a clean rebuilt layout.
 ## [4.16.0] — 2026-06-13
 
 **PERMANENT FIX: "Repair Input Layout" no longer undoes its own work. Root cause of the entire 4.15.x layout saga found and eliminated — the repair was restoring the OLD layout on top of the clean rebuild.**

@@ -123,10 +123,17 @@ registerTest({
     // -- A1: identity (must match before any number is meaningful) --
     var mdcProj = String(mdc.getRange('C7').getValue() || '').trim();
     if (mdcProj !== 'CULLIGAN') {
-      t.fail('MDC_v2.C7 project name (CULLIGAN required)',
-             'got "' + mdcProj + '" -- this workbook is NOT holding a ' +
-             'CULLIGAN run. Re-run "Generate MDC and BOM" against CULLIGAN ' +
-             'inputs, then re-run this test. All blocks skipped.');
+      // [4.16.2] INFO, not FAIL. A workbook holding a different project (e.g. a
+      // real PROLOGIS deal) is a "can't run this CULLIGAN test here" condition
+      // -- a SKIP -- not an engine defect. Reporting it as FAIL caused
+      // repeated false alarms on every test run against a live customer
+      // workbook. The CULLIGAN E2E loads CULLIGAN first, so inside the E2E
+      // this branch is not taken and the real assertions below run.
+      t.info('CULLIGAN baseline skipped (workbook holds a different project)',
+             'MDC_v2.C7 = "' + mdcProj + '" (expected "CULLIGAN"). This is the '
+             + 'intended guard, NOT a failure. To run the CULLIGAN baseline: '
+             + 'Administrator Panel > Test > Run CULLIGAN E2E (loads CULLIGAN, '
+             + 'generates, asserts, restores your inputs). All blocks skipped.');
       return;
     }
     t.assert('MDC_v2.C7 project name', 'CULLIGAN', mdcProj);
