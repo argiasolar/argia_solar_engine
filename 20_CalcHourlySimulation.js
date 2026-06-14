@@ -360,6 +360,51 @@ function classifyTariff(tariffCode) {
 //   priority chains run unchanged (backward compatibility for tests +
 //   any callers that don't yet supply a schedule).
 // ===========================================================================
+// ===========================================================================
+// [4.17.0] PURE grid-charge gate decision. Extracted from doChargeGrid so the
+// gate logic is unit-testable offline with synthetic state (it previously
+// lived only inside _bessDispatchHour's closure, reachable only via the
+// workbook-dependent full hourly sim). This is the ONE place the grid-charge
+// gate is decided in the executor; the planner's equivalent gate is in
+// 20b_PlanMonthlyBessSchedule.js. Keeping the decision in a named function
+// makes the two gates auditable side by side (avoids the silent split).
+//
+// CONTRACT: pure function. Reads state, returns { allow, chargeKwh }. Does NOT
+// mutate. The caller applies SoC/import bookkeeping. chargeKwh is the kWh to
+// draw from the grid this hour (0 when not allowed).
+//
+// state = {
+//   interconnMode, ratePunta, rateBase, rte,     // economics
+//   batterySoc, maxSocKwh, batteryPowerKw         // capacity/power
+// }
+//
+// NOTE [4.17.0]: behavior is IDENTICAL to the prior inline doChargeGrid --
+// the NET_BILLING clause is preserved here unchanged. Option #1 (un-gate)
+// will modify ONLY this function + its planner twin, verified against the
+// ZERO_EXPORT synthetic fixtures. This commit is pure extraction, no change.
+// ===========================================================================
+function _bessGridChargeDecision(state) {
+  var interconnMode  = state.interconnMode;
+  var ratePunta      = Number(state.ratePunta) || 0;
+  var rateBase       = Number(state.rateBase)  || 0;
+  var rte            = Number(state.rte)        || 0;
+  var batterySoc     = Number(state.batterySoc) || 0;
+  var maxSocKwh      = Number(state.maxSocKwh)  || 0;
+  var batteryPowerKw = Number(state.batteryPowerKw) || 0;
+
+  // Interconnection gate (preserved as-is for the extraction commit).
+  if (interconnMode !== 'NET_BILLING') return { allow: false, chargeKwh: 0 };
+  // Economic gate: a kWh charged in base and discharged in punta is worth
+  // ratePunta*rte but costs rateBase. Require a strictly positive edge.
+  if (!(ratePunta * rte > rateBase)) return { allow: false, chargeKwh: 0 };
+
+  var room = Math.max(0, maxSocKwh - batterySoc);
+  var kwh = Math.min(room, batteryPowerKw);
+  if (kwh <= 0) return { allow: false, chargeKwh: 0 };
+  return { allow: true, chargeKwh: kwh };
+}
+
+
 function _bessDispatchHour(o) {
   // -- Schedule-aware execution path (Session 2) ----------------------------
   // If a precomputed schedule for this hour is supplied, use it instead of
@@ -410,14 +455,21 @@ function _bessDispatchHour(o) {
     return true;
   }
   function doChargeGrid() {
-    // Smart gate: only NET_BILLING, only when arbitrage actually profits.
-    // After RTE losses, a kWh charged in base and discharged in punta is
-    // worth ratePunta*rte but costs rateBase. Require strictly positive edge.
-    if (interconnMode !== 'NET_BILLING') return false;
-    if (!(ratePunta * rte > rateBase)) return false;
-    var room = Math.max(0, maxSocKwh - batterySoc);
-    var kwh = Math.min(room, batteryPowerKw);
-    if (kwh <= 0) return false;
+    // [4.17.0] Gate decision extracted to the pure _bessGridChargeDecision so
+    // it is unit-testable offline. Behavior is unchanged from the prior inline
+    // version (NET_BILLING + positive-edge gate). This function applies the
+    // SoC + import bookkeeping for the decision.
+    var d = _bessGridChargeDecision({
+      interconnMode:  interconnMode,
+      ratePunta:      ratePunta,
+      rateBase:       rateBase,
+      rte:            rte,
+      batterySoc:     batterySoc,
+      maxSocKwh:      maxSocKwh,
+      batteryPowerKw: batteryPowerKw
+    });
+    if (!d.allow || d.chargeKwh <= 0) return false;
+    var kwh = d.chargeKwh;
     chargeKwh = kwh;
     batteryActionKwh = -kwh;
     batterySoc += kwh * rte;

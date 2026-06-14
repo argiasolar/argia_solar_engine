@@ -1,3 +1,43 @@
+## [4.17.0] — 2026-06-13
+
+**Test foundation for option #1 (un-gate grid-charging from NET_BILLING). Pure-function extraction of the executor gate + synthetic ZERO_EXPORT dispatch fixtures. NO behavior change — this chunk is scaffolding so the un-gate can be proven, not hoped.**
+
+> Investigation (no code yet) established: the NET_BILLING clause on
+> grid-charging conflates "can't EXPORT" (the interconnection rule) with
+> "can't IMPORT for storage" (just consumption -- always legal under
+> ZERO_EXPORT). The mechanism paper never gives the clause a regulatory basis
+> and flags it as "reviewable". The ECONOMIC gate (ratePunta*rte > rateBase,
+> spread*rte > wear) is correct and interconnection-independent and is kept.
+> The gate lives in THREE places (silent split): planner 20b:379, executor
+> 20:doChargeGrid, and the 00_Main warning -- all must change together.
+>
+> Two coverage gaps blocked testing the un-gate:
+> 1. ZERO_EXPORT had ZERO synthetic dispatch coverage (every planner test used
+>    NET_BILLING/NET_METERING). CULLIGAN is solar-RICH, so it can't exercise
+>    grid-charging even after an un-gate (PV already fills the battery).
+> 2. The executor gate (doChargeGrid) was reachable only via the workbook-
+>    dependent hourly sim -- no offline coverage.
+>
+> THIS CHUNK (pure scaffolding, behavior identical):
+> - Extracted the executor gate into _bessGridChargeDecision (pure function:
+>   reads state, returns {allow, chargeKwh}, no mutation). doChargeGrid now
+>   calls it. Verified the extraction reproduces the prior decision across 5
+>   cases EXACTLY. This is the single place option #1 will edit in the executor.
+> - Added BessZeroExportArchetypeTests: 4 synthetic archetypes from the
+>   mechanism paper --
+>     A ZERO_EXPORT solar-poor low-base  (today: gridCharge=0, discharge=0 --
+>       the CULLIGAN $0 pathology; option #1 should make it 360/324)
+>     B ZERO_EXPORT solar-rich (CULLIGAN-like; PV fills battery, ~unchanged)
+>     C ZERO_EXPORT solar-poor HIGH base (P1 ceiling bites; proves the un-gate
+>       can't manufacture a new peak)
+>     D NET_BILLING solar-poor low-base CONTROL (gate fires today: 360/324 --
+>       the reference A must converge to; A and D differ ONLY by interconnMode)
+> - Added BessGridChargeDecisionTests for the pure executor gate.
+> - Assertions option #1 will intentionally flip are tagged [OPTION_1_FLIPS];
+>   when the un-gate lands, exactly those change and nothing else -- the test
+>   diff IS the behavior change.
+>
+> Tests 514 -> 519. ALL GREEN. No engine behavior changed this chunk.
 ## [4.16.2] — 2026-06-13
 
 **The CULLIGAN baseline "wrong workbook" guard now reports as INFO/skip, not FAIL. It was a false alarm on every test run against a real customer workbook.**
