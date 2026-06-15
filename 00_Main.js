@@ -887,24 +887,29 @@ function runArgiaEngine(opts) {
     // numbers). Surface that LOUDLY so the designer is never fooled by a
     // strategy that isn't actually active. Logged as MAJOR and pushed into
     // bessResult.warnings so it appears in the end-of-run alert too.
+    // [4.18.0] Interconnection consistency check REMOVED. It warned that
+    // LOAD_SHIFTING needs NET_BILLING or the battery "will NOT charge from
+    // grid" -- which was the bug we just fixed. Grid-charging is import
+    // (consumption), legal under ZERO_EXPORT, so LOAD_SHIFTING now performs
+    // realistic single-cycle grid arbitrage regardless of interconnection mode,
+    // gated purely on the punta/base economic spread and capped by the demand
+    // headroom. The old warning fired on exactly the ZERO_EXPORT sites that now
+    // work correctly, so it is gone. (The economic gate, when it blocks
+    // arbitrage on a thin spread, records a note in the planner schedule meta.)
     try {
       if (bessResult && bessResult.bessEnabled && bessResult.bess &&
           String(bessResult.bess.strategy || '').toUpperCase() === 'LOAD_SHIFTING') {
         var icCheck = readBessInterconnectionFromInputCfe(ss);
-        if (!icCheck || icCheck.mode !== 'NET_BILLING') {
-          var icMsg = 'LOAD_SHIFTING selected but interconnection is '
-            + ((icCheck && icCheck.mode) || 'UNKNOWN')
-            + ' (needs FACTURACION_NETA/NET_BILLING for grid arbitrage). '
-            + 'Battery will NOT charge from grid; results are identical to '
-            + 'PEAK_SHAVING. Set INPUT_CFE!C41 = FACTURACION_NETA, or pick '
-            + 'PEAK_SHAVING to reflect actual behavior.';
-          engineLog(ss, 'BESS', 'MAJOR', icMsg);
-          if (bessResult.warnings) bessResult.warnings.push(icMsg);
-        }
+        engineLog(ss, 'BESS', 'INFO',
+          'LOAD_SHIFTING active (interconnection='
+          + ((icCheck && icCheck.mode) || 'UNKNOWN')
+          + '). Grid-charge arbitrage is gated on the punta/base economic '
+          + 'spread and capped by demand headroom; interconnection mode does '
+          + 'not gate it (grid charging is import, legal under any mode).');
       }
     } catch (icErr) {
       engineLog(ss, 'BESS', 'WARNING',
-        'LOAD_SHIFTING interconnection check skipped: ' + icErr.message);
+        'LOAD_SHIFTING interconnection note skipped: ' + icErr.message);
     }
 
     // Step 9.6: BESS BoS quantities + voltage drop + NOM checks (BDF-7) ------

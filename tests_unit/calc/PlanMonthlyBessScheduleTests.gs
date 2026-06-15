@@ -282,22 +282,29 @@ registerTest({
   tags: ['calc', 'bess_plan', 'load_shifting', 'chunk5'],
   source: 'tests_unit/calc/PlanMonthlyBessScheduleTests.gs',
   fn: function (t, ctx) {
-    t.suite('UNIT calc/bess_plan: LS blocked under NET_METERING');
+    t.suite('UNIT calc/bess_plan: [4.18.0] interconnection no longer gates LS');
 
+    // [4.18.0] Pre-4.18.0 this asserted NET_METERING BLOCKS grid arbitrage.
+    // That gate was wrong (grid-charging is import, legal under any mode) and
+    // is removed. Now arbitrage is gated PURELY on economics. Use a solar-POOR
+    // ctx so PV can't fund the cycle -- then grid-charge MUST appear under
+    // NET_METERING, proving interconnection mode is no longer a blocker.
     var c = _planMkCtx({
-      loadByHour: _planFlatLoad(60),
-      pvByHour: _planDaylightPv(14 * 200),
+      loadByHour: _planFlatLoad(40),
+      pvByHour: _planDaylightPv(14 * 10),   // solar-poor: PV can't fund a cycle
       interconnMode: 'NET_METERING',
       rateBase: 1.0, ratePunta: 3.0
     });
     var s = _planMonthlyBessSchedule(c, 'LOAD_SHIFTING');
 
-    t.assert('grid charge zero', 0, _planSum(s.gridChargeByHour));
-    var found = false;
+    t.assertTrue('NET_METERING now grid-charges (interconn does not gate)',
+                 _planSum(s.gridChargeByHour) > 0);
+    // The block note must NOT be present (gate is open economically).
+    var stillBlocked = false;
     for (var i = 0; i < s.meta.notes.length; i++) {
-      if (String(s.meta.notes[i]).indexOf('gate blocked') >= 0) found = true;
+      if (String(s.meta.notes[i]).indexOf('gate blocked') >= 0) stillBlocked = true;
     }
-    t.assertTrue('meta records gate-blocked note', found);
+    t.assertTrue('no gate-blocked note (economic gate is open)', !stillBlocked);
   }
 });
 
@@ -709,12 +716,13 @@ registerTest({
                  ls.meta.priorityResults.P3_REDUCE_PUNTA.valueMxn != null
               && ls.meta.priorityResults.P3_REDUCE_PUNTA.valueMxn > 0);
 
-    // LS with NET_METERING: P4 attempted but NOT achieved
-    var cBlocked = _planMkCtx(c);
-    cBlocked.interconnMode = 'NET_METERING';
-    var lsBlocked = _planMonthlyBessSchedule(cBlocked, 'LOAD_SHIFTING');
-    t.assertTrue('LS blocked: P4 attempted', lsBlocked.meta.priorityResults.P4_ARBITRAGE.attempted);
-    t.assertTrue('LS blocked: P4 NOT achieved', !lsBlocked.meta.priorityResults.P4_ARBITRAGE.achieved);
+    // [4.18.0] NET_METERING no longer blocks P4 (interconnection isn't a gate).
+    // P4 achieved depends only on economics + available headroom now.
+    var cNm = _planMkCtx(c);
+    cNm.interconnMode = 'NET_METERING';
+    var lsNm = _planMonthlyBessSchedule(cNm, 'LOAD_SHIFTING');
+    t.assertTrue('LS NET_METERING: P4 attempted', lsNm.meta.priorityResults.P4_ARBITRAGE.attempted);
+    t.assertTrue('LS NET_METERING: P4 achieved (interconn no longer blocks)', lsNm.meta.priorityResults.P4_ARBITRAGE.achieved);
 
     t.info('PS priorities', JSON.stringify(ps.meta.priorityResults));
     t.info('LS priorities', JSON.stringify(ls.meta.priorityResults));

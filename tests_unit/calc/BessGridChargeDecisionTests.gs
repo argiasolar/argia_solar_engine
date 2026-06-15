@@ -32,12 +32,15 @@ registerTest({
     t.assertTrue('NET_BILLING profitable -> allow', d1.allow === true);
     t.assert('charge = min(room 1900, power 972)', 972, d1.chargeKwh);
 
-    // [OPTION_1_FLIPS] ZERO_EXPORT, otherwise identical -> blocked TODAY.
+    // [4.18.0 UN-GATED] ZERO_EXPORT, otherwise identical -> now ALLOWED.
+    // Grid-charging is import (consumption), legal under any interconnection
+    // mode; only the economic edge gates it now.
     var ze = {}; for (var k in profitable) ze[k] = profitable[k];
     ze.interconnMode = 'ZERO_EXPORT';
     var d2 = _bessGridChargeDecision(ze);
-    t.assertTrue('[OPTION_1_FLIPS] ZERO_EXPORT blocked today', d2.allow === false);
-    t.assert('[OPTION_1_FLIPS] ZERO_EXPORT charge 0 today', 0, d2.chargeKwh);
+    t.assertTrue('[4.18.0] ZERO_EXPORT now allowed (interconn does not gate)',
+                 d2.allow === true);
+    t.assert('[4.18.0] ZERO_EXPORT charges same as NET_BILLING', 972, d2.chargeKwh);
 
     // Economic gate: ratePunta*rte <= rateBase -> blocked even under NET_BILLING
     // (this must hold AFTER option #1 too -- the economic gate is NOT removed).

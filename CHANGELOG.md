@@ -1,3 +1,60 @@
+## [4.18.0] — 2026-06-14
+
+**Option #1: battery grid-charging un-gated from NET_BILLING. ZERO_EXPORT sites (the majority of C&I projects, incl. CULLIGAN) now perform realistic single-cycle grid arbitrage instead of sitting idle. The gate is now PURELY economic.**
+
+> ROOT FIX: the grid-charge arbitrage gate required interconnMode ===
+> 'NET_BILLING', conflating "cannot EXPORT" (the interconnection rule) with
+> "cannot IMPORT to store" (just consumption, legal under ZERO_EXPORT/SIN
+> EXPORTACION every hour). Charging a battery from the grid is import, never
+> export, so interconnection mode is irrelevant to whether arbitrage is
+> allowed. The gate is now purely economic: a kWh bought in base and
+> discharged in punta must clear wear and beat the base rate
+> (ratePunta*rte > rateBase + wear).
+>
+> SCOPE -- all THREE gate sites changed together (no silent split):
+> 1. 20b_PlanMonthlyBessSchedule.js _planLoadShifting: dropped the
+>    interconnMode clause from the P4_ARBITRAGE gate.
+> 2. 20_CalcHourlySimulation.js _bessGridChargeDecision (the pure fn extracted
+>    in 4.17.0): dropped the interconnMode !== 'NET_BILLING' early return.
+> 3. 00_Main.js: removed the obsolete MAJOR warning that told users
+>    LOAD_SHIFTING "needs NET_BILLING or the battery won't grid-charge" -- it
+>    fired on exactly the ZERO_EXPORT sites that now work. Replaced with an
+>    INFO note.
+>
+> PRESERVED (correctly interconnection-specific -- these are about EXPORT, not
+> import): the export-credit math in 20 (lines ~1098/1138) still pays
+> NET_METERING at retail, NET_BILLING at export price, ZERO_EXPORT nothing.
+> Export economics depend on interconnection mode; import-for-storage does not.
+>
+> MODEL IS REALISTIC, NOT OPTIMISTIC ("real-life case scenario"): the planner
+> already targets ONE daily cycle (not perfect-foresight max), caps grid-charge
+> at the base-hour headroom under the P1 demand limit (so it can NEVER
+> manufacture a new billed peak), and allocates punta discharge proportionally
+> to actual residual load. The un-gate simply lets ZERO_EXPORT sites use this
+> same realistic dispatch. The "ahorros no garantizados / requires 15-min
+> interval data" banner remains as the honest caveat -- actual savings depend
+> on how the customer operates the battery; the lease de-risks the rest.
+>
+> VERIFIED on the synthetic archetypes (from 4.17.0):
+>   A ZERO_EXPORT solar-poor low-base: 0/0 -> 360/324 (== NET_BILLING control D;
+>     identical except interconnMode -- the CULLIGAN $0 pathology resolved).
+>   B ZERO_EXPORT solar-rich (CULLIGAN): unchanged (PV already funds the cycle).
+>   C ZERO_EXPORT solar-poor HIGH base: 0 -> 30 (capped by demand headroom --
+>     proves the P1 ceiling survives the un-gate; battery can't make a new peak).
+>   D NET_BILLING control: unchanged (no regression).
+> LOAD_SHIFTING now genuinely differs from PEAK_SHAVING on ZERO_EXPORT sites
+> (the original B-4 problem -- $0/$0/$0 tiles -- is resolved at the source, not
+> just banner-flagged).
+>
+> The [OPTION_1_FLIPS]-tagged archetype assertions were flipped to the un-gated
+> values; the test diff IS the behavior change. Three pre-existing tests that
+> encoded the old "NET_METERING blocks arbitrage" assumption were updated to
+> the new economic-only gate. Tests 519, ALL GREEN (count unchanged).
+>
+> NOTE: CULLIGAN itself is solar-RICH (archetype B), so its CFE_OUTPUT BESS
+> number may move only modestly; the big beneficiaries are solar-poor
+> ZERO_EXPORT sites. Verify the CULLIGAN E2E after deploy to confirm no
+> regression to the locked baseline.
 ## [4.17.0] — 2026-06-13
 
 **Test foundation for option #1 (un-gate grid-charging from NET_BILLING). Pure-function extraction of the executor gate + synthetic ZERO_EXPORT dispatch fixtures. NO behavior change — this chunk is scaffolding so the un-gate can be proven, not hoped.**

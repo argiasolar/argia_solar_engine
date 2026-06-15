@@ -151,20 +151,31 @@ registerTest({
 });
 
 registerTest({
-  id      : 'UNIT_BESS_DISPATCH_LOAD_SHIFTING_GATE_BLOCKS_NON_NETBILLING',
+  id      : 'UNIT_BESS_DISPATCH_LOAD_SHIFTING_GATE_IS_ECONOMIC',
   group   : 'unit',
   module  : 'calc/bess_dispatch',
   scenarios: [],
   tags    : ['calc', 'bess_dispatch', 'load_shifting', 'smart_gate', 'chunk4'],
   source  : 'tests_unit/calc/BessDispatchStrategyTests.gs',
   fn      : function (t, ctx) {
-    t.suite('UNIT calc/bess_dispatch: LOAD_SHIFTING gate BLOCKS when not NET_BILLING');
-    // Profitable spread but NET_METERING -> grid arbitrage gate must stay shut.
+    t.suite('UNIT calc/bess_dispatch: [4.18.0] LOAD_SHIFTING grid-charge gated by ECONOMICS, not interconnection');
+    // [4.18.0] Pre-4.18.0 this asserted NET_METERING blocks grid arbitrage.
+    // The interconnection gate is removed (grid-charging is import, legal under
+    // any mode). With a profitable spread, NET_METERING now grid-charges.
     var r = _disp({ strategy: 'LOAD_SHIFTING', bucket: 'base',
                     residualNetLoadKwh: 0, pvSurplusKwh: 0,
                     batterySoc: 100, rte: 0.9, interconnMode: 'NET_METERING',
                     rateBase: 0.9, ratePunta: 1.5 });
-    t.assert('no grid charge outside NET_BILLING', 0, Math.round(r.chargeKwh));
+    t.assertTrue('NET_METERING grid-charges with profitable spread (interconn does not gate)',
+                 Math.round(r.chargeKwh) > 0);
+
+    // The economic gate still bites: a non-profitable spread blocks it even
+    // under NET_BILLING (ratePunta*rte <= rateBase).
+    var noEdge = _disp({ strategy: 'LOAD_SHIFTING', bucket: 'base',
+                         residualNetLoadKwh: 0, pvSurplusKwh: 0,
+                         batterySoc: 100, rte: 0.9, interconnMode: 'NET_BILLING',
+                         rateBase: 1.5, ratePunta: 1.5 });  // 1.5*0.9=1.35 < 1.5
+    t.assert('economic gate still blocks unprofitable spread', 0, Math.round(noEdge.chargeKwh));
   }
 });
 

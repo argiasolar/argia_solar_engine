@@ -375,16 +375,29 @@ function _planLoadShifting(ctx) {
   var spreadAfterWear  = (ctx.ratePunta - ctx.rateBase) * ctx.rte - wc;
   var puntaWorthBaseEq = ctx.ratePunta * ctx.rte - wc - ctx.rateBase;
 
+  // [4.18.0] Grid-charge arbitrage gate -- interconnection clause REMOVED.
+  // Previously this required interconnMode === 'NET_BILLING', which conflated
+  // "cannot EXPORT" (the interconnection rule) with "cannot IMPORT to store"
+  // (just consumption -- legal under ZERO_EXPORT/SIN EXPORTACION every hour).
+  // Charging a battery from the grid is import, never export, so the
+  // interconnection mode is irrelevant to whether arbitrage is allowed. The
+  // gate is now PURELY ECONOMIC: a kWh bought in base and discharged in punta
+  // must clear wear and beat the base rate. This unblocks the realistic
+  // single-cycle dispatch (one charge, one discharge per day, capped by the P1
+  // demand-limit headroom so it can never manufacture a new billed peak) for
+  // ZERO_EXPORT sites -- the majority of C&I projects, including CULLIGAN's
+  // pathology where PV alone could not fund a cycle. See CHANGELOG 4.18.0 and
+  // the ZERO_EXPORT archetype fixtures.
   var gateOk =
-       ctx.interconnMode === 'NET_BILLING'
-    && spreadAfterWear  > 0
+       spreadAfterWear  > 0
     && puntaWorthBaseEq > 0;
 
   if (!gateOk) {
     var schedule = _planPeakShaving(ctx, 'LOAD_SHIFTING');
     schedule.meta.notes.push(
-      'LOAD_SHIFTING P4_ARBITRAGE gate blocked (interconn=' + ctx.interconnMode +
-      ', spreadAfterWear=' + spreadAfterWear.toFixed(3) +
+      'LOAD_SHIFTING P4_ARBITRAGE gate blocked (economic: ' +
+      'spreadAfterWear=' + spreadAfterWear.toFixed(3) +
+      ', puntaWorthBaseEq=' + puntaWorthBaseEq.toFixed(3) +
       ', wear=' + wc.toFixed(3) +
       '). Falling back to PS behavior.');
     return schedule;

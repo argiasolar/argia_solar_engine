@@ -78,28 +78,32 @@ registerTest({
                        loadByHour: _zeFlat(40), pvByHour: _zePv(14 * 10) });
     var ls = _planMonthlyBessSchedule(c, 'LOAD_SHIFTING');
 
-    // [OPTION_1_FLIPS] Today the ZERO_EXPORT clause blocks P4 -> 0 grid charge,
-    // 0 discharge ($0 savings -- the CULLIGAN pathology). After the un-gate,
-    // this archetype should grid-charge a full cycle and discharge in punta
-    // (mirroring archetype D below). These two assertions are the heart of
-    // option #1.
-    t.assert('[OPTION_1_FLIPS] LS grid charge (gated OFF today)',
-             0, Math.round(_zeSum(ls.gridChargeByHour)));
-    t.assert('[OPTION_1_FLIPS] LS discharge (gated OFF today)',
-             0, Math.round(_zeSum(ls.dischargeByHour)));
+    // [4.18.0 UN-GATED] The ZERO_EXPORT clause is removed, so this archetype
+    // now grid-charges a realistic single daily cycle and discharges in punta
+    // -- IDENTICAL to archetype D (NET_BILLING control), which differs only by
+    // interconnMode. This is the heart of option #1: ZERO_EXPORT sites finally
+    // capture the same arbitrage value NET_BILLING sites always could. The
+    // CULLIGAN $0 pathology is resolved.
+    t.assert('[4.18.0] LS grid charge (un-gated, full cycle)',
+             360, Math.round(_zeSum(ls.gridChargeByHour)));
+    t.assert('[4.18.0] LS discharge (un-gated, punta)',
+             324, Math.round(_zeSum(ls.dischargeByHour)));
 
-    // INVARIANT (must hold before AND after option #1): blocked LS == PS.
-    var ps = _planMonthlyBessSchedule(c, 'PEAK_SHAVING');
-    t.assert('blocked LS discharge == PS discharge',
-             Math.round(_zeSum(ps.dischargeByHour)),
+    // A now MATCHES the NET_BILLING control D (identical except interconnMode).
+    var d = _zeMkCtx({ interconnMode: 'NET_BILLING',
+                       loadByHour: _zeFlat(40), pvByHour: _zePv(14 * 10) });
+    var lsD = _planMonthlyBessSchedule(d, 'LOAD_SHIFTING');
+    t.assert('A grid charge == D grid charge (interconn no longer matters)',
+             Math.round(_zeSum(lsD.gridChargeByHour)),
+             Math.round(_zeSum(ls.gridChargeByHour)));
+    t.assert('A discharge == D discharge',
+             Math.round(_zeSum(lsD.dischargeByHour)),
              Math.round(_zeSum(ls.dischargeByHour)));
 
-    // The block reason is recorded (so the designer is never fooled).
-    var blocked = false;
-    for (var i = 0; i < ls.meta.notes.length; i++) {
-      if (String(ls.meta.notes[i]).indexOf('gate blocked') >= 0) blocked = true;
-    }
-    t.assertTrue('[OPTION_1_FLIPS] gate-blocked note present today', blocked);
+    // LS now genuinely differs from PS (the whole point -- PS can't grid-charge).
+    var ps = _planMonthlyBessSchedule(c, 'PEAK_SHAVING');
+    t.assertTrue('[4.18.0] LS now out-discharges PS (grid-funded cycle)',
+                 _zeSum(ls.dischargeByHour) > _zeSum(ps.dischargeByHour));
   }
 });
 
@@ -166,9 +170,15 @@ registerTest({
     t.assertTrue('grid charge never exceeds base headroom (P1 ceiling holds)',
                  _zeSum(ls.gridChargeByHour) <= baseHeadroom + 0.01);
 
-    // [OPTION_1_FLIPS] today it is exactly 0 (gate blocked upstream of the cap).
-    t.assert('[OPTION_1_FLIPS] high-base LS grid charge (gated OFF today)',
-             0, Math.round(_zeSum(ls.gridChargeByHour)));
+    // [4.18.0 UN-GATED] Now grid-charging is ALLOWED, but the P1 demand ceiling
+    // caps it hard: only ~5 kW/hr headroom over 6 base hours = ~30 kWh max.
+    // This proves the safety mechanism survives the un-gate -- the battery
+    // grid-charges a SMALL amount (NOT a full cycle), so it can never
+    // manufacture a new billed peak. This is the honest "real-life" behavior.
+    t.assert('[4.18.0] high-base LS grid charge (capped by demand headroom)',
+             30, Math.round(_zeSum(ls.gridChargeByHour)));
+    t.assertTrue('grid charge well below a full cycle (headroom-limited)',
+                 _zeSum(ls.gridChargeByHour) < c.usableKwh * 0.3);
   }
 });
 

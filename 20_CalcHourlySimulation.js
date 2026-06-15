@@ -392,10 +392,13 @@ function _bessGridChargeDecision(state) {
   var maxSocKwh      = Number(state.maxSocKwh)  || 0;
   var batteryPowerKw = Number(state.batteryPowerKw) || 0;
 
-  // Interconnection gate (preserved as-is for the extraction commit).
-  if (interconnMode !== 'NET_BILLING') return { allow: false, chargeKwh: 0 };
-  // Economic gate: a kWh charged in base and discharged in punta is worth
-  // ratePunta*rte but costs rateBase. Require a strictly positive edge.
+  // [4.18.0] Interconnection clause REMOVED (was: if NET_BILLING only).
+  // Grid-charging is IMPORT (consumption), legal under ZERO_EXPORT every hour;
+  // only EXPORT is restricted, and a battery charging from the grid never
+  // exports. The gate is now PURELY ECONOMIC: a kWh charged in base and
+  // discharged in punta is worth ratePunta*rte but costs rateBase -- require a
+  // strictly positive edge. interconnMode is retained in the signature for
+  // call-site compatibility / future use but no longer gates the decision.
   if (!(ratePunta * rte > rateBase)) return { allow: false, chargeKwh: 0 };
 
   var room = Math.max(0, maxSocKwh - batterySoc);
