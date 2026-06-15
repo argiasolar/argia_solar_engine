@@ -1,3 +1,47 @@
+## [4.20.0] — 2026-06-15
+
+**New: Valor de Compra (residual value / buyout schedule) calculation — 32_CalcValorDeCompra.js. Pure calc layer, tests-first, reverse-engineered and verified against three live BaaS proposals. Calc only this chunk; rendering/wiring is a deliberate separate step.**
+
+> WHAT: the buyout value a BaaS customer pays to purchase the leased system at
+> a given contract year. Reverse-engineered from the live proposal workbooks
+> (PPA "ANEXO 7 -- Valor Residual"), verified IDENTICAL across Taigene,
+> Draexlmaier and Autoplastek: a STRAIGHT-LINE depreciation of installed CAPEX
+> (incl. 16% IVA) over a 16-year term, clamped to 0 at term end.
+>
+>   valorDeCompra(n) = systemCapexMxn * (1 + ivaPct) * max(0, 1 - n/term)
+>   term default 16 (workbook uses 15-yr horizon + 1); iva default 0.16.
+>   CAPEX basis = FULL installed system (PV+BESS+install), pre-IVA -- the
+>   buyout transfers the whole system, not just the battery (verified:
+>   RESULTS!B24 in the workbooks is full-system CAPEX MXN).
+>
+> The workbook builds an amortization-schedule structure (CUOTA/INTERÉS/
+> CAPITAL) but hardcodes interest = 0, making it pure straight-line in every
+> real proposal -- so this module implements the straight-line result directly.
+>
+> INVESTIGATION NOTE: the prior plan referenced a spec doc + worked CULLIGAN
+> example + fixtures "already existing" and a module name 31_CalcValorDeCompra.
+> Neither the spec nor fixtures were in the repo, and 31_ is taken by
+> 31_CalcClientFinancials. The real spec was recovered from the live workbooks;
+> the module is 32_CalcValorDeCompra.js. Spec written to
+> docs/VALOR_DE_COMPRA_SPEC.md.
+>
+> WORKED CULLIGAN (systemCapexMxn = 37,051,893.49 pre-IVA):
+>   capexConIva = 42,980,196.45 ; annualDecline = 2,686,262.28 ;
+>   Año 0 = 42,980,196.45 ... Año 16 = 0.00. Locked as the regression fixture.
+>
+> TESTS 522 -> 525:
+>   UNIT_VDC_CULLIGAN_SCHEDULE  -- every year 0..16 against the worked example
+>     (verified to FAIL on a 5% capex error).
+>   UNIT_VDC_INVARIANTS         -- year0=capexConIva, year term=0, strictly
+>     non-increasing, equal straight-line steps, never negative, custom
+>     term/iva parametrization.
+>   UNIT_VDC_GUARDS             -- zero/negative/missing capex, term 0, neg iva.
+> ALL GREEN.
+>
+> NOT YET WIRED (deliberate, chunk-atomic): calcValorDeCompra is a pure
+> function, not yet called by any writer. Natural render homes are
+> WriteBaasProjectionV2 / WriteClientFinancialsV2 -- a separate chunk once the
+> calc is locked.
 ## [4.19.1-redeploy] — 2026-06-14
 
 **Deployment-integrity fix: the 4.16.1 writeInput range-dims fix (`_rangeA1Dims_` in 02d_InputIO.js) and its test were present in the CHANGELOG but MISSING from the deployed code on GitHub and Apps Script. Re-deploying the lost files. No version bump (restoring existing 4.16.1 work into the current 4.19.1 tree).**
