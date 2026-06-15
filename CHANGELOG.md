@@ -1,3 +1,44 @@
+## [4.22.0] — 2026-06-15
+
+**Fixes the ZERO_EXPORT E2E progress dialog hanging at 83% forever, and surfaces restore failures to the user instead of logging them silently. No engine/dispatch change. Caught from a live run where the bar stuck at 83% after a PASS verdict.**
+
+> SYMPTOM: after the ZERO_EXPORT Arbitrage E2E finished (PASS verdict shown,
+> inputs correctly restored), the modeless progress dialog stayed on screen at
+> 83% indefinitely. Data was never at risk -- purely a dialog-lifecycle bug.
+>
+> ROOT CAUSE: the modeless progress dialog (showModelessDialog) has NO
+> server-side close -- it polls getArgiaProgress() and closes itself only when
+>   done = (step >= total) && !_ARGIA_PROGRESS_EXTERNAL
+> The ZERO_EXPORT E2E left the bar at _setArgiaProgress(5, 6, 'restaurando…')
+> (= 83%, done:false) and then called _hideArgiaProgress() to close it -- but
+> THAT FUNCTION DOES NOT EXIST. The ReferenceError was swallowed by the
+> surrounding try/catch, so done was never true and the dialog polled 5/6
+> forever. (The main engine and CULLIGAN E2E close correctly because they end
+> at _setArgiaProgress(TOTAL, TOTAL, …) -- the ZERO_EXPORT E2E was written with
+> a different, broken close path.)
+>
+> FIX (test/ZeroExportArbitrageE2E.gs):
+>   - replace the no-op _hideArgiaProgress() with _setArgiaProgress(6, 6, '✅ …')
+>     so the dialog hits done:true and self-closes (matches the working pattern).
+>   - clear _ARGIA_PROGRESS_EXTERNAL BEFORE the final tick so done can compute.
+>   - [robustness] a restore failure was previously only logged to LOGS while the
+>     result dialog still showed PASS -- the user could be looking at green while
+>     their real inputs were NOT restored. Now a failed restore prepends a loud
+>     warning to the verdict ("RESTAURACIÓN DE INPUTS FALLÓ … ejecuta Repair
+>     Input Layout").
+>
+> TEST RIG (scripts/full_selftest.js): the Node stub had getDocumentProperties
+> but not getScriptProperties -- getArgiaProgress/_setArgiaProgress use the
+> latter, so they were untestable. Added a faithful getScriptProperties stub
+> (shared store, set/get round-trip).
+>
+> TESTS 526 -> 527:
+>   UNIT_PROGRESS_DIALOG_DONE_CONTRACT -- locks the self-close contract:
+>     5/6 -> done FALSE (keeps polling, the hang); 6/6 + EXTERNAL cleared ->
+>     done TRUE (self-closes); 6/6 but EXTERNAL still true -> done FALSE
+>     (external owner controls close). Guards any future caller that forgets to
+>     reach (total,total).
+> ALL GREEN.
 ## [4.21.0] — 2026-06-15
 
 **Wires the Valor de Compra (buyout) schedule into CLIENT_FINANCIALS_v2. Customer-facing render of the residual-value calc from 4.20.0. This single delivery BUNDLES 4.20.0 (the calc, never pushed separately) + 4.21.0 (the wiring + render) — one zip, one push.**

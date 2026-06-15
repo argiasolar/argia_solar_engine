@@ -116,7 +116,18 @@ global.PropertiesService = {
       deleteProperty: function(k){ delete s[k]; return this; },
       getProperties: function(){ return Object.assign({}, s); }
     };
-  }
+  },
+  getScriptProperties: (function(){
+    // Single shared store so set/get round-trips within a run (mirrors GAS).
+    var s = {};
+    var api = {
+      getProperty: function(k){ return s[k]||null; },
+      setProperty: function(k,v){ s[k]=String(v); return api; },
+      deleteProperty: function(k){ delete s[k]; return api; },
+      getProperties: function(){ return Object.assign({}, s); }
+    };
+    return function(){ return api; };
+  })()
 };
 
 global.engineLog = function() {};

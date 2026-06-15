@@ -213,6 +213,7 @@ function runZeroExportArbitrageE2E() {
 
   var snap = null, phase = 'start', engineResult = null, skipped = null;
   var verdict = '(not reached)';
+  var restoreFailed = null;
 
   _ARGIA_PROGRESS_EXTERNAL = true;
   _setArgiaProgress(0, 6, 'E2E: respaldando tus inputs\u2026');
@@ -248,17 +249,37 @@ function runZeroExportArbitrageE2E() {
   } finally {
     if (snap) {
       try {
+        // EXTERNAL must be cleared BEFORE the final tick so getArgiaProgress's
+        // done = (step>=total) && !EXTERNAL can evaluate true and the modeless
+        // dialog self-closes (it polls done; there is no server-side close).
+        _ARGIA_PROGRESS_EXTERNAL = false;
         _setArgiaProgress(5, 6, 'E2E: restaurando tus inputs\u2026');
         restoreInputSheets(ss, snap);
         SpreadsheetApp.flush();
       } catch (rErr) {
+        restoreFailed = rErr.message || String(rErr);
         if (typeof engineLog === 'function') {
-          try { engineLog(ss, 'E2E', 'ERROR', 'restore failed: ' + rErr.message); } catch (_) {}
+          try { engineLog(ss, 'E2E', 'ERROR', 'restore failed: ' + restoreFailed); } catch (_) {}
         }
       }
     }
     _ARGIA_PROGRESS_EXTERNAL = false;
-    try { _hideArgiaProgress(); } catch (_) {}
+    // [4.22.0] Advance to 6/6 so the modeless progress dialog hits done:true and
+    // closes itself (1.4s later). The previous _hideArgiaProgress() call was a
+    // no-op -- that function does not exist, the ReferenceError was swallowed by
+    // the catch, and the bar was left stuck at 5/6 (83%) forever.
+    try { _setArgiaProgress(6, 6, '\u2705 ZERO_EXPORT E2E \u2014 listo'); } catch (_) {}
+  }
+
+  // [4.22.0] A failed restore previously only logged silently while the result
+  // dialog still showed PASS -- leaving the user looking at green while their
+  // real inputs were NOT back. Surface it loudly, first thing.
+  if (restoreFailed) {
+    verdict = '\u26a0 RESTAURACI\u00d3N DE INPUTS FALL\u00d3: ' + restoreFailed + '\n\n'
+            + 'Tus inputs reales pueden NO estar restaurados. Ejecuta '
+            + '"Repair Input Layout" (men\u00fa ARGIA) para recuperarlos desde '
+            + '_INPUT_BACKUP, y verifica INPUT_PROJECT.\n\n'
+            + '--- resultado del E2E (de todos modos) ---\n' + verdict;
   }
 
   if (typeof engineLog === 'function') {
