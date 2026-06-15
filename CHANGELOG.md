@@ -1,3 +1,42 @@
+## [4.21.0] — 2026-06-15
+
+**Wires the Valor de Compra (buyout) schedule into CLIENT_FINANCIALS_v2. Customer-facing render of the residual-value calc from 4.20.0. This single delivery BUNDLES 4.20.0 (the calc, never pushed separately) + 4.21.0 (the wiring + render) — one zip, one push.**
+
+> WHERE: a new "VALOR DE COMPRA (opción de compra anticipada)" section at the
+> bottom of CLIENT_FINANCIALS_v2, after the scenario-comparison block. Shows the
+> year-by-year amount to buy out the system (Año 0 .. Año 16), with an
+> explanatory line (capexConIva initial, annualDecline/yr, term).
+>
+> WIRING (31a_RunClientFinancials.js):
+>   - calcValorDeCompra({ systemCapexMxn: capex.totalMxn }) -- uses the SAME
+>     capex.totalMxn that feeds the headline KPI and calcClientFinancials, so
+>     the buyout schedule can never silently disagree with the rest of the
+>     sheet (no silent split).
+>   - guarded on capex.totalMxn > 0; try/catch degrades to a warning, never
+>     blocks the financials render.
+>   - passed to the writer via opts.valorDeCompra (may be null -> section omitted).
+>
+> RENDER (writers_v2/WriteClientFinancialsV2.js):
+>   - opt-in: renders only when opts.valorDeCompra is supplied.
+>   - year/buyout-value table; row anchor derived from the existing scenario
+>     block layout.
+>
+> DELIBERATE DECISIONS (grounded in the workbook investigation):
+>   - CAPEX basis = full system pre-IVA (capex.totalMxn), matching the workbook
+>     RESULTS!B24 basis the residual is computed on.
+>   - buyout term = 16 (BaaS contract) is kept DISTINCT from the financials
+>     analysis horizon (15) -- exactly as the live workbooks do (term = 15+1).
+>
+> TESTS 525 -> 526:
+>   UNIT_WRITERS_CLIENT_FIN_VALOR_DE_COMPRA -- section renders header, term,
+>     Año 0 = $11,600,000, Año 16 = $0; ABSENT when opts omit it. Verified to
+>     FAIL when the render block is disabled.
+>   (4.20.0 calc tests UNIT_VDC_* remain green.)
+> ALL GREEN.
+>
+> NOTE: bundles the 4.20.0 calc (32_CalcValorDeCompra.js, ValorDeCompraTests.gs,
+> docs/VALOR_DE_COMPRA_SPEC.md) which was packaged but not pushed. The 4.20.0
+> CHANGELOG entry below documents the calc layer in full.
 ## [4.20.0] — 2026-06-15
 
 **New: Valor de Compra (residual value / buyout schedule) calculation — 32_CalcValorDeCompra.js. Pure calc layer, tests-first, reverse-engineered and verified against three live BaaS proposals. Calc only this chunk; rendering/wiring is a deliberate separate step.**

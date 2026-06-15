@@ -86,3 +86,51 @@ registerTest({
                  text2.indexOf('Genere la Proyección BaaS') < 0);
   }
 });
+
+
+// =============================================================================
+// [4.21.0] Valor de Compra (buyout schedule) renders in CLIENT_FINANCIALS_v2
+// when opts.valorDeCompra is supplied, and is ABSENT when it is not (the
+// section is opt-in, driven by capex > 0 in the orchestrator).
+// =============================================================================
+registerTest({
+  id      : 'UNIT_WRITERS_CLIENT_FIN_VALOR_DE_COMPRA',
+  group   : 'unit',
+  module  : 'writers/client_financials',
+  scenarios: [],
+  tags    : ['writers', 'financials', 'valor_de_compra', 'baas'],
+  source  : 'tests_unit/writers/ClientFinancialsWriterTests.gs',
+  fn: function (t, ctx) {
+    t.suite('UNIT writers/client_financials: Valor de Compra section');
+
+    // Build a real schedule from the calc so the test exercises the true shape.
+    var vdc = calcValorDeCompra({ systemCapexMxn: 10000000 });  // -> capexConIva 11,600,000
+
+    var sheet = _baasMockSheet();
+    writeClientFinancialsV2(_baasMockSs(sheet), _cfinWriterFin(false), {
+      capexBreakdown: { materialsMxn: 8000000, installMxn: 2000000, totalMxn: 10000000 },
+      valorDeCompra: vdc
+    });
+    var text = _baasWriterText(sheet);
+
+    // Section header + explanatory line.
+    t.assertTrue('VALOR DE COMPRA header rendered',
+                 text.indexOf('VALOR DE COMPRA') >= 0);
+    t.assertTrue('explanatory line names the term',
+                 text.indexOf('16 años') >= 0);
+
+    // Year 0 = capexConIva = 11,600,000 ; year 16 = $0.
+    t.assertTrue('Año 0 buyout = $11,600,000', text.indexOf('$11,600,000') >= 0);
+    t.assertTrue('schedule has Año 16 row', text.indexOf('Año 16') >= 0);
+    t.assertTrue('Año 16 buyout = $0', text.indexOf('$0') >= 0);
+
+    // Absent when not supplied.
+    var sheet2 = _baasMockSheet();
+    writeClientFinancialsV2(_baasMockSs(sheet2), _cfinWriterFin(false), {
+      capexBreakdown: { materialsMxn: 8000000, installMxn: 2000000, totalMxn: 10000000 }
+    });
+    var text2 = _baasWriterText(sheet2);
+    t.assertTrue('no Valor de Compra section when opts.valorDeCompra absent',
+                 text2.indexOf('VALOR DE COMPRA') < 0);
+  }
+});

@@ -243,11 +243,25 @@ function runClientFinancials(ss, opts) {
     baasNetSavingsByYear:    opts.baasNetSavingsByYear || null
   });
 
+  // [4.21.0] Valor de Compra (buyout / residual value) schedule. Uses the SAME
+  // capex.totalMxn the rest of the sheet uses (no silent split). Straight-line
+  // over the BaaS contract term (16y, the calc default) -- distinct from the
+  // financials analysis horizon (15y). Guarded: only when capex is positive.
+  var valorDeCompra = null;
+  if (capex.totalMxn > 0) {
+    try {
+      valorDeCompra = calcValorDeCompra({ systemCapexMxn: capex.totalMxn });
+    } catch (vdcErr) {
+      warnings.push('ClientFin: Valor de Compra skipped: ' + vdcErr.message);
+    }
+  }
+
   var wrote = writeClientFinancialsV2(ss, fin, {
     co2FactorNote: 'Factor de emisión ' + CLIENT_FIN_DEFAULTS.co2FactorTonPerMwh
                  + ' tCO2e/MWh (verificar factor oficial CRE vigente).',
     capexBreakdown: capex,
-    guardNotes: guardNotes.map(function (g) { return g.msg; })   // [G6] on-sheet
+    guardNotes: guardNotes.map(function (g) { return g.msg; }),  // [G6] on-sheet
+    valorDeCompra: valorDeCompra   // [4.21.0] buyout schedule, may be null
   });
 
   return {

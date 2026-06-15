@@ -196,6 +196,44 @@ function writeClientFinancialsV2(ss, fin, opts) {
       .setFontSize(9).setFontColor(token('TEXT_MUTED')).setFontStyle('italic').setWrap(true);
   }
 
+  // -- Valor de Compra (buyout / residual value) ------------------------------
+  // [4.21.0] Straight-line residual of the installed CAPEX (incl. IVA) over the
+  // BaaS contract term -- what it costs the customer to buy out the system at a
+  // given year. Verified against the live proposal workbooks (PPA "ANEXO 7").
+  // Rendered only when opts.valorDeCompra is supplied (capex > 0).
+  if (opts.valorDeCompra && opts.valorDeCompra.schedule && opts.valorDeCompra.schedule.length) {
+    var vdc = opts.valorDeCompra;
+    var vdcTop = scTop + 1 + fin.scenarios.length + (hasBaas ? 2 : 3);
+
+    sh.getRange(vdcTop - 1, 1, 1, 8).merge()
+      .setValue('VALOR DE COMPRA (opción de compra anticipada)')
+      .setFontWeight('bold').setFontColor(token('TEXT_PRIMARY'));
+
+    sh.getRange(vdcTop, 2, 1, 7).merge()
+      .setValue('Monto para comprar el sistema en un año dado del contrato. '
+              + 'Depreciación lineal del CAPEX (incl. IVA) a ' + vdc.term + ' años: '
+              + '$' + fmt(vdc.capexConIva) + ' inicial, '
+              + '$' + fmt(vdc.annualDeclineMxn) + '/año.')
+      .setFontSize(9).setFontColor(token('TEXT_MUTED')).setFontStyle('italic').setWrap(true);
+    sh.setRowHeight(vdcTop, 34);
+
+    var vHeadRow = vdcTop + 1;
+    sh.getRange(vHeadRow, 2).setValue('Año del contrato')
+      .setFontWeight('bold').setBackground(token('BG_INPUT_CELL'))
+      .setHorizontalAlignment('center');
+    sh.getRange(vHeadRow, 4).setValue('Valor de Compra (MXN)')
+      .setFontWeight('bold').setBackground(token('BG_INPUT_CELL'))
+      .setHorizontalAlignment('center');
+
+    for (var vi = 0; vi < vdc.schedule.length; vi++) {
+      var vrow = vdc.schedule[vi];
+      sh.getRange(vHeadRow + 1 + vi, 2).setValue('Año ' + vrow.year)
+        .setHorizontalAlignment('center');
+      sh.getRange(vHeadRow + 1 + vi, 4).setValue('$' + fmt(vrow.valorMxn))
+        .setHorizontalAlignment('right');
+    }
+  }
+
   SpreadsheetApp.flush && SpreadsheetApp.flush();
   return { sheet: sh.getName(), rows: yrs.length, hasBaas: hasBaas };
 }
