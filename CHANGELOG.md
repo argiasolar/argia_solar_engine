@@ -1,3 +1,51 @@
+## [4.19.0] — 2026-06-14
+
+**Live verification harness for option #1: a solar-poor ZERO_EXPORT LOAD_SHIFTING E2E fixture that makes battery grid-charging actually fire end-to-end (CULLIGAN can't — it's solar-rich). Plus offline regression protection so the un-gate can never silently revert.**
+
+> 4.18.0 un-gated grid-charging and was verified offline (planner unit tests +
+> the extracted executor decision test). But the executor's FULL integration
+> path (doChargeGrid -> hourly bill math) only runs live in Apps Script, and
+> CULLIGAN cannot exercise it: CULLIGAN is solar-rich, MEDICION_NETA,
+> PEAK_SHAVING -- it never grid-charges. This chunk closes that gap.
+>
+> NEW: test/ZeroExportArbitrageE2E.gs
+>   - buildZeroExportArbitrageInputs(): derives a fixture from CULLIGAN_BASELINE
+>     via deep-clone + three surgical overrides:
+>       1. interconnectionMode -> SIN_EXPORTACION (ZERO_EXPORT)
+>       2. bessStrategy        -> LOAD_SHIFTING
+>       3. solar-POOR PV: panel/string/helioscope scaled ~0.12x (162 mods =
+>          9 strings x 18 = 103.7 kWp vs CULLIGAN 864 kWp; ~159 MWh/yr PV vs
+>          ~4.48 GWh/yr load = ~3.5%), so PV can't fund the cycle and the
+>          battery MUST grid-charge. Battery (2169 kWh / 972 kW) and real GDMTH
+>          rates are inherited, so the arbitrage spread is authentic.
+>     The scaling keeps panelQty == strings * modsPerString, so the live engine
+>     does NOT trip INP/STR layout validations. The deep-clone does not mutate
+>     CULLIGAN_BASELINE (asserted).
+>   - runZeroExportArbitrageE2E(): menu runner mirroring runCulliganE2E
+>     (snapshot -> load fixture -> silent engine -> read BESS dispatch verdict
+>     -> restore your inputs). New menu item under the test section. Reports
+>     whether the battery grid-charged live and the arbitrage value produced.
+>
+> NEW: tests_regression/ZeroExportArbitrageFixtureTests.gs (2 tests, offline)
+>   - REG_ZE_ARBITRAGE_FIXTURE_INTEGRITY: the three overrides + layout
+>     consistency + non-mutation of CULLIGAN.
+>   - REG_ZE_ARBITRAGE_PLANNER_GRID_CHARGES: on the fixture's real GDMTH
+>     economics + CULLIGAN battery, the planner grid-charges under ZERO_EXPORT,
+>     LOAD_SHIFTING strictly out-discharges PEAK_SHAVING, discharge <= usable
+>     (one realistic cycle, not an optimum), and the daily arbitrage value is
+>     positive. Verified to FAIL if the 4.18.0 un-gate is reverted -- this is
+>     the permanent guard against silent re-gating.
+>
+> Offline model (one representative day): grid-charge ~1928 kWh, discharge
+> ~1735 kWh (one usable cycle), ~+0.3-0.4M MXN/yr energy arbitrage -- the
+> realistic normal-operation number, not a demand-charge windfall. The live
+> E2E confirms the executor reproduces this end-to-end.
+>
+> Tests 519 -> 521. ALL GREEN. No engine behavior change -- this chunk is
+> verification + regression scaffolding only.
+>
+> TO RUN: deploy, then ARGIA menu > (test section) > Run ZERO_EXPORT Arbitrage
+> E2E. Expect: "battery grid-charged under ZERO_EXPORT -- option #1 verified."
 ## [4.18.0] — 2026-06-14
 
 **Option #1: battery grid-charging un-gated from NET_BILLING. ZERO_EXPORT sites (the majority of C&I projects, incl. CULLIGAN) now perform realistic single-cycle grid arbitrage instead of sitting idle. The gate is now PURELY economic.**

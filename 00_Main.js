@@ -704,7 +704,8 @@ function onOpen() {
         .addItem('Run Integration Tests (modifies workbook)', 'runIntegrationTests')
         .addItem('Run Regression Tests',                      'runRegressionTests')
         .addItem('Run ALL Tests',                             'runTests')
-        .addItem('Run CULLIGAN E2E (load/generate/verify/restore)', 'runCulliganE2E'))
+        .addItem('Run CULLIGAN E2E (load/generate/verify/restore)', 'runCulliganE2E')
+        .addItem('Run ZERO_EXPORT Arbitrage E2E (verifies option #1)', 'runZeroExportArbitrageE2E'))
       .addSeparator()
       // -- The one repair --------------------------------------
       .addItem('Repair Input Layout (keeps values)',    'runRepairInputLayouts')
