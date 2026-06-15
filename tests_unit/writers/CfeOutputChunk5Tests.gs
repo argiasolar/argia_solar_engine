@@ -169,15 +169,28 @@ registerTest({
                  text.indexOf('poco excedente solar') >= 0);
     t.assertTrue('mentions load-shifting / arbitraje',
                  text.toLowerCase().indexOf('arbitraje') >= 0);
-    t.assertTrue('NET_BILLING present -> says site HAS it',
-                 text.indexOf('este sitio tiene') >= 0);
 
-    // Same divergence but NOT NET_BILLING -> warns it's unreachable
+    // [4.19.1] The explanation must NOT claim arbitrage requires NET_BILLING --
+    // 4.18.0 un-gated it. It now states arbitrage is available under ANY
+    // interconnection mode, gated only by the punta/base economic spread.
+    t.assertTrue('says arbitrage works under any interconnection mode',
+                 text.indexOf('cualquier modo de interconexi') >= 0);
+    t.assertTrue('names SIN EXPORTACION as supported',
+                 text.indexOf('SIN EXPORTACI') >= 0);
+    t.assertTrue('no longer claims arbitrage requires FACTURACION NETA',
+                 text.indexOf('requiere interconexi\u00f3n FACTURACI\u00d3N NETA') < 0);
+    t.assertTrue('no longer warns optimo unreachable by interconnection',
+                 text.indexOf('NO tiene configurada') < 0);
+
+    // [4.19.1] Behavior is now mode-INVARIANT: a ZERO_EXPORT site gets the
+    // SAME explanation (arbitrage achievable), not a "not reachable" warning.
     var sh2 = _mkMockSheet();
-    _cfeOutV2_renderConsExpUpside(sh2, 50, autoOpt, 12000000, 'NET_METERING');
+    _cfeOutV2_renderConsExpUpside(sh2, 50, autoOpt, 12000000, 'SIN_EXPORTACION');
     var text2 = _allWrittenText(sh2);
-    t.assertTrue('NET_METERING -> warns optimo not reachable',
-                 text2.indexOf('NO tiene configurada') >= 0);
+    t.assertTrue('ZERO_EXPORT explanation also says arbitrage achievable',
+                 text2.indexOf('cualquier modo de interconexi') >= 0);
+    t.assertTrue('ZERO_EXPORT does NOT warn unreachable',
+                 text2.indexOf('NO tiene configurada') < 0);
   }
 });
 
@@ -317,8 +330,14 @@ registerTest({
                  text.indexOf('SIN VALOR BESS DESPACHABLE') >= 0);
     t.assertTrue('banner points the reader to the monthly model (secci\u00f3n 2)',
                  text.indexOf('RECIBO CON PV + BESS') >= 0);
-    t.assertTrue('banner names the interconnection mode',
-                 text.indexOf('ZERO_EXPORT') >= 0);
+    // [4.19.1] The idle banner no longer blames the interconnection mode --
+    // post-4.18.0, zero dispatch means no PV surplus AND no profitable
+    // punta/base spread, NOT "arbitrage disabled by interconnection".
+    t.assertTrue('banner names the real cause (no profitable spread / no PV surplus)',
+                 text.indexOf('diferencial de tarifa') >= 0
+              || text.indexOf('excedente FV') >= 0);
+    t.assertTrue('banner no longer claims arbitrage disabled by interconnection',
+                 text.indexOf('deshabilitado bajo el modo') < 0);
     t.assertTrue('no CONSERVADOR tile in idle state',
                  text.indexOf('CONSERVADOR') < 0);
     t.assertTrue('no \u00d3PTIMO tile in idle state',
@@ -376,5 +395,46 @@ registerTest({
     t.assertTrue('control: 300 kW reduction shown', text2.indexOf('300 kW') >= 0);
     t.assertTrue('control: no omission note',
                  text2.indexOf('DESGLOSE DE AHORRO BESS omitido') < 0);
+  }
+});
+
+
+// =============================================================================
+// [4.19.1] REGRESSION GUARD: the range explanation must stay consistent with
+// the 4.18.0 un-gate. It must NEVER again claim "arbitrage requires NET_BILLING"
+// and must give the SAME (mode-invariant) explanation regardless of
+// interconnection mode. This is the permanent guard against the explanatory
+// text drifting back to the pre-4.18.0 rule -- the exact stale-text bug the
+// live ZERO_EXPORT E2E surfaced.
+// =============================================================================
+registerTest({
+  id      : 'UNIT_CFE_ARBITRAGE_EXPLANATION_MODE_INVARIANT',
+  group   : 'unit',
+  module  : 'writers/cfe_chunk5',
+  scenarios: [],
+  tags    : ['writers', 'cfe', 'chunk5', 'regression', 'option1'],
+  source  : 'tests_unit/writers/CfeOutputChunk5Tests.gs',
+  fn      : function (t, ctx) {
+    t.suite('UNIT writers/cfe_chunk5 [4.19.1]: arbitrage explanation is mode-invariant');
+
+    // Wide divergence (PV-poor archetype) so the explanation renders.
+    var autoOpt = { conservativeMxn: 0, upsideMxn: 14000000, optimalByMonth: [] };
+
+    var modes = ['NET_BILLING', 'NET_METERING', 'SIN_EXPORTACION', 'ZERO_EXPORT', ''];
+    for (var i = 0; i < modes.length; i++) {
+      var sh = _mkMockSheet();
+      _cfeOutV2_renderConsExpUpside(sh, 50, autoOpt, 12000000, modes[i]);
+      var text = _allWrittenText(sh);
+
+      // The forbidden stale claim must NEVER appear, under ANY mode.
+      t.assertTrue('[' + (modes[i] || 'UNKNOWN') + '] never claims arbitrage requires FACTURACION NETA',
+                   text.indexOf('requiere interconexi\u00f3n FACTURACI\u00d3N NETA') < 0);
+      t.assertTrue('[' + (modes[i] || 'UNKNOWN') + '] never warns optimo unreachable by interconnection',
+                   text.indexOf('NO tiene configurada') < 0
+                && text.indexOf('no es alcanzable bajo la interconexi') < 0);
+      // The correct framing must appear, under ANY mode.
+      t.assertTrue('[' + (modes[i] || 'UNKNOWN') + '] states arbitrage works under any interconnection',
+                   text.indexOf('cualquier modo de interconexi') >= 0);
+    }
   }
 });

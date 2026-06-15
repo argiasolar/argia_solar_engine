@@ -1,3 +1,51 @@
+## [4.19.1] — 2026-06-14
+
+**Reconciles the customer-facing CFE_OUTPUT_v2 explanatory text with the 4.18.0 un-gate. The live ZERO_EXPORT E2E surfaced that the engine was un-gated but the proposal TEXT still told customers "arbitrage requires NET_BILLING" — a direct contradiction. Fixed text + gating logic; no dispatch change.**
+
+> THE FINDING (from the live ZERO_EXPORT E2E + a full data-flow trace):
+> 4.18.0 correctly un-gated grid-charging in the planner + executor, and the
+> hourly-sim attribution flows into the CFE_OUTPUT_v2 "RANGO DE AHORRO BESS"
+> Esperado tile + demand breakdown. So on a ZERO_EXPORT site the proposal now
+> SHOWS the arbitrage value. But three pieces of explanatory text still
+> asserted the OLD rule:
+>   - _cfeOutV2_rangeExplanation: "El arbitraje requiere interconexión
+>     FACTURACIÓN NETA (NET_BILLING)" + lsAvailable = (mode === 'NET_BILLING').
+>   - the hourly-idle banner: "el arbitraje de red está deshabilitado bajo el
+>     modo de interconexión actual".
+>   - two code comments asserting "arbitrage needs/gated off outside NET_BILLING".
+> Net effect: a ZERO_EXPORT proposal could show the arbitrage VALUE while the
+> TEXT told the customer that same arbitrage "no es alcanzable". Caught before
+> reaching a customer, precisely because the live E2E forced the trace.
+>
+> THE FIX (explanatory layer only -- NO dispatch/engine behavior change):
+> - _cfeOutV2_rangeExplanation rewritten: arbitrage is gated by ECONOMICS
+>   (punta/base spread > wear), available under ANY interconnection mode incl.
+>   SIN EXPORTACIÓN, because charging is import not export. The optimum assumes
+>   active load-shifting operation; actual savings depend on how the battery is
+>   operated (ties to the lease / normal-operation framing).
+> - idle banner text now names the REAL cause of zero dispatch (no PV surplus
+>   AND no profitable spread), not interconnection mode.
+> - stale comments corrected.
+>
+> IMPORTANT: row 30 (Section 2 headline) STILL sources from the BESS_SIMULATION
+> formula sheet (peak-shaving demand math) -- that source swap stays deferred
+> to Session 4 pending 15-min validation, as designed. This chunk does NOT
+> change the headline; it makes the EXPLANATION honest about what the hourly
+> model (Esperado tile) now does.
+>
+> TESTS:
+> - UNIT_CFE_WIDE_DIVERGENCE_EXPLAINED + UNIT_CFE_HOURLY_IDLE_LOUD_BANNER
+>   updated to the new mode-invariant behavior (they encoded the old rule).
+> - NEW UNIT_CFE_ARBITRAGE_EXPLANATION_MODE_INVARIANT: across 5 interconnection
+>   modes, the explanation NEVER claims "requires FACTURACIÓN NETA" and always
+>   states arbitrage works under any mode. Verified to FAIL if the stale claim
+>   is re-injected -- permanent guard against the text drifting back.
+> - ZeroExportArbitrageE2E verdict reader CORRECTED: it was reading row 30
+>   (formula sheet, can't show arbitrage). Now it reads the dispatchable-value
+>   signal (RANGO/demand blocks vs idle banner) -- the true option-#1 signal --
+>   and reports row 30 only as labeled context.
+>
+> Tests 521 -> 522. ALL GREEN.
 ## [4.19.0] — 2026-06-14
 
 **Live verification harness for option #1: a solar-poor ZERO_EXPORT LOAD_SHIFTING E2E fixture that makes battery grid-charging actually fire end-to-end (CULLIGAN can't — it's solar-rich). Plus offline regression protection so the un-gate can never silently revert.**

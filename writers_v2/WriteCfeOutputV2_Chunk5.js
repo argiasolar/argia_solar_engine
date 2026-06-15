@@ -94,7 +94,8 @@ function _cfeOutV2_renderTierBanner(sh, row, tier) {
 // than a 3x ratio (or Conservative is ~0 while Upside is material), a
 // useless range like "$0 .. $14M" would mislead. In that case we add an
 // explanatory line naming WHY (typically: little excess PV, so most value
-// is load-shifting arbitrage that needs NET_BILLING).
+// is load-shifting arbitrage -- available under any interconnection mode
+// post-4.18.0, gated only by the punta/base economic spread).
 // ---------------------------------------------------------------------------
 
 function _cfeOutV2_renderConsExpUpside(sh, startRow, autoOpt, expectedAnnualMxn, interconnMode, addressableMxn) {
@@ -117,8 +118,9 @@ function _cfeOutV2_renderConsExpUpside(sh, startRow, autoOpt, expectedAnnualMxn,
 
   // [B-4] HOURLY-MODEL IDLE GUARD -- never render three silent $0 tiles.
   // When the monthly planner schedules zero discharge for EVERY strategy
-  // (no typical-day PV surplus for PS/SC; LS arbitrage gated off outside
-  // NET_BILLING), cons/exp/ups all collapse to 0 while the MONTHLY model
+  // (no typical-day PV surplus for PS/SC, AND no profitable punta/base
+  // spread for LS arbitrage -- [4.19.1] interconnection no longer gates
+  // this), cons/exp/ups all collapse to 0 while the MONTHLY model
   // (Section 2) still credits real BESS savings. Showing $0/$0/$0 next to
   // Section 2's non-zero number is a silent model-vs-model contradiction.
   // Replace the tiles with ONE loud explanatory banner that points the
@@ -130,10 +132,10 @@ function _cfeOutV2_renderConsExpUpside(sh, startRow, autoOpt, expectedAnnualMxn,
       .setVerticalAlignment('middle');
     sh.getRange(startRow + 1, 2, 1, 14).breakApart().merge()
       .setValue('\u26a0 MODELO HORARIO SIN VALOR BESS DESPACHABLE \u2014 el '
-        + 'planificador horario no encontr\u00f3 excedente FV en el d\u00eda '
-        + 't\u00edpico para cargar la bater\u00eda y el arbitraje de red est\u00e1 '
-        + 'deshabilitado bajo el modo de interconexi\u00f3n actual'
-        + (interconnMode ? ' (' + interconnMode + ')' : '') + '. Las cifras '
+        + 'planificador horario no encontr\u00f3 despacho rentable en el d\u00eda '
+        + 't\u00edpico: ni excedente FV para cargar la bater\u00eda, ni un '
+        + 'diferencial de tarifa punta/base que supere el desgaste para '
+        + 'arbitraje de red. Las cifras '
         + 'Conservador / Esperado / \u00d3ptimo del modelo horario no aplican. '
         + 'El ahorro BESS estimado de la propuesta proviene del modelo MENSUAL '
         + '\u2014 ver secci\u00f3n 2 (RECIBO CON PV + BESS).')
@@ -205,22 +207,24 @@ function _cfeOutV2_rangeExplanation(cons, exp, ups, interconnMode) {
   var wideRatio    = (cons > 0 && ups > 3 * cons);
   if (!nearZeroCons && !wideRatio) return '';
 
-  var mode = String(interconnMode || '').toUpperCase();
-  var lsAvailable = (mode === 'NET_BILLING');
-
+  // [4.19.1] Arbitrage availability is gated by ECONOMICS, not interconnection.
+  // 4.18.0 removed the NET_BILLING clause: grid-charging is IMPORT (consumption,
+  // legal under any interconnection incl. ZERO_EXPORT/SIN EXPORTACION), so the
+  // load-shifting arbitrage that drives a wide range is achievable on ANY site
+  // whose punta/base price spread clears battery wear. What it depends on is the
+  // CUSTOMER operating the battery in load-shifting mode -- we estimate the
+  // normal-operation case; the lease de-risks the rest.
   var msg = 'El rango es amplio porque este sitio tiene poco excedente '
           + 'solar: la mayor parte del valor del BESS proviene del '
           + 'desplazamiento de carga (load-shifting / arbitraje), no del '
           + 'peak shaving. ';
-  if (lsAvailable) {
-    msg += 'El arbitraje requiere interconexión FACTURACIÓN NETA '
-         + '(NET_BILLING), que este sitio tiene — por eso el caso óptimo '
-         + 'es mucho mayor que el conservador.';
-  } else {
-    msg += 'El arbitraje requiere interconexión FACTURACIÓN NETA '
-         + '(NET_BILLING), que este sitio NO tiene configurada — el caso '
-         + 'óptimo mostrado no es alcanzable bajo la interconexión actual.';
-  }
+  msg += 'El arbitraje consiste en cargar la batería desde la red en horas '
+       + 'base (tarifa baja) y descargar en punta (tarifa alta). Como cargar '
+       + 'es consumo (importación), está disponible bajo cualquier modo de '
+       + 'interconexión, incluido SIN EXPORTACIÓN — solo requiere que el '
+       + 'diferencial de tarifa punta/base supere el desgaste de la batería. '
+       + 'El caso óptimo supone operación activa en modo load-shifting; el '
+       + 'ahorro real depende de cómo se opere la batería.';
   return msg;
 }
 

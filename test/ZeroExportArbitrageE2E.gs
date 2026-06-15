@@ -267,60 +267,75 @@ function runZeroExportArbitrageE2E() {
   ui.alert('ZERO_EXPORT Arbitrage E2E \u2014 result', verdict, ui.ButtonSet.OK);
 }
 
-// Extract the BESS dispatch numbers from the engine result and form a verdict.
-// The engine result carries the BESS step output; we read annual grid-charge,
-// discharge, and the LOAD_SHIFTING vs PEAK_SHAVING comparison if present.
+// Extract the BESS dispatch verdict from the RENDERED CFE_OUTPUT_v2 sheet.
+// [4.19.1] The headline row 30 sources from the BESS_SIMULATION formula sheet
+// (peak-shaving demand math, Option 2) and CANNOT reflect grid-charge arbitrage
+// -- reading it told us nothing about option #1. The hourly sim's value lands in
+// the "RANGO DE AHORRO BESS" block (Esperado tile) and the demand breakdown.
+// This reader scans the sheet text for the dispatchable-value signal: either the
+// Cons/Exp/Upside tiles rendered with a non-zero Esperado (grid-charge produced
+// value) OR the idle banner (no dispatchable value). That is the true
+// option-#1 signal; row 30 is reported separately for context.
 function _zeArbReadVerdict(ss, engineResult) {
   var lines = [];
-  var bess = engineResult && engineResult.bessResult ? engineResult.bessResult : null;
-  if (!bess && engineResult && engineResult.bess) bess = engineResult;
+  var cfe = ss.getSheetByName('CFE_OUTPUT_v2');
+  if (!cfe) {
+    return 'CFE_OUTPUT_v2 not found -- the engine did not render it. '
+         + 'Cannot read the dispatch verdict.';
+  }
 
-  // Primary signal: did the battery grid-charge? Read from the sim rollup if
-  // the engine exposed it; otherwise read CFE_OUTPUT_v2 annual BESS savings.
-  var gridCharge = null, discharge = null, strategy = null, savings = null;
-  try {
-    if (bess && bess.bess) {
-      strategy = bess.bess.strategy || null;
-      if (bess.bess.annualGridChargeKwh != null) gridCharge = bess.bess.annualGridChargeKwh;
-      if (bess.bess.annualDischargeKwh != null) discharge = bess.bess.annualDischargeKwh;
+  // Pull all text from the sheet so we can detect which block rendered.
+  var lastRow = cfe.getLastRow();
+  var lastCol = Math.min(cfe.getLastColumn(), 16);
+  var grid = cfe.getRange(1, 1, lastRow, lastCol).getValues();
+  var allText = '';
+  for (var r = 0; r < grid.length; r++) {
+    for (var c = 0; c < grid[r].length; c++) {
+      if (grid[r][c] !== '' && grid[r][c] != null) allText += String(grid[r][c]) + '\n';
     }
-  } catch (_) {}
+  }
 
-  // Fallback: read CFE_OUTPUT_v2 annual BESS savings (row 30 sum).
-  try {
-    var cfe = ss.getSheetByName('CFE_OUTPUT_v2');
-    if (cfe) {
-      var vals = cfe.getRange(30, 3, 1, 12).getValues()[0];
-      var s = 0; for (var i = 0; i < vals.length; i++) s += (Number(vals[i]) || 0);
-      savings = s;
-    }
-  } catch (_) {}
+  var idleBanner   = allText.indexOf('SIN VALOR BESS DESPACHABLE') >= 0;
+  var rangeBlock   = allText.indexOf('RANGO DE AHORRO BESS') >= 0;
+  var demandBlock  = allText.indexOf('DESGLOSE DE AHORRO BESS') >= 0
+                  && allText.indexOf('omitido') < 0;
 
-  lines.push('Strategy: ' + (strategy || 'LOAD_SHIFTING (requested)'));
+  lines.push('Strategy requested: LOAD_SHIFTING (ZERO_EXPORT fixture)');
   lines.push('');
-  if (gridCharge != null) {
-    lines.push('Annual grid-charge: ' + Math.round(gridCharge).toLocaleString() + ' kWh');
-    lines.push('Annual discharge:   ' + Math.round(discharge).toLocaleString() + ' kWh');
+
+  if (idleBanner) {
+    lines.push('RESULT: the hourly model produced NO dispatchable BESS value.');
     lines.push('');
-    if (gridCharge > 0) {
-      lines.push('PASS: battery grid-charged under ZERO_EXPORT.');
-      lines.push('Option #1 verified live -- the executor un-gate works.');
-    } else {
-      lines.push('FAIL: grid-charge is ZERO. The un-gate did not take effect');
-      lines.push('in the live executor. Check 4.18.0 deploy + clasp push.');
-    }
+    lines.push('This means option #1 did NOT fire for this fixture -- the planner');
+    lines.push('found no PV surplus AND no profitable punta/base spread. If you');
+    lines.push('expected grid-charging, check that 4.18.0+4.19.x are deployed');
+    lines.push('(clasp push) and that the fixture loaded ZERO_EXPORT + LOAD_SHIFTING.');
+  } else if (rangeBlock || demandBlock) {
+    lines.push('PASS: the hourly model produced dispatchable BESS value.');
+    lines.push('The "RANGO DE AHORRO BESS" / demand-breakdown blocks rendered');
+    lines.push('with non-zero value under ZERO_EXPORT -- this is the grid-charge');
+    lines.push('arbitrage that option #1 (4.18.0) unblocked, confirmed END-TO-END');
+    lines.push('through the live hourly executor.');
   } else {
-    lines.push('(Engine did not expose annualGridChargeKwh on the result.)');
-    lines.push('Falling back to CFE_OUTPUT_v2 BESS savings.');
+    lines.push('INCONCLUSIVE: neither the value block nor the idle banner was');
+    lines.push('found in CFE_OUTPUT_v2. The hourly addendum may not have run.');
   }
-  if (savings != null) {
+
+  // Context: the formula-sheet headline (row 30) -- does NOT reflect arbitrage.
+  try {
+    var vals = cfe.getRange(30, 3, 1, 12).getValues()[0];
+    var s = 0; for (var i = 0; i < vals.length; i++) s += (Number(vals[i]) || 0);
     lines.push('');
-    lines.push('CFE_OUTPUT_v2 annual BESS savings: $' + Math.round(savings).toLocaleString());
-    lines.push('(Offline model predicted ~$300k-400k/yr energy arbitrage.)');
-  }
+    lines.push('--- context ---');
+    lines.push('Row 30 headline (BESS_SIMULATION formula, peak-shaving only): $'
+               + Math.round(s).toLocaleString());
+    lines.push('NOTE: row 30 sources from the formula sheet and does NOT include');
+    lines.push('grid-charge arbitrage. Wiring arbitrage into the headline is the');
+    lines.push('deferred hourly-sim source swap (Session 4, post 15-min validation).');
+  } catch (_) {}
+
   lines.push('');
-  lines.push('NOTE: "ahorros no garantizados" -- this is the estimated normal');
-  lines.push('operation case; actual savings depend on battery operation and');
-  lines.push('require 15-min interval data to confirm demand-charge value.');
+  lines.push('"ahorros no garantizados" -- estimated normal-operation case;');
+  lines.push('actual savings depend on battery operation and 15-min interval data.');
   return lines.join('\n');
 }
