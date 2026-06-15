@@ -1,3 +1,40 @@
+## [4.23.0] — 2026-06-15
+
+**New: deployment verification guard (scripts/verify_deploy.js) — confirms code is actually live on BOTH deploy targets (GitHub + Apps Script). Directly addresses the two silent-deployment gaps that cost real time this session. Local CI tooling only; nothing ships to Apps Script.**
+
+> WHY: two independent silent-deployment failures, both invisible to a
+> version-stamp check:
+>   - 4.16.1: a file was reverted while version/CHANGELOG moved forward ->
+>     GitHub content disagreed with what shipped. Only a content diff caught it.
+>   - 4.22.0: git push succeeded but `clasp push` died with an OAuth reauth
+>     error (invalid_rapt) that scrolled past -> Apps Script silently stale.
+>
+> WHAT scripts/verify_deploy.js does (run AFTER git push + clasp push):
+>   - GitHub check: per-file sha256 of all 222 pushable .gs/.js vs
+>     raw.githubusercontent.com/main (CRLF-normalized so Windows working copies
+>     don't false-diff). Catches not-pushed / partial-push / wrong-branch /
+>     content-drift (the 4.16.1 class).
+>   - Apps Script check: scans a captured `clasp push` log for failure
+>     signatures (invalid_grant/invalid_rapt/reauth/error blob/missing
+>     "Pushed N files" line). Catches the 4.22.0 class -- the silent clasp
+>     failure -- LOUDLY instead of letting it scroll past.
+>   - Exit 0 = both targets consistent; exit 1 = discrepancy (CI-friendly).
+>   - respects .claspignore (docs/tooling excluded, no false diffs).
+>
+> USAGE:
+>   clasp push --force 2>&1 | tee .clasp_last_push.log
+>   node scripts/verify_deploy.js --clasp-log .clasp_last_push.log
+>
+> HONEST SCOPE: does NOT catch a self-consistent-but-wrong tree (local ==
+> GitHub, both wrong) -- that is the behavior tests' + minimal-delivery
+> discipline's job. This is the deployment-target-consistency layer.
+>
+> TESTS: node scripts/verify_deploy.js --self-test -> 15 checks (extractVersion,
+> detectClaspError incl. the exact 4.22.0 invalid_rapt blob, glob/.claspignore
+> matching, CRLF==LF hash). VERIFIED against the live repo: clean clone vs
+> GitHub main = PASS (222 files); injected file drift = FAIL (flags the file);
+> simulated invalid_rapt log = FAIL (run clasp login); success log = PASS.
+> Main .gs suite unaffected (527, ALL GREEN). Doc: docs/DEPLOY_VERIFICATION.md.
 ## [4.22.0] — 2026-06-15
 
 **Fixes the ZERO_EXPORT E2E progress dialog hanging at 83% forever, and surfaces restore failures to the user instead of logging them silently. No engine/dispatch change. Caught from a live run where the bar stuck at 83% after a PASS verdict.**
