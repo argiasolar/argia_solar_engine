@@ -1,3 +1,25 @@
+## [4.19.1-redeploy] — 2026-06-14
+
+**Deployment-integrity fix: the 4.16.1 writeInput range-dims fix (`_rangeA1Dims_` in 02d_InputIO.js) and its test were present in the CHANGELOG but MISSING from the deployed code on GitHub and Apps Script. Re-deploying the lost files. No version bump (restoring existing 4.16.1 work into the current 4.19.1 tree).**
+
+> Found by a deployment-state audit (diffing GitHub raw content against the
+> verified local tree, not just the version stamp): GitHub main carried the
+> 4.16.1 CHANGELOG entry but 02d_InputIO.js still had the OLD size check
+> (`value.length !== m.rangeRows` against undefined) and no `_rangeA1Dims_`
+> helper. RepairCycleTests.gs was likewise missing UNIT_WRITEINPUT_RANGE_
+> DERIVES_DIMS. Confirmed live impact: "Repair Input Layout" on the workbook
+> still reported "175 restored, 20 CFE range keys FAILED" -- the exact original
+> 4.16.1 bug -- because the fix never reached either deployment target.
+>
+> Root cause: somewhere in the 4.16.2 -> 4.19.1 push sequence, 02d_InputIO.js
+> was overwritten by / reverted to a pre-4.16.1 copy while the CHANGELOG moved
+> forward, making the gap invisible to a version-stamp check.
+>
+> This redeploy restores the two lost files verbatim from the verified 4.16.1
+> work (suite green at 522, the range round-trip test FAILs if the fix is
+> reverted). After deploy, "Repair Input Layout" must report 195 restored /
+> 0 failed. Lesson: version stamp + CHANGELOG presence is NOT proof of
+> deployment -- content diff is.
 ## [4.19.1] — 2026-06-14
 
 **Reconciles the customer-facing CFE_OUTPUT_v2 explanatory text with the 4.18.0 un-gate. The live ZERO_EXPORT E2E surfaced that the engine was un-gated but the proposal TEXT still told customers "arbitrage requires NET_BILLING" — a direct contradiction. Fixed text + gating logic; no dispatch change.**

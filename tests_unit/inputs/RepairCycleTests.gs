@@ -136,3 +136,53 @@ registerTest({
     t.assertTrue('blank key counted as skipped', (rep.skippedKeys || 0) >= 1);
   }
 });
+
+
+// =============================================================================
+// [4.16.1] Range-mode write-back. The 20 CFE bill-grid range keys
+// (cfeKwhBase ... cfeSuministroMxn, C10:N10 ... C29:N29) declared rangeA1 but
+// NOT rangeRows/rangeCols, so writeInput's size check compared against
+// undefined and ALWAYS threw -- a latent bug that surfaced when 4.16.0's
+// field-keyed restore became the first code to write them back (live: "175
+// restored, 20 CFE range keys FAILED"). writeInput now derives dimensions
+// from rangeA1 via _rangeA1Dims_. This test locks the read->write round-trip.
+// =============================================================================
+registerTest({
+  id      : 'UNIT_WRITEINPUT_RANGE_DERIVES_DIMS',
+  group   : 'unit',
+  module  : 'inputs/input_io',
+  scenarios: [],
+  tags    : ['inputs', 'io', 'regression'],
+  source  : 'tests_unit/inputs/RepairCycleTests.gs',
+  fn      : function (t, ctx) {
+    t.suite('UNIT inputs/input_io [4.16.1]: writeInput derives range dims from A1');
+
+    // _rangeA1Dims_ shapes
+    t.assertTrue('C10:N10 -> 1x12',
+                 _rangeA1Dims_('C10:N10').rows === 1 && _rangeA1Dims_('C10:N10').cols === 12);
+    t.assertTrue('B34:G45 -> 12x6',
+                 _rangeA1Dims_('B34:G45').rows === 12 && _rangeA1Dims_('B34:G45').cols === 6);
+
+    // Round-trip a CFE range key (no explicit rangeRows/rangeCols) through a
+    // mock sheet: read -> write must not throw, and must persist.
+    var cells = {};
+    function colNum(s){ var n=0; for(var i=0;i<s.length;i++) n=n*26+(s.charCodeAt(i)-64); return n; }
+    function parseA1(a1){ var m=a1.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+      return { r:+m[2], c:colNum(m[1]), nr:+m[4]-+m[2]+1, nc:colNum(m[3])-colNum(m[1])+1 }; }
+    function rng(p){ return {
+      getValues:function(){ var o=[]; for(var i=0;i<p.nr;i++){var row=[];for(var j=0;j<p.nc;j++)row.push(cells[(p.r+i)+','+(p.c+j)]!==undefined?cells[(p.r+i)+','+(p.c+j)]:'');o.push(row);} return o; },
+      setValues:function(v){ for(var i=0;i<v.length;i++)for(var j=0;j<v[i].length;j++)cells[(p.r+i)+','+(p.c+j)]=v[i][j]; }
+    }; }
+    var sheet = { getRange:function(a){ return rng(parseA1(a)); } };
+    var ss = { getSheetByName:function(){ return sheet; }, getActive:function(){ return ss; } };
+
+    for (var c = 3; c <= 14; c++) cells['10,' + c] = c * 10;
+    var v = readInput(ss, 'cfeKwhBase');
+    t.assertTrue('readInput cfeKwhBase returns 12 cols', v[0].length === 12);
+
+    var threw = false;
+    try { writeInput(ss, 'cfeKwhBase', v); } catch (e) { threw = true; }
+    t.assertTrue('writeInput cfeKwhBase does NOT throw (dims derived)', threw === false);
+    t.assertTrue('value persisted after write-back', cells['10,3'] === 30);
+  }
+});

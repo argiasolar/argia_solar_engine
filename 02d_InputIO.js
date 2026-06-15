@@ -43,6 +43,20 @@
  * @param {Spreadsheet} ss   optional — defaults to active spreadsheet
  * @param {string}      key  logical field name (e.g. 'projectName')
  */
+// [4.16.1] Parse an A1 range like "C10:N10" into {rows, cols}. Used by
+// writeInput to derive range dimensions when a map entry omits explicit
+// rangeRows/rangeCols (all 20 CFE bill-grid keys do).
+function _rangeA1Dims_(a1) {
+  var m = String(a1 || '').match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+  if (!m) return { rows: 1, cols: 1 };
+  function colNum(s) { var n = 0; for (var i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64); return n; }
+  return {
+    rows: Math.abs(parseInt(m[4], 10) - parseInt(m[2], 10)) + 1,
+    cols: Math.abs(colNum(m[3]) - colNum(m[1])) + 1
+  };
+}
+
+
 function readInput(ss, key) {
   ss = ss || SpreadsheetApp.getActive();
   var m = INPUT_MAP[key];
@@ -119,10 +133,19 @@ function writeInput(ss, key, value) {
         (value === null ? 'null' : typeof value)
       );
     }
-    if (value.length !== m.rangeRows || value[0].length !== m.rangeCols) {
+    // [4.16.1] Derive expected dimensions from rangeA1 when rangeRows/rangeCols
+    // are not explicitly set on the map entry. The 20 CFE bill-grid range keys
+    // (C10:N10 ... C29:N29) never declared rangeRows/rangeCols, so writeInput's
+    // size check compared against undefined and ALWAYS threw -- harmless until
+    // 4.16.0's field-keyed restore became the first code path to write them
+    // back. Deriving from rangeA1 fixes all range keys uniformly.
+    var dims = _rangeA1Dims_(m.rangeA1);
+    var expRows = (m.rangeRows != null) ? m.rangeRows : dims.rows;
+    var expCols = (m.rangeCols != null) ? m.rangeCols : dims.cols;
+    if (value.length !== expRows || value[0].length !== expCols) {
       throw new Error(
         'writeInput: range key "' + key + '" expects ' +
-        m.rangeRows + 'x' + m.rangeCols + ' array, got ' +
+        expRows + 'x' + expCols + ' array, got ' +
         value.length + 'x' + (value[0] ? value[0].length : 0)
       );
     }
