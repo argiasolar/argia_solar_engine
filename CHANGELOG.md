@@ -1,3 +1,26 @@
+## [4.26.0] — 2026-06-16
+
+**Hardened the consistency guard. v1 silently DROPPED unreadable sources, so when SLIDE_DATA[annual_energy_cost] became #VALUE! the guard lost sources and reported PASS on a broken workbook (base 1.84M < con-PV 12.84M, savings −11M). The guard now treats error cells as hard failures and adds cheap sanity invariants — "consistent but absurd" is now RED.**
+
+> WHY: a real workbook (ARGIA_ENGINE__71_, partial INPUT_CFE data) had a
+> #VALUE! offer cell and negative PV savings, yet _META stamped PASS twice.
+> A guard that goes green on an erroring/impossible workbook is worse than none.
+> Root cause of the bad numbers is still the row-41 ad-hoc formula (Phase 0.1).
+>
+> WHAT:
+>   - consClassifyCell(): distinguishes error cells (#VALUE!/#REF!/#N/A/…) from
+>     blanks. Error sources are now a hard 'error' violation, never dropped.
+>   - evalInvariants(): sanity floors — base(sin-PV) >= con-PV, savings >= 0,
+>     savings <= base, con-PV >= 0. Catches consistent-but-impossible numbers.
+>   - assertCrossTabConsistency() merges fork + error + invariant violations;
+>     _META stamp is now PASS / FAIL xN.
+>
+> SCOPE: 09d_ConsistencyGuard.js (rewritten, back-compatible API) + new unit
+> test (530 total). checkConsistency / formatConsistencyReport signatures
+> unchanged; the original 22 core assertions still pass.
+>
+> NOTE: invariants are sanity FLOORS, not full correctness. They catch the
+> egregious cases; true correctness still needs the hand-computed golden.
 ## [4.25.0] — 2026-06-16
 
 **New: live progress bar for the test runner. Reuses the engine's proven modeless-dialog bar (_setArgiaProgress / _showArgiaProgress). A full integration run (~10 min) previously showed only "Running script" with no feedback; now it shows test N/total, a live ETA, and the current test id.**
