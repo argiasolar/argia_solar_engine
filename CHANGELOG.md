@@ -1,3 +1,23 @@
+## [4.25.0] — 2026-06-16
+
+**New: live progress bar for the test runner. Reuses the engine's proven modeless-dialog bar (_setArgiaProgress / _showArgiaProgress). A full integration run (~10 min) previously showed only "Running script" with no feedback; now it shows test N/total, a live ETA, and the current test id.**
+
+> WHY: integration/regression runs take minutes (some single tests 60–140s) and
+> gave zero progress feedback, so a working run looked frozen.
+>
+> WHAT: _tr_runFiltered (the single chokepoint all run entries funnel through)
+> now opens the progress dialog and updates it before each test with a
+> self-correcting linear ETA (elapsed/done × remaining), then shows a
+> "restoring inputs & writing results" step, then closes on done. All progress
+> calls are guarded (try/catch) so a headless/no-UI run can never break a run.
+>
+> KNOWN LIMITATION: the bar can't move WITHIN a single long test (e.g. the ~140s
+> lifecycle test) — it shows that test's name and the ETA, then jumps when it
+> finishes. Per-test live sub-progress would need a client-driven batch runner;
+> deferred unless needed.
+>
+> SCOPE: one source file (test/TestRunner.gs) + version + CHANGELOG. No test
+> behavior changes; suite stays 529 tests / 0 FAIL.
 ## [4.24.0] — 2026-06-16
 
 **New: cross-tab consistency guard (09d_ConsistencyGuard.js) — a detector that reads every shared figure from all its sources in the live workbook and fails loudly when two sources disagree beyond tolerance. Phase 0.3 of the Master Build Plan. Changes no cell; pure detection.**

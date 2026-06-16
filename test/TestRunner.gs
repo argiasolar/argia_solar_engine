@@ -140,6 +140,36 @@ function listRegisteredTests() {
  * @param {string} label  Used in the run banner / log
  * @return {string}  Human-readable summary
  */
+// ---------------------------------------------------------------------------
+// PROGRESS HELPERS (reuse the engine's proven modeless-dialog bar).
+// _setArgiaProgress / _showArgiaProgress / getArgiaProgress live in 00_Main.js.
+// All calls are guarded so a no-UI / headless run can never break a test run.
+// ---------------------------------------------------------------------------
+function _tr_progress(step, total, label) {
+  try { _setArgiaProgress(step, total, label); } catch (e) {}
+}
+function _tr_showProgress(title) {
+  try { _showArgiaProgress(title); } catch (e) {}
+}
+function _tr_fmtDuration(ms) {
+  var s = Math.round(ms / 1000);
+  if (s < 60) return s + 's';
+  var m = Math.floor(s / 60);
+  s = s % 60;
+  return m + 'm ' + (s < 10 ? '0' : '') + s + 's';
+}
+function _tr_etaLabel(idxDone, totalTests, startMs, testId) {
+  var label = 'Test ' + (idxDone + 1) + '/' + totalTests;
+  if (idxDone >= 1) {
+    var elapsed  = Date.now() - startMs;
+    var perTest  = elapsed / idxDone;
+    var remainMs = perTest * (totalTests - idxDone);
+    label += ' \u00b7 ~' + _tr_fmtDuration(remainMs) + ' left';
+  }
+  label += ' \u00b7 ' + testId;
+  return label;
+}
+
 function _tr_runFiltered(filterFn, label) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var t  = createTestContext();
@@ -158,6 +188,12 @@ function _tr_runFiltered(filterFn, label) {
     writeTestResultsV2(entries, Date.now() - startMs, ss);
     return emptyMsg;
   }
+
+  // Progress bar. progTotal = test count + 1 so the post-loop restore/write
+  // phase shows ~99% instead of prematurely closing the dialog at 100%.
+  var progTotal = matching.length + 1;
+  _tr_progress(0, progTotal, 'Starting ' + matching.length + ' test(s)\u2026');
+  _tr_showProgress('Running tests \u2014 ' + label);
 
   // -------------------------------------------------------------------------
   // INPUT PROTECTION (A1). Only integration/regression tests mutate INPUT_*;
@@ -182,7 +218,9 @@ function _tr_runFiltered(filterFn, label) {
   }
 
   try {
-    matching.forEach(function (entry) {
+    matching.forEach(function (entry, _idx) {
+      _tr_progress(_idx, progTotal,
+                   _tr_etaLabel(_idx, matching.length, startMs, entry.id));
       t._setContext(entry.id, entry.module, (entry.scenarios || [])[0] || '');
       t.suite(entry.id);
       try {
@@ -201,6 +239,9 @@ function _tr_runFiltered(filterFn, label) {
       }
     });
   } finally {
+    // All tests have run; the remaining work is restore + result write.
+    _tr_progress(matching.length, progTotal,
+                 'Restoring inputs & writing results\u2026');
     // Restore inputs to their pre-run state no matter what happened above.
     // restoreInputSheets is resilient (per-tab + cell-by-cell fallback) and
     // does NOT throw on per-cell trouble, so a fragile cell can never trigger
@@ -242,6 +283,11 @@ function _tr_runFiltered(filterFn, label) {
               + err  + ' errors  ('
               + matching.length + ' tests, '
               + (elapsed / 1000).toFixed(1) + 's)';
+
+  // Final progress step (step == progTotal) -> done:true -> dialog closes.
+  _tr_progress(progTotal, progTotal,
+               'Done \u00b7 ' + pass + ' passed \u00b7 ' + fail + ' failed \u00b7 '
+               + err + ' errors');
 
   // Surface the summary on the result sheet header for at-a-glance reading.
   if (typeof Logger !== 'undefined' && Logger.log) Logger.log(summary);
