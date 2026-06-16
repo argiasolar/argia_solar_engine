@@ -1,3 +1,32 @@
+## [4.27.0] — 2026-06-16  (Phase 0.1a: single-source CFE savings)
+
+**Killed the silent split at its source. CFE_SIMULATION row 41 (monthly PV savings) was a workbook-resident ad-hoc formula `=SUM(INPUT_CFE!C30,C31,C36)-SUM(C32,C33,C38)` that mixed two unrelated row bands by absolute position — it produced −11M MXN "savings" on partial data. The engine now computes row 41 from the validated bill engine, every run.**
+
+> ROOT CAUSE: three consumers reconstruct base = con-PV + row41 (BESS_SIMULATION!D12,
+> CFE_OUTPUT source map, CLIENT_FINANCIALS _cfinReadBills), so one bad row-41
+> poisoned the whole offer.
+>
+> FIX (20b_WriteAuthoritativeCfeSavings.js):
+>   savings[m] = calcCfeBill(inp[m], tar[m]).total  (no-PV base, the most-audited
+>                04a function; IVA- and PF-bonus-inclusive)
+>              - CFE_SIMULATION!{C..N}39             (sheet con-PV, UNCHANGED)
+>   written to C41:N41 each run, before CFE_OUTPUT_v2 reads it (00_Main Step 13.45).
+>
+>   Defining savings = engineBase − sheetRow39 makes the consumers' `base =
+>   row39 + row41` collapse to EXACTLY engineBase, with con-PV left as the sheet's
+>   own audited cascade (row 39 = C37+C38-IFERROR(C40,0), DAP via INPUT_CFE!C6).
+>   Row 39 is NOT touched. No array formulas involved (verified).
+>
+> SAFETY: negative savings (base < con-PV) raises a warning, never silent;
+>   savings write is try/caught so a bug can't break the pipeline.
+>
+> KNOWN ASSUMPTION: kVArh=0 (INPUT_CFE bill rows carry no reactive energy, so PF
+>   bonus matches the sheet's pf=1 case). Projects that later add measured kVArh
+>   would need this revisited.
+>
+> SCOPE: 20b (new) + 00_Main hook + golden unit test (531 total) + version + CHANGELOG.
+> Phase 0.1b (template fix + idempotent migration to neutralize the legacy row-41
+> formula on cold/legacy workbooks) follows next.
 ## [4.26.0] — 2026-06-16
 
 **Hardened the consistency guard. v1 silently DROPPED unreadable sources, so when SLIDE_DATA[annual_energy_cost] became #VALUE! the guard lost sources and reported PASS on a broken workbook (base 1.84M < con-PV 12.84M, savings −11M). The guard now treats error cells as hard failures and adds cheap sanity invariants — "consistent but absurd" is now RED.**

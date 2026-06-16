@@ -1074,6 +1074,31 @@ function runArgiaEngine(opts) {
       hourlySim = null;
     }
 
+    // Step 13.45: authoritative CFE savings (Phase 0.1a) ---------------------
+    // Overwrite CFE_SIMULATION row 41 with engine-computed monthly savings
+    // (no-PV base from calcCfeBill minus the sheet's con-PV row 39), replacing
+    // the fragile ad-hoc workbook formula. MUST run before Step 13.5 so
+    // CFE_OUTPUT_v2 (and downstream CLIENT_FINANCIALS) read the single source.
+    // try/catch: a savings bug never breaks the rest of the pipeline.
+    engineLog(ss, 'Engine', 'INFO', 'Step 13.45: authoritative CFE savings (row 41)');
+    try {
+      var savRes = writeAuthoritativeCfeSavings(ss);
+      if (savRes.ok) {
+        engineLog(ss, 'CfeSavings', 'INFO',
+          'Row 41 set from engine: annual savings MXN ' + Math.round(savRes.annualSavings));
+        for (var sw = 0; sw < (savRes.warnings || []).length; sw++) {
+          engineLog(ss, 'CfeSavings', 'WARNING', savRes.warnings[sw]);
+        }
+      } else {
+        engineLog(ss, 'CfeSavings', 'WARNING',
+          'Authoritative savings skipped: ' + savRes.reason + '. Row 41 left as-is.');
+      }
+    } catch (savErr) {
+      engineLog(ss, 'CfeSavings', 'MAJOR',
+        'Authoritative savings write failed: ' + savErr.message
+        + '. Row 41 left as-is; pipeline continues.');
+    }
+
     // Step 13.5: CFE_OUTPUT_v2 render ----------------------------------------
     // Tier 1 cutover (2026-05-26): legacy writeCfeOutput removed from the
     // pipeline. CFE_OUTPUT_v2 is the only path now.
