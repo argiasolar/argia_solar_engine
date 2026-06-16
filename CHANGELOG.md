@@ -1,3 +1,26 @@
+## [4.24.0] — 2026-06-16
+
+**New: cross-tab consistency guard (09d_ConsistencyGuard.js) — a detector that reads every shared figure from all its sources in the live workbook and fails loudly when two sources disagree beyond tolerance. Phase 0.3 of the Master Build Plan. Changes no cell; pure detection.**
+
+> WHY: shared figures were computed in more than one place and disagreed in the
+> client offer. Measured on ARGIA_ENGINE__71_: the CFE base bill forks 12,838,765
+> (bill-difference) vs 13,030,647 (BESS_SIMULATION!D12 add-back), and PV savings
+> forks 1,667,013 vs 1,858,895 — all three symptoms share one Δ of 191,882
+> (direct-energy vs bill-difference savings).
+>
+> WHAT: checkConsistency() pure core (Node-unit-tested, always green) +
+> assertCrossTabConsistency(ss) live wrapper + runConsistencyCheck() menu entry.
+> Any source that can't be read is dropped, never errored; a figure with <2
+> readable sources is skipped. Stamps PASS/FORK onto _META.
+>
+> EXPECTED STATE: Node gate (full_selftest) stays ALL GREEN — unit test passes,
+> live test skips headless. In the real sheet the guard is RED on purpose until
+> Phase 0.1 (single CFE bill engine) collapses the fork, then GREEN as a
+> permanent regression guard.
+>
+> TESTS: +2 (529 total). UNIT_CONSISTENCY_GUARD_CORE (22 assertions, incl. the
+> real fork numbers); INT_CONSISTENCY_LIVE (workbook-dependent).
+
 ## [4.23.0] — 2026-06-15
 
 **New: deployment verification guard (scripts/verify_deploy.js) — confirms code is actually live on BOTH deploy targets (GitHub + Apps Script). Directly addresses the two silent-deployment gaps that cost real time this session. Local CI tooling only; nothing ships to Apps Script.**
