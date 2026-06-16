@@ -413,13 +413,15 @@ function _cfeOutV2_fillSection1(sh, ss) {
     kwhNeto.push((Number(kwhBase[i])||0) + (Number(kwhInter[i])||0) + (Number(kwhPunta[i])||0));
   }
 
-  // Annual savings vs sin PV per month = INPUT_CFE row 37 - CFE_SIM row 39
-  var totalSinPv = readCfeMonthly(ss, 'input_total');
+  // PV savings per month = engine-authoritative CFE_SIMULATION row 41
+  // (no-PV base minus the sheet's con-PV; written by writeAuthoritativeCfeSavings).
+  // SINGLE SOURCE: previously this was INPUT_CFE row 37 - CFE_SIM row 39, but
+  // INPUT_CFE row 37 ("TOTAL") is a static template stub (e.g. 6), so that path
+  // produced savings = -con-PV. Reading row 41 makes CFE_OUTPUT (and the
+  // downstream CLIENT_FINANCIALS, which derives sin-PV = row19 + row20) consume
+  // the one engine bill, eliminating the silent split.
   var totalConPv = readCfeMonthly(ss, 'csim_total');
-  var ahorroPv = [];
-  for (var j = 0; j < 12; j++) {
-    ahorroPv.push((Number(totalSinPv[j])||0) - (Number(totalConPv[j])||0));
-  }
+  var ahorroPv   = readCfeMonthly(ss, 'csim_ahorroEnergia');
 
   _cfeOutV2_writeMonthlyValues(sh, R.SEC1_KWH_NETO,    kwhNeto,                            'kwh');
   _cfeOutV2_writeMonthlyValues(sh, R.SEC1_SOLAR_KWH,   readCfeMonthly(ss, 'csim_solarKwh'),    'kwh');

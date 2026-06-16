@@ -75,11 +75,13 @@ function computeAuthoritativeCfeSavings(monthlyInputs, tarMonths, sheetConPv) {
 }
 
 /** Map buildFullBillFromInputCfe monthly arrays + context -> calcCfeBill inp. PURE.
- *  dapRate mirrors INPUT_CFE!C6 (sheet DAP: <1 => % of subtotal, else flat MXN);
- *  calcCfeBill applies the identical rule, so base DAP matches sheet row 38. */
-function _authMakeCfeInp(monthlyBill, tariff, ctx, m, dapRate) {
+ *  dapRate mirrors INPUT_CFE!C6 (sheet DAP: <1 => % of subtotal, else flat MXN).
+ *  kvarhArr is the 12-month reactive energy (INPUT_CFE row 17) that drives the
+ *  CFE power-factor charge/credit; 0 only when the project carries no kVArh. */
+function _authMakeCfeInp(monthlyBill, tariff, ctx, m, dapRate, kvarhArr) {
   var rollMax = (ctx && ctx.kWMaxAnoMovilKw && isFinite(ctx.kWMaxAnoMovilKw[m]))
               ? ctx.kWMaxAnoMovilKw[m] : 0;
+  var kvarh = (kvarhArr && isFinite(kvarhArr[m])) ? Number(kvarhArr[m]) : 0;
   return {
     tarifa:          tariff,
     kWhBase:         Number(monthlyBill.kwhBase[m])      || 0,
@@ -89,7 +91,7 @@ function _authMakeCfeInp(monthlyBill, tariff, ctx, m, dapRate) {
     kWIntermedia:    Number(monthlyBill.kwIntermedia[m]) || 0,
     kWPunta:         Number(monthlyBill.kwPunta[m])      || 0,
     kWMaxAnoMovil:   rollMax,
-    kVArh:           0,      // INPUT_CFE bill rows carry no reactive energy -> PF penalty 0 (matches sheet)
+    kVArh:           kvarh,
     bajaTension2pct: !!(ctx && ctx.bajaTensionToggle),
     dap:             Number(dapRate) || 0
   };
@@ -138,21 +140,32 @@ function writeAuthoritativeCfeSavings(ss) {
   if (!rates || !rates.months || rates.months.length !== 12) {
     return { ok: false, reason: 'tariff rates unavailable (' + (rates && rates.provenance) + ')' };
   }
+  // Unresolved rates (region/tariff miss, or an IMPORTRANGE mirror not yet
+  // settled) come back as 12 ZERO-rate months -> base would collapse to ~0 and
+  // savings to -con-PV. NEVER write from unresolved rates.
+  if (rates.provenance === 'MISSING' || rates.provenance === 'INCOMPLETE') {
+    return { ok: false, reason: 'tariff rates ' + rates.provenance + ' for '
+             + bill.tariff + ' / ' + bill.region + ' -- row 41 left unchanged' };
+  }
 
   var ctx = (typeof _readCfeMonthlyContextForHourlySim === 'function')
           ? _readCfeMonthlyContextForHourlySim(ss)
           : { bajaTensionToggle: false, kWMaxAnoMovilKw: null };
 
   // DAP rate (INPUT_CFE!C6): <1 => % of subtotal, else flat MXN. Mirrors sheet r38.
-  var dapRate = 0;
+  // kVArh (INPUT_CFE row 17, cols C..N): drives the power-factor charge/credit.
+  var dapRate = 0, kvarhArr = null;
   try {
     var ic = ss.getSheetByName('INPUT_CFE');
-    if (ic) { var d = ic.getRange('C6').getValue(); if (isFinite(Number(d))) dapRate = Number(d); }
+    if (ic) {
+      var d = ic.getRange('C6').getValue(); if (isFinite(Number(d))) dapRate = Number(d);
+      kvarhArr = ic.getRange(17, 3, 1, 12).getValues()[0].map(function (x) { return Number(x) || 0; });
+    }
   } catch (e) {}
 
   var monthlyInputs = [], tarMonths = [];
   for (var m = 0; m < 12; m++) {
-    monthlyInputs.push(_authMakeCfeInp(bill.monthlyBill, bill.tariff, ctx, m, dapRate));
+    monthlyInputs.push(_authMakeCfeInp(bill.monthlyBill, bill.tariff, ctx, m, dapRate, kvarhArr));
     tarMonths.push(_authMakeCfeTar(rates.months[m]));
   }
 
@@ -161,12 +174,23 @@ function writeAuthoritativeCfeSavings(ss) {
 
   var res = computeAuthoritativeCfeSavings(monthlyInputs, tarMonths, conPvRow);
 
+  // HARD SANITY GATE: a no-PV base can never be <= the with-PV con-PV bill.
+  // If it is (bad rates, broken inputs, anything), the result is nonsense --
+  // leave row 41 untouched rather than poison every downstream consumer.
+  var annualBase = 0, annualConPv = 0;
+  for (var s = 0; s < 12; s++) { annualBase += res.base[s]; annualConPv += res.conPv[s]; }
+  if (!(annualBase > annualConPv)) {
+    return { ok: false,
+             reason: 'engine base (' + Math.round(annualBase) + ') <= con-PV ('
+                     + Math.round(annualConPv) + ') -- insane, row 41 left unchanged',
+             warnings: res.warnings };
+  }
+
   // Overwrite C41:N41 with engine savings (per-cell formulas verified, no arrays).
   cs.getRange(41, 3, 1, 12).setValues([res.savings]);
   SpreadsheetApp.flush();
 
-  var annual = 0;
-  for (var k = 0; k < 12; k++) annual += res.savings[k];
+  var annual = annualBase - annualConPv;
 
   if (res.warnings.length && typeof Logger !== 'undefined' && Logger.log) {
     Logger.log('writeAuthoritativeCfeSavings warnings: ' + res.warnings.join(' | '));

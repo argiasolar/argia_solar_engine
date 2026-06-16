@@ -656,7 +656,8 @@ function loadCfeTariffRates(ss, tariff, region) {
       case 'ENERGIA PUNTA':      months[mIdx].energiaPunta = rowValue; break;
       case 'TRANSMISION':        months[mIdx].transmision = rowValue; break;
       case 'CENACE':             months[mIdx].cenace = rowValue; break;
-      case 'SERVICIOS CONEXOS':  months[mIdx].serviciosConexos = rowValue; break;
+      case 'SERVICIOS CONEXOS':
+      case 'SERVICIOS CONEXOS NO MEM':  months[mIdx].serviciosConexos = rowValue; break;
       case 'CAPACIDAD':          months[mIdx].capacidadMxnPerKw = rowValue; break;
       case 'DISTRIBUCION':       months[mIdx].distribucionMxnPerKw = rowValue; break;
       case 'SUMINISTRO BASICO':  months[mIdx].suministroBasicoMxnFlat = rowValue; break;

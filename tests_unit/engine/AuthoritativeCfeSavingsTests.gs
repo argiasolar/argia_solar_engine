@@ -63,6 +63,12 @@ registerTest({
                  3067.35, calcCfeBill(made, tar).total, 0.5);
     t.assert('mapper carries kWhBase', 1000, made.kWhBase);
 
+    // -- 5b. kVArh propagates and applies a power-factor PENALTY (raises bill) --
+    var madeKv = _authMakeCfeInp(mb, 'GDMTH', { kWMaxAnoMovilKw: [0], bajaTensionToggle: false }, 0, 0, [2000]);
+    t.assert('mapper carries kVArh from array', 2000, madeKv.kVArh);
+    t.assertTrue('low power factor raises the bill above the kVArh=0 bonus case',
+                 calcCfeBill(madeKv, tar).total > calcCfeBill(made, tar).total);
+
     // -- 6. tariff field mapping (loadCfeTariffRates -> calcCfeBill tar) -------
     var tm = _authMakeCfeTar({ energiaBase: 1, energiaIntermedia: 2, energiaPunta: 3,
                                serviciosConexos: 0.1, capacidadMxnPerKw: 100,

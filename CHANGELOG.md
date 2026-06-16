@@ -1,3 +1,36 @@
+## [4.28.0] — 2026-06-16  (Phase 0.1 single-source CFE: real fix)
+
+**Completes the single-source CFE bill and removes the silent split that 4.27.0 only half-closed. The customer's sin-PV/savings was being computed FOUR different ways; this collapses them onto one engine base.**
+
+> ROOT CAUSE (diagnosed on the live CULLIGAN E2E, not assumed):
+>   - CFE_OUTPUT Section 1 computed PV savings as `INPUT_CFE row 37 - CFE_SIM row 39`,
+>     but INPUT_CFE row 37 ("TOTAL") is a STATIC TEMPLATE STUB (=6), so savings
+>     came out as -con-PV (-10.9M). CLIENT_FINANCIALS reads CFE_OUTPUT rows 19/20,
+>     so its sin-PV collapsed to ~6 and every derived metric (NPV/IRR/payback/ROI/
+>     LCOE) went to garbage. This fork PRE-DATES 4.27.0; 4.27.0's row 41 was never
+>     in this path.
+>   - 4.27.0's own defect: it zeroed kVArh, so the engine base got the CFE
+>     power-factor BONUS instead of the real PENALTY (12.41M instead of 12.84M).
+>
+> FIXES:
+>   1. WriteCfeOutputV2 Section 1 now reads PV savings from the engine-authoritative
+>      CFE_SIMULATION row 41 (csim_ahorroEnergia), not the INPUT_CFE row-37 stub.
+>      CFE_OUTPUT + CLIENT_FINANCIALS now consume the one engine bill.
+>   2. 20b writer uses real kVArh (INPUT_CFE row 17) -> base = 12,838,765 on CULLIGAN,
+>      matching the expected sin-PV to the peso; savings = 1,928,019 (matches baseline).
+>   3. 20b writer HARD GUARDS: aborts (leaves row 41 untouched) when tariff rates are
+>      MISSING/INCOMPLETE, and when the no-PV base <= con-PV (impossible -> nonsense).
+>      Either guard alone would have prevented 4.27.0's blast radius.
+>   4. loadCfeTariffRates now matches "SERVICIOS CONEXOS NO MEM" (the DB's actual
+>      charge label) in addition to "SERVICIOS CONEXOS".
+>
+> RELOCKED: CULLIGAN baseline B10 sin-PV 13,089,307 -> 12,838,765 (verified engine value).
+>
+> STILL OPEN (separate subsystems, NOT this fix):
+>   - DC cable length 6111->20792 m / DC cost +47% / CAPEX +1.2% (pre-existing drift
+>     since the v4.0.0 baseline; 0.1 cannot touch DC sizing). Next investigation.
+>   - SLIDE_DATA[annual_energy_cost] = #VALUE! -- a workbook-template formula error
+>     (only read by the guard, never code-written); needs the template pass.
 ## [4.27.0] — 2026-06-16  (Phase 0.1a: single-source CFE savings)
 
 **Killed the silent split at its source. CFE_SIMULATION row 41 (monthly PV savings) was a workbook-resident ad-hoc formula `=SUM(INPUT_CFE!C30,C31,C36)-SUM(C32,C33,C38)` that mixed two unrelated row bands by absolute position — it produced −11M MXN "savings" on partial data. The engine now computes row 41 from the validated bill engine, every run.**

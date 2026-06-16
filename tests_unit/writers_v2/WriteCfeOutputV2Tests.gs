@@ -9,7 +9,7 @@
 //   - KPI strip without steady -> 3 standard tiles
 //   - KPI strip with steady    -> tile 3 is rich-text variant
 //   - Section 1: kwhNeto = sum of csim_kwhBase + Inter + Punta
-//   - Section 1: ahorroPv = input_total - csim_total per month
+//   - Section 1: ahorroPv = engine savings (CFE_SIM row 41), single source
 //   - Section 2: ahorroBessTotal = cap + dist + var per month
 //   - Section 2: reciboFinalMonthly = csim_total - ahorroBessTotal
 //   - Footer fills 5 cascade values
@@ -445,7 +445,7 @@ registerTest({
 
 
 // =============================================================================
-// TEST 7 \u2014 Section 1: ahorroPv = input_total - csim_total
+// TEST 7 \u2014 Section 1: ahorroPv reads engine savings (CFE_SIM row 41), SINGLE SOURCE
 // =============================================================================
 registerTest({
   id      : 'UNIT_WRITE_CFE_V2_SEC1_AHORRO_DIFF',
@@ -455,24 +455,29 @@ registerTest({
   tags    : ['writers_v2', 'cfe', 'v2', 'chunk7'],
   source  : 'tests_unit/writers_v2/WriteCfeOutputV2Tests.gs',
   fn: function (t) {
-    t.suite('writeCfeOutputV2: ahorroPv = total sin - total con');
+    t.suite('writeCfeOutputV2: row 20 ahorroPv = engine savings (CFE_SIM row 41)');
 
+    // Plant a stub INPUT_CFE row 37 that DISAGREES with the engine savings, to
+    // prove Section 1 no longer derives savings from it (the old silent split).
     var inputRows = _makeCfeRows({
-      37: [null, null, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000]
+      37: [null, null, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]
     });
     var csimRows = _makeCfeRows({
-      39: [null, null, 7000, 7000, 7000, 7000, 7000, 7000, 7000, 7000, 7000, 7000, 7000, 7000]
+      39: [null, null, 7000, 7000, 7000, 7000, 7000, 7000, 7000, 7000, 7000, 7000, 7000, 7000],
+      41: [null, null, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500]
     });
     var ss = _makeCfeWriterMockSs({
       INPUT_CFE: inputRows, CFE_SIMULATION: csimRows, BESS_SIMULATION: []
     });
     writeCfeOutputV2(ss, null);
 
-    // ahorroPv lands at row 20 cols 3-14, diff = 3000 per month
     var w = ss._cfeSheet._writes;
-    var row20 = _allValuesAtRow(w, 20);
-    t.assert('col 3 = 3000',  3000, row20[3]);
-    t.assert('col 14 = 3000', 3000, row20[14]);
+    var row20 = _allValuesAtRow(w, 20);   // SEC1_AHORRO (PV savings)
+    var row19 = _allValuesAtRow(w, 19);   // SEC1_TOTAL  (con-PV)
+    // Savings mirror engine row 41 (1500), NOT input_total(6) - conPv(7000) = -6994.
+    t.assert('row 20 col 3 = engine savings 1500',  1500, row20[3]);
+    t.assert('row 20 col 14 = engine savings 1500', 1500, row20[14]);
+    t.assert('row 19 col 3 = con-PV 7000',          7000, row19[3]);
   }
 });
 

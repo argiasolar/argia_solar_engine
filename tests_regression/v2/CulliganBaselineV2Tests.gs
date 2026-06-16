@@ -462,8 +462,12 @@ registerTest({
       var kpiSinPV   = String(cfe.getRange('B10').getValue() || '');
       var kpiConPV   = String(cfe.getRange('G10').getValue() || '');
       var kpiConBess = String(cfe.getRange('L10').getValue() || '');
-      t.assertContains('CFE_v2.B10 annual sin PV = $13,089,307',
-                       kpiSinPV, '13,089,307');
+      // RELOCKED 2026-06-16 (engine v4.28.0): sin-PV now comes from the single
+      // engine base (con-PV row 39 + engine savings row 41) = $12,838,765, which
+      // matches CLIENT_FINANCIALS' expected sin-PV to the peso. The old
+      // $13,089,307 was the divergent legacy row-41 formula value.
+      t.assertContains('CFE_v2.B10 annual sin PV = $12,838,765',
+                       kpiSinPV, '12,838,765');
       t.assertContains('CFE_v2.G10 annual con PV = $10,910,746',
                        kpiConPV, '10,910,746');
       t.assertContains('CFE_v2.L10 con PV+BESS year-1 = $10,110,616',
