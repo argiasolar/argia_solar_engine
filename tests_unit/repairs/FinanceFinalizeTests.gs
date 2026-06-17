@@ -29,20 +29,28 @@ function _ffMockSheet(name, cells) {
     getRange: function (r, c, nr, nc) {
       if (nr === undefined) {
         var cell = at(r, c);
-        return {
+        var one = {
           getFormula: function () { return isF(cell.c) ? cell.c : ''; },
-          setFormula: function (f) { cell.c = f; return this; },
+          setFormula: function (f) { cell.c = f; return one; },
           getValue:   function () { return cell.c; },
-          setValue:   function (v) { cell.c = v; return this; },
+          setValue:   function (v) { cell.c = v; return one; },
           getNote:    function () { return cell.note; },
-          setNote:    function (n) { cell.note = n; return this; }
+          setNote:    function (n) { cell.note = n; return one; },
+          setNumberFormat: function () { return one; }, setBackground: function () { return one; },
+          setFontWeight: function () { return one; }, setFontColor: function () { return one; },
+          setBorder: function () { return one; }
         };
+        return one;
       }
-      return {
+      var rng = {
         getValues:   function () { var o = []; for (var i = 0; i < nr; i++) { var row = []; for (var j = 0; j < nc; j++) row.push(at(r + i, c + j).c); o.push(row); } return o; },
         getFormulas: function () { var o = []; for (var i = 0; i < nr; i++) { var row = []; for (var j = 0; j < nc; j++) { var v = at(r + i, c + j).c; row.push(isF(v) ? v : ''); } o.push(row); } return o; },
-        setValues:   function (vals) { for (var i = 0; i < vals.length; i++) for (var j = 0; j < vals[i].length; j++) { at(r + i, c + j).c = vals[i][j]; if (r + i > maxR) maxR = r + i; if (c + j > maxC) maxC = c + j; } return this; }
+        setValues:   function (vals) { for (var i = 0; i < vals.length; i++) for (var j = 0; j < vals[i].length; j++) { at(r + i, c + j).c = vals[i][j]; if (r + i > maxR) maxR = r + i; if (c + j > maxC) maxC = c + j; } return rng; },
+        setNumberFormat: function () { return rng; }, setBackground: function () { return rng; },
+        setFontWeight: function () { return rng; }, setFontColor: function () { return rng; },
+        setBorder: function () { return rng; }
       };
+      return rng;
     },
     getDataRange: function () {
       var self = this;

@@ -17,22 +17,45 @@
 // =============================================================================
 
 function _mmMockSheet(name, labelCells) {
-  // labelCells: array of {r,c,v}. Tracks a formula/value grid + lastRow.
-  var grid = {}; var maxR = 0;
+  // labelCells: array of {r,c,v}. Tracks a formula/value grid + lastRow + a
+  // separate number-format grid so styling can be asserted. Styling setters are
+  // chainable no-ops (except number format, which is recorded).
+  var grid = {}; var fmt = {}; var maxR = 0;
   (labelCells || []).forEach(function(x) {
     grid[x.r + ',' + x.c] = x.v; if (x.r > maxR) maxR = x.r;
   });
   function at(r, c) { var k = r + ',' + c; return (k in grid) ? grid[k] : ''; }
+  function styleStub(r, c, nr, nc) {
+    var self = {
+      setBackground: function() { return self; },
+      setFontWeight: function() { return self; },
+      setFontColor:  function() { return self; },
+      setBorder:     function() { return self; },
+      setNumberFormat: function(f) {
+        var R = nr || 1, C = nc || 1;
+        for (var i = 0; i < R; i++) for (var j = 0; j < C; j++) fmt[(r + i) + ',' + (c + j)] = f;
+        return self;
+      }
+    };
+    return self;
+  }
   return {
     getName: function() { return name; },
     getLastRow: function() { return maxR; },
+    getNumberFormatAt: function(r, c) { return fmt[r + ',' + c] || ''; },  // test helper
     getRange: function(r, c, nr, nc) {
       if (nr === undefined) {
+        var st = styleStub(r, c, 1, 1);
         return {
           getValue: function() { return at(r, c); },
-          getFormula: function() { var v = at(r, c); return (typeof v === 'string' && v.charAt(0) === '=') ? v : ''; }
+          getFormula: function() { var v = at(r, c); return (typeof v === 'string' && v.charAt(0) === '=') ? v : ''; },
+          getNumberFormat: function() { return fmt[r + ',' + c] || ''; },
+          setBackground: st.setBackground, setFontWeight: st.setFontWeight,
+          setFontColor: st.setFontColor, setBorder: st.setBorder,
+          setNumberFormat: st.setNumberFormat
         };
       }
+      var stR = styleStub(r, c, nr, nc);
       return {
         getValues: function() {
           var out = [];
@@ -46,7 +69,10 @@ function _mmMockSheet(name, labelCells) {
               if (r + i > maxR) maxR = r + i;
             }
           return this;
-        }
+        },
+        setBackground: stR.setBackground, setFontWeight: stR.setFontWeight,
+        setFontColor: stR.setFontColor, setBorder: stR.setBorder,
+        setNumberFormat: stR.setNumberFormat
       };
     }
   };
@@ -92,8 +118,8 @@ registerTest({
     t.assert('formula: IRR over cashflow row 51', '=IFERROR(IRR(C51:X51),"n/a")', _mmCell(fin, 'C53'));
     t.assert('formula: IRR margin vs target', '=IFERROR(C53-INPUT_BAAS!D14,"n/a")', _mmCell(fin, 'C54'));
     t.assert('formula: annual debt service', '=I7*12', _mmCell(fin, 'C55'));
-    t.assert('formula: DSCR D56 gated by F7', '=IF(COLUMN()-COLUMN($D$56)<$F$7,D30/$C$55,"")', _mmCell(fin, 'D56'));
-    t.assert('formula: DSCR K56 references K30', '=IF(COLUMN()-COLUMN($D$56)<$F$7,K30/$C$55,"")', _mmCell(fin, 'K56'));
+    t.assert('formula: DSCR D56 gated by F7 + revenue>0', '=IF(AND(COLUMN()-COLUMN($D$56)<$F$7,D30>0),D30/$C$55,"")', _mmCell(fin, 'D56'));
+    t.assert('formula: DSCR K56 references K30', '=IF(AND(COLUMN()-COLUMN($D$56)<$F$7,K30>0),K30/$C$55,"")', _mmCell(fin, 'K56'));
     t.assert('formula: Min DSCR', '=IFERROR(MIN(D56:X56),"n/a")', _mmCell(fin, 'C57'));
     t.assert('formula: Avg DSCR', '=IFERROR(AVERAGE(D56:X56),"n/a")', _mmCell(fin, 'D57'));
 
@@ -102,7 +128,17 @@ registerTest({
     t.assert('cashflow: D51 = =D30', '=D30', _mmCell(fin, 'D51'));
     t.assert('cashflow: X51 = =X30', '=X30', _mmCell(fin, 'X51'));
 
-    // --- 4. IDEMPOTENT (re-run rewrites in place; no duplicate header) -------
+    // --- 4. NUMBER FORMATS (styling) ---------------------------------------
+    t.assert('format: WACC C49 percent',    '0.00%',      fin.getNumberFormatAt(49, 3));
+    t.assert('format: NPV C52 currency',    '"$"#,##0',    fin.getNumberFormatAt(52, 3));
+    t.assert('format: IRR C53 percent',     '0.00%',      fin.getNumberFormatAt(53, 3));
+    t.assert('format: debt C55 currency',   '"$"#,##0',    fin.getNumberFormatAt(55, 3));
+    t.assert('format: DSCR D56 ratio',      '0.00"x"',    fin.getNumberFormatAt(56, 4));
+    t.assert('format: Min DSCR C57 ratio',  '0.00"x"',    fin.getNumberFormatAt(57, 3));
+    t.assert('format: Avg DSCR D57 ratio',  '0.00"x"',    fin.getNumberFormatAt(57, 4));
+    t.assert('format: cashflow C51 currency', '"$"#,##0',  fin.getNumberFormatAt(51, 3));
+
+    // --- 5. IDEMPOTENT (re-run rewrites in place; no duplicate header) -------
     var rep2 = repairFinanceMarketMetrics(ss);
     t.assert('idempotent: header still row 48', 48, rep2.headerRow);
     // scan column B for the header -- must appear exactly once
@@ -111,7 +147,7 @@ registerTest({
       if (String(fin.getRange(r, 2).getValue()).trim() === 'MARKET-STANDARD METRICS (PPA -- unlevered project)') count++;
     t.assert('idempotent: header appears exactly once', 1, count);
 
-    // --- 5. ABORT ------------------------------------------------------------
+    // --- 6. ABORT ------------------------------------------------------------
     var repNoFin = repairFinanceMarketMetrics(_mmMockSs({ INPUT_BAAS: _mmMockSheet('INPUT_BAAS', []) }));
     t.assertFalse('abort: ok=false when FINANCE missing', repNoFin.ok);
     var repNoBaas = repairFinanceMarketMetrics(_mmMockSs({ FINANCE: _mmFinance() }));

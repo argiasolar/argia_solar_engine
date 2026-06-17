@@ -1,3 +1,39 @@
+## [4.33.0] — 2026-06-17  (FINANCE metrics block: professional styling + DSCR window fix)
+
+**Make the MARKET-STANDARD METRICS block read like the financial section above instead of
+raw decimals, and fix the misleading Min DSCR = 0.**
+
+### Changed — `02l_FinanceMarketMetrics.js`
+- **Styling** (`_fmmStyleBlock`, applied idempotently after each write): full-width header
+  band, bold light-grey label column, and number formats — currency (`"$"#,##0`) on
+  cashflow / NPV / debt service, percent (`0.00%`) on WACC / IRR / IRR-margin, and a
+  coverage-ratio format (`0.00"x"`, e.g. `0.38x`) on the DSCR cells, which previously showed
+  raw decimals like `0.3814195456`. A light outer border frames the block. Grey tones are
+  constants (`_FMM_HEADER_BG` / `_FMM_LABEL_BG`) — adjust to exact-match the template palette.
+- **DSCR window fix**: "DSCR by year" now requires `revenue > 0`, so the pre-operation year
+  (Y00, no production yet) is excluded. Previously Y00's zero revenue produced a DSCR of 0
+  that dragged **Min DSCR to 0.00**, misreporting coverage. Min/Avg DSCR now reflect only
+  operational years within the loan term.
+
+### Tests — `tests_unit/repairs/FinanceMarketMetricsTests.gs`
+- Mock extended to record number formats and accept (chainable) styling setters.
+- Updated DSCR formula assertions for the `AND(... , revenue>0)` guard.
+- Added 8 number-format assertions (percent / currency / DSCR ratio across the block).
+
+### Note (not a code issue)
+With the corrected CAPEX, the block now shows the modeled PPA is **underwater**: discounted
+NPV ≈ −$24M, IRR ≈ −1%, DSCR ≈ 0.38 (ARGIA revenue ~$3.3M/yr vs debt service ~$8.7M/yr). The
+metrics are correct — they're surfacing real deal economics. Likely levers: the loan is sized
+on the margin-inclusive **sell-price CAPEX** (~$43.6M) rather than cost (~$37M), and only the
+**10-year PPA term** of revenue is counted against a 20–25-year system. Both are model /
+deal-structure questions, parked pending direction.
+
+### Apply
+Deploy, then **ARGIA → Administrator Panel → Repair FINANCE (all + notes)** (or **Start New
+Project**) to restyle the block in place.
+
+---
+
 ## [4.32.0] — 2026-06-16  (FINANCE finalize: ship-correct-by-default + provenance notes)
 
 **Two goals: new workbooks ship with the FINANCE fixes by default, and every FINANCE number

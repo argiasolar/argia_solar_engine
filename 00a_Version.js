@@ -541,8 +541,16 @@
 // startNewProjectCore so new/reset projects ship corrected + documented, and
 // exposed as menu item "Repair FINANCE (all + notes)". Idempotent. No engine
 // math changes. See CHANGELOG.md.
+// 4.33.0 — PATCH-level polish (2026-06-17). FINANCE metrics block styling +
+// DSCR window fix (02l_FinanceMarketMetrics.js). The metrics block now ships
+// with a header band, bold grey label column, and number formats (currency /
+// percent / DSCR "x" ratio) so it reads consistently with the financial section
+// above instead of raw decimals. DSCR by year now excludes the pre-operation
+// year (revenue = 0) so Min DSCR reflects real coverage instead of being pinned
+// to 0. No engine math changes; metric definitions unchanged except the DSCR
+// zero-revenue exclusion. See CHANGELOG.md.
 // -----------------------------------------------------------------------------
-var ENGINE_VERSION = '4.32.0';
+var ENGINE_VERSION = '4.33.0';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default

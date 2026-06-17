@@ -57,6 +57,16 @@ var _FMM_TIRR_REF = 'INPUT_BAAS!D14';   // ARGIA target IRR
 var _FMM_FIRST_CF_COL = 4;              // D = first cashflow year column (Y00)
 var _FMM_LAST_CF_COL  = 24;             // X = last cashflow year column (Y20)
 
+// Styling (greys chosen to read like the financial section above; adjust here
+// to exact-match the template palette). Applied idempotently after each write.
+var _FMM_HEADER_BG = '#b7b7b7';         // header band (medium grey)
+var _FMM_HEADER_FG = '#000000';
+var _FMM_LABEL_BG  = '#d9d9d9';         // label column (light grey)
+var _FMM_BORDER    = '#999999';
+var _FMM_FMT_PCT   = '0.00%';
+var _FMM_FMT_MXN   = '"$"#,##0';
+var _FMM_FMT_DSCR  = '0.00"x"';         // coverage ratio, e.g. 0.38x
+
 function repairFinanceMarketMetrics(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
 
@@ -82,6 +92,7 @@ function repairFinanceMarketMetrics(ss) {
   // Build and write the block.
   var block = _fmmBuildBlock(H);
   sh.getRange(H, 2, block.length, block[0].length).setValues(block);
+  _fmmStyleBlock(sh, H);
   SpreadsheetApp.flush();
 
   return {
@@ -140,11 +151,14 @@ function _fmmBuildBlock(H) {
   put(rows[7], 2, 'Annual debt service');
   put(rows[7], 3, '=I7*12');
 
-  // DSCR by year, gated by the loan term F7 (years) via column offset
+  // DSCR by year, gated by the loan term F7 (years) via column offset, and only
+  // for years with revenue > 0 (the pre-operation year Y00 has none, so it is
+  // excluded -- otherwise it drags Min DSCR to 0 and misreports coverage).
   put(rows[8], 2, 'DSCR by year (loan term)');
   for (var c2 = _FMM_FIRST_CF_COL; c2 <= _FMM_LAST_CF_COL; c2++) {
-    var f = '=IF(COLUMN()-COLUMN($D$' + rDscr + ')<$F$7,' +
-            _fmmCol(c2) + '30/$C$' + rDs + ',"")';
+    var rev = _fmmCol(c2) + '30';
+    var f = '=IF(AND(COLUMN()-COLUMN($D$' + rDscr + ')<$F$7,' + rev + '>0),' +
+            rev + '/$C$' + rDs + ',"")';
     put(rows[8], c2, f);
   }
 
@@ -157,7 +171,40 @@ function _fmmBuildBlock(H) {
   return rows;
 }
 
-// Column number -> letter (handles past Z, though FINANCE stops at X).
+// Style the block: full-width header band, bold grey label column, and number
+// formats (currency / percent / DSCR ratio) so the figures read professionally
+// and consistently with the financial section above. Idempotent (formats just
+// re-set on re-run). H is the header's sheet row.
+function _fmmStyleBlock(sh, H) {
+  var firstCol = 2;                         // B
+  var lastCol  = _FMM_LAST_CF_COL;          // X
+  var width    = lastCol - firstCol + 1;    // B..X
+  var rWacc = H + 1, rTirr = H + 2, rCash = H + 3, rNpv = H + 4,
+      rIrr = H + 5, rIrrM = H + 6, rDs = H + 7, rDscr = H + 8, rDscrSum = H + 9;
+
+  // header band (B..X) + bold title
+  sh.getRange(H, firstCol, 1, width).setBackground(_FMM_HEADER_BG);
+  sh.getRange(H, firstCol).setFontWeight('bold').setFontColor(_FMM_HEADER_FG);
+
+  // label column (B), bold + light grey, rows H+1..H+9
+  sh.getRange(rWacc, firstCol, 9, 1).setFontWeight('bold').setBackground(_FMM_LABEL_BG);
+
+  // number formats
+  sh.getRange(rWacc, 3).setNumberFormat(_FMM_FMT_PCT);              // WACC
+  sh.getRange(rTirr, 3).setNumberFormat(_FMM_FMT_PCT);              // target IRR
+  sh.getRange(rCash, 3, 1, width - 1).setNumberFormat(_FMM_FMT_MXN); // cashflow C..X
+  sh.getRange(rNpv, 3).setNumberFormat(_FMM_FMT_MXN);              // NPV
+  sh.getRange(rIrr, 3).setNumberFormat(_FMM_FMT_PCT);              // IRR
+  sh.getRange(rIrrM, 3).setNumberFormat(_FMM_FMT_PCT);             // IRR margin
+  sh.getRange(rDs, 3).setNumberFormat(_FMM_FMT_MXN);              // debt service
+  sh.getRange(rDscr, 4, 1, width - 2).setNumberFormat(_FMM_FMT_DSCR); // DSCR D..X
+  sh.getRange(rDscrSum, 3, 1, 2).setNumberFormat(_FMM_FMT_DSCR);    // min/avg DSCR
+
+  // light outer border around the whole block
+  sh.getRange(H, firstCol, 10, width)
+    .setBorder(true, true, true, true, false, false, _FMM_BORDER,
+               SpreadsheetApp.BorderStyle.SOLID);
+}
 function _fmmCol(col) {
   var s = '';
   while (col > 0) { var m = (col - 1) % 26; s = String.fromCharCode(65 + m) + s; col = (col - m - 1) / 26; }
