@@ -345,9 +345,10 @@ var SHARED_FIGURE_REGISTRY = [
       { name: 'CFE_OUTPUT_v2 row15 sum /1000',    kind: 'rowsum', sheet: 'CFE_OUTPUT_v2',   row: 15, scale: 0.001 }
     ] },
   // Interconnection mode is STRING-valued; the numeric guard skips it (1 source,
-  // string). Kept here as the documented single-source contract. T5 will add the
-  // CFE_SIMULATION / BESS mode-derived sources and a string comparator.
-  { key: 'interconnection_mode', label: 'Interconnection mode', tolRel: 0, enforced: false, pendingTask: 'T5',
+  // string). Single-source consistency (sim mode == API == CFE_OUTPUT display) is
+  // enforced by REG_INTERCONN_MODE_CONSISTENT (T5). Kept here as the documented
+  // owner cell.
+  { key: 'interconnection_mode', label: 'Interconnection mode', tolRel: 0, enforced: false,
     sources: [
       { name: 'INPUT_CFE!C41 (owner)',            kind: 'cellstr', sheet: 'INPUT_CFE',      a1: 'C41' }
     ] }

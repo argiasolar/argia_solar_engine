@@ -1,4 +1,47 @@
-## [4.37.0] — 2026-06-17  (T3: registry-driven cross-tab consistency guard)
+## [4.38.0] — 2026-06-17  (T5: interconnection-mode single source)
+
+**One interconnection input drives the simulation AND every output. Before this, the outputs
+re-read raw `INPUT_CFE!C41` independently of the resolver the sim runs on — so CFE_OUTPUT could
+display a mode the simulation never ran (e.g. a typo'd value passed through verbatim while the sim
+treated it as `UNKNOWN`).**
+
+### Root cause
+The sim resolves mode via `readBessInterconnectionFromInputCfe` (canonical English:
+`NET_METERING` / `NET_BILLING` / `ZERO_EXPORT`, `UNKNOWN` for unrecognized). But two outputs derived
+mode themselves from raw C41: `WriteCfeOutputV2` (raw → bilingual label, with `default: return raw`
+passthrough) and `WriteApiOutputV2` (raw Spanish enum). Same cell, but parallel derivations with
+different defaults — a latent fork on blank/unrecognized input.
+
+### Fix — every output now reads the one resolver
+- **`writers_v2/WriteCfeOutputV2.js`** — `_cfeOutV2_fillHeaderStrip` derives the displayed mode from
+  `readBessInterconnectionFromInputCfe(ss).mode` (the same resolver the hourly sim + BESS suggester
+  use), via the new pure `_cfeOutV2_canonicalModeToRawEnum`. The tested pure helpers
+  (`_cfeOutV2_interconnLabel`, `_cfeOutV2_loadShiftWarning`) are unchanged — only their *input source*
+  changed. The load-shift warning now also keys off the resolved mode.
+- **`writers_v2/WriteApiOutputV2.js`** — `interconnection_mode` is now the **canonical resolved
+  mode** (`NET_METERING`…) via new `_apiInterconnMode`, not the raw Spanish `MEDICION_NETA`. So
+  `API_OUTPUT.interconnection_mode == sim mode` by construction.
+- **`09d_ConsistencyGuard.js`** — the registry's `interconnection_mode` note updated: single-source
+  consistency is now enforced by `REG_INTERCONN_MODE_CONSISTENT` (no longer "pending T5").
+
+### Behavior change (on the fixtures, none)
+On any recognized input the CFE_OUTPUT label is **byte-identical** (CULLIGAN: `MEDICION_NETA` →
+`NET_METERING` → "MEDICIÓN NETA (NET_METERING)"). The only visible change: **`API_OUTPUT`
+`interconnection_mode` is now `NET_METERING` instead of `MEDICION_NETA`** (canonical, matches the
+sim). Unrecognized inputs now display "(no definido)" instead of a bogus passthrough.
+
+### Tests
+- **NEW** `UNIT_INTERCONN_MODE_SINGLE_SOURCE` (pure): the canonical→enum→label chain, incl. the fork
+  case (UNKNOWN/garbage → "(no definido)", never passthrough).
+- **NEW** `REG_INTERCONN_MODE_CONSISTENT` (CULLIGAN): resolver mode == `API_OUTPUT` mode ==
+  CFE_OUTPUT displayed token.
+
+### Not in this chunk (flagged, honest)
+`04a_CalcCFEBill.js` defaults an unset mode to `MEDICION_NETA` (Spanish), while the resolver defaults
+to `UNKNOWN` — a deeper default-policy difference in the bill calc (golden-locked, parameterized).
+Out of scope here; noted for a future pass. The observable sim-vs-output fork T5 targets is closed.
+
+
 
 **Locks "single source" structurally: a data registry of every shared figure → its canonical owner
 → all consumers, checked within tolerance at end of every engine run and in the test suite. Any

@@ -52,7 +52,7 @@ var API_OUTPUT_FIELDS = [
   { key: 'inverter_qty',                 units: 'pcs',     src: 'MDC_v2!C12',                            from: 'inverterQty' },
 
   { key: 'annual_generation_mwh',        units: 'MWh',     src: 'CFE_OUTPUT_v2 row15 (solar kWh) / 1000', from: 'annualGenerationMwh' },
-  { key: 'interconnection_mode',         units: '',        src: 'INPUT_CFE!C41',                          from: 'interconnectionMode' },
+  { key: 'interconnection_mode',         units: '',        src: 'resolver readBessInterconnectionFromInputCfe (canonical; INPUT_CFE!C41)', from: 'interconnectionMode' },
 
   { key: 'cfe_bill_sin_pv_mxn',          units: 'MXN',     src: 'BESS_SIMULATION!D12 (T1 canonical)',     from: 'cfeBillSinPvMxn' },
   { key: 'cfe_bill_con_pv_mxn',          units: 'MXN',     src: 'BESS_SIMULATION!D14',                    from: 'cfeBillConPvMxn' },
@@ -129,6 +129,25 @@ function _apiStr(ss, sheetName, a1, warnings, label) {
 }
 
 /**
+ * [T5] Interconnection mode = the CANONICAL mode the engine actually ran, from
+ * the single resolver readBessInterconnectionFromInputCfe (the same one the
+ * hourly sim and BESS suggester use). Exposes 'NET_METERING' / 'NET_BILLING' /
+ * 'ZERO_EXPORT' / 'UNKNOWN' -- NOT the raw Spanish INPUT_CFE!C41 enum -- so the
+ * API mode equals the sim mode by construction (no parallel re-read of C41).
+ */
+function _apiInterconnMode(ss, warnings) {
+  try {
+    if (typeof readBessInterconnectionFromInputCfe === 'function') {
+      var ic = readBessInterconnectionFromInputCfe(ss);
+      return (ic && ic.mode) ? ic.mode : 'UNKNOWN';
+    }
+  } catch (e) {
+    if (warnings) warnings.push('API_OUTPUT: interconnection mode resolver failed -- ' + e.message);
+  }
+  return 'UNKNOWN';
+}
+
+/**
  * Resolve every field's value from its owner. Financials come from the passed
  * runClientFinancials result (opts.fin / opts.capex) so this never re-runs the
  * financials engine. CFE/size/generation/mode/offer-price are read from the
@@ -173,7 +192,7 @@ function _apiResolveSources(ss, opts, warnings) {
     inverterQty:        _apiNum(ss, 'MDC_v2', 'C12', warnings, 'inverter_qty'),
 
     annualGenerationMwh: genMwh,
-    interconnectionMode: _apiStr(ss, 'INPUT_CFE', 'C41', warnings, 'interconnection_mode'),
+    interconnectionMode: _apiInterconnMode(ss, warnings),
 
     cfeBillSinPvMxn:    sinPv,
     cfeBillConPvMxn:    conPv,

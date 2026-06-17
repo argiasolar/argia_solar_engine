@@ -1,4 +1,4 @@
-Pushed 242 files at 1:16:49 PM.
+Pushed 244 files at 2:16:20 PM.
 └─ 00_Main.js
 └─ 00a_Version.js
 └─ 00c_SetupSectionGuard.js
@@ -127,6 +127,7 @@ Pushed 242 files at 1:16:49 PM.
 └─ tests_regression\v2\ApiOutputConsistencyTests.gs
 └─ tests_regression\v2\CfeBaseAndSavingsConsistencyTests.gs
 └─ tests_regression\v2\ClientFinancialsCulliganTests.gs
+└─ tests_regression\v2\CrossTabConsistencyTests.gs
 └─ tests_regression\v2\CulliganBaselineV2Tests.gs
 └─ tests_regression\ValidationOptimizerSkipTests.gs
 └─ tests_regression\ZeroExportArbitrageFixtureTests.gs
@@ -174,6 +175,7 @@ Pushed 242 files at 1:16:49 PM.
 └─ tests_unit\calc\ValorDeCompraTests.gs
 └─ tests_unit\consistency\ConsistencyGuardHardeningTests.gs
 └─ tests_unit\consistency\ConsistencyGuardTests.gs
+└─ tests_unit\consistency\ConsistencyRegistryTests.gs
 └─ tests_unit\engine\AuthoritativeCfeSavingsTests.gs
 └─ tests_unit\engine\InputsHashTests.gs
 └─ tests_unit\engine\InstallCostSanityTests.gs

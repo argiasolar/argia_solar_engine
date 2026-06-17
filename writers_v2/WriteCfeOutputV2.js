@@ -229,6 +229,20 @@ function _cfeOutV2_interconnLabel(raw) {
   }
 }
 
+// [T5] Map the engine's CANONICAL mode (from readBessInterconnectionFromInputCfe
+// -- the single resolver the simulation runs on) back to the raw INPUT_CFE enum
+// the label/warning helpers expect. UNKNOWN -> '' so the label shows
+// "(no definido)". This is what makes the DISPLAYED mode equal the SIM mode:
+// both come from the one resolver, never from an independent re-read of C41.
+function _cfeOutV2_canonicalModeToRawEnum(mode) {
+  switch (String(mode || '').trim().toUpperCase()) {
+    case 'NET_METERING': return 'MEDICION_NETA';
+    case 'NET_BILLING':  return 'FACTURACION_NETA';
+    case 'ZERO_EXPORT':  return 'SIN_EXPORTACION';
+    default:             return '';   // UNKNOWN / unset -> "(no definido)"
+  }
+}
+
 
 // =============================================================================
 // LOAD_SHIFTING interconnection warning (4.0.0).
@@ -268,10 +282,16 @@ function _cfeOutV2_fillHeaderStrip(sh, ss) {
   sh.getRange(R.LOCATION_ROW, 3).setValue(readCfeScalar(ss, 'input_serviceNumber'));
   sh.getRange(R.LOCATION_ROW, 10).setValue(readCfeScalar(ss, 'input_contractedKw'));
   // Row 7: INTERCONEXION | AUTOCONSUMO
-  // 4.0.0: always render interconnection (never leave blank). Map the raw
-  // INPUT_CFE enum to a friendly label; show "(no definido)" when unset so a
-  // missing value is visible rather than an empty cell.
-  var interconnRaw = String(readCfeScalar(ss, 'input_interconnMode') || '').trim();
+  // [T5] SINGLE SOURCE: derive the displayed mode from the engine resolver
+  // (readBessInterconnectionFromInputCfe) -- the exact function the hourly sim
+  // and BESS suggester run on -- instead of re-reading raw INPUT_CFE!C41 here.
+  // This guarantees the OUTPUT shows the mode the SIM actually ran (an
+  // unrecognized C41 resolves to UNKNOWN -> "(no definido)", not a passthrough
+  // of a bogus value the sim ignored). On recognized inputs the label is
+  // byte-identical to before.
+  var _icResolved = (typeof readBessInterconnectionFromInputCfe === 'function')
+                  ? readBessInterconnectionFromInputCfe(ss).mode : '';
+  var interconnRaw = _cfeOutV2_canonicalModeToRawEnum(_icResolved);
   sh.getRange(R.INTERCONN_ROW, 3).setValue(_cfeOutV2_interconnLabel(interconnRaw));
   sh.getRange(R.INTERCONN_ROW, 10).setValue(readCfeScalar(ss, 'input_autoconsumoPct'));
   // Row 8: ESTRATEGIA BESS | BATERIA kWh/kW
