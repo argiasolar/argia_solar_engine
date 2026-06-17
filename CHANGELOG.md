@@ -1,3 +1,64 @@
+## [4.29.0] — 2026-06-16  (FINANCE/PPA + SLIDE_DATA: repoint CFE source off the dead INPUT_CFE stub)
+
+**Fixes the FINANCE/PPA economics ($0 CFE tariff -> DSCR 0%, %savings #DIV/0!) and the
+last red in the consistency_live test (SLIDE_DATA[annual_energy_cost] = #VALUE!) — one
+root cause, not two.**
+
+> ROOT CAUSE (a silent split, same disease 4.28.0 cured for CLIENT_FINANCIALS).
+> The legacy "current CFE bill" preview in INPUT_CFE rows 30-37 is dead stub data
+> (row 37 "TOTAL", annual O37 = 0). Three sheets read it; two still do:
+>     FINANCE  "CFE Annual Payment"  D = INPUT_CFE!O37               -> 0
+>     FINANCE  "CFE Tariff"          D = INPUT_CFE!O37/SUM(C10:N12)  -> 0
+>     SLIDE_DATA[annual_energy_cost] B = SUM(INPUT_CFE!C37:N37)      -> #VALUE!
+> With the tariff at 0 the whole FINANCE/PPA cascade collapses (New CFE payment 0,
+> ARGIA tariff 0, % savings #DIV/0!, DSCR 0%); SLIDE_DATA's printed cost errors.
+> (CFE_OUTPUT was the third reader; 4.28.0 already repointed it.)
+>
+> The authoritative sin-PV already exists and is correct:
+>     BESS_SIMULATION!D12 = CFE_SIMULATION!O39 + O41 + O40
+>                         = "Recibo CFE base (sin PV ni BESS)" = 12,838,765 on CULLIGAN
+> We CANNOT push values into INPUT_CFE row 37 (the sheet carries array formulas;
+> writing over them strips evaluation context). So the fix repoints the consumers.
+
+### Added
+- **`02h_RepairFinanceSlideCfeSource.js`** — surgical, opt-in repair that rewrites
+  exactly three formulas to read `BESS_SIMULATION!D12`:
+  - `SLIDE_DATA[annual_energy_cost]` → `=BESS_SIMULATION!D12`
+  - `FINANCE` "CFE Annual Payment" (Y00/D) → `=BESS_SIMULATION!D12`
+  - `FINANCE` "CFE Tariff" (Y00/D) → `=BESS_SIMULATION!D12/SUM(INPUT_CFE!C10:N12)`
+  The FINANCE year columns E:H chain off Y00 (inflation / consumption×tariff), so
+  repointing the two Y00 cells fixes the entire 12-year cascade.
+- **Menu**: Administrator Panel → **"Repoint CFE Source (FINANCE/SLIDE)"**
+  (`runRepairFinanceSlideCfeSource`).
+- **`tests_unit/repairs/RepairFinanceSlideCfeSourceTests.gs`** — 5 scenarios
+  (happy path / idempotent / missing-label / guard / abort), 16 assertions, on a
+  self-contained mock spreadsheet.
+
+### Safety (why this cannot corrupt the known-contaminated FINANCE)
+- **Aborts wholesale** if `BESS_SIMULATION` is missing (never points a consumer at a #REF!).
+- **Label-matched** (exact trimmed label, never a hardcoded row) — robust to layout drift.
+- **Pattern-guarded** — a cell is rewritten ONLY if its current formula is the known
+  dead stub; blank cells, array-formula spills, and any unexpected formula are LEFT
+  UNTOUCHED and reported.
+- **Idempotent** (already-repointed = no-op) and **write-verified** (read back after set).
+- **Per-target isolation** — one missing label does not block the other two.
+
+### Not in scope (flagged for a follow-up "is FINANCE/PPA trustworthy end-to-end" pass)
+- FINANCE CAPEX reads 34.76M, not the CULLIGAN 37.05M (separate CAPEX source).
+- FINANCE Y00 production is −220 (first-year proration quirk: `(12-MONTH(TODAY())-C5)*…`).
+These are independent of the CFE-source repoint and unchanged by it.
+
+### Why MINOR, not PATCH
+New menu capability + new file. No engine math changes; existing projects recalc
+identically. The repair only repoints three legacy template formulas, on demand.
+
+### Apply
+Deploy, then run **ARGIA → Administrator Panel → Repoint CFE Source (FINANCE/SLIDE)**
+once per workbook. Verify FINANCE CFE Tariff/Payment/%savings/DSCR are non-zero and
+`SLIDE_DATA[annual_energy_cost]` no longer shows #VALUE!.
+
+---
+
 ## [4.28.1] — 2026-06-16  (CULLIGAN fixture fidelity: restore Helioscope DC wire)
 
 **Fixes the 22 remaining CULLIGAN E2E failures, which all cascade from one missing

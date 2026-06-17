@@ -492,8 +492,20 @@
 //
 // 3.7.8 — PATCH (2026-05-27). Bug sweep + harness + OutputValidate tests +
 // install cost guardrails. See CHANGELOG.md.
+//
+// 4.29.0 — MINOR (2026-06-16). FINANCE/PPA + SLIDE_DATA CFE source repoint.
+// New surgical repair (02h_RepairFinanceSlideCfeSource.js, menu: Administrator
+// Panel -> "Repoint CFE Source (FINANCE/SLIDE)") that fixes the silent split
+// where FINANCE and SLIDE_DATA read the DEAD INPUT_CFE sin-PV stub (row 37,
+// O37 = 0) instead of the authoritative engine sin-PV BESS_SIMULATION!D12.
+// Symptom before: FINANCE CFE Tariff $0 -> DSCR 0% / %savings #DIV/0!, and
+// SLIDE_DATA[annual_energy_cost] #VALUE!. The repair is label-matched,
+// pattern-guarded (only ever converts the known dead stub), idempotent, and
+// aborts wholesale if BESS_SIMULATION is missing. No engine math changes;
+// old projects recalc identically -- this only repoints three legacy template
+// formulas. See CHANGELOG.md.
 // -----------------------------------------------------------------------------
-var ENGINE_VERSION = '4.28.1';
+var ENGINE_VERSION = '4.29.0';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default
