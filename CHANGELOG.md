@@ -1,4 +1,35 @@
-## [4.34.0] — 2026-06-17  (T1: single canonical "CFE bill, sin PV" base)
+## [4.34.1] — 2026-06-17  (T1 follow-up: banner cell fix surfaced by live CULLIGAN E2E)
+
+**The live CULLIGAN E2E on 4.34.0 returned 1 failure — `REG_CFE_BASE_AND_SAVINGS` ▸ "banner
+consumer agrees" — which traced to a wrong banner CELL, not the engine. The canonical base
+(D12) and every other consumer were correct live; D12 = 12,838,765.45, column reconciled
+(D12+D13=D14=O39), savings identity held, O40 = 0.**
+
+### Root cause
+The CFE_OUTPUT_v2 "RECIBO ANUAL SIN PV" KPI tile is written to **B10** (merged `B10:E10`,
+tile 1 at column B; tile 2 con-PV at G10, tile 3 final at L10). Both the new regression test
+and `CLIENT_FIN_CELLS.CFE_BANNER_SIN_PV` referenced **C10**, which is inside the merge and
+reads empty -> the banner parse returned 0. `CFE_BANNER_FINAL = 'L10'` was already correct
+(top-left of its merge).
+
+### Fixed — `31a_RunClientFinancials.js`
+- `CLIENT_FIN_CELLS.CFE_BANNER_SIN_PV`: `'C10'` -> `'B10'`. This is a latent correctness fix:
+  the sin-PV banner is CLIENT_FINANCIALS' last-resort fallback (after canonical D12, then
+  row19+row20), so it was never reached in practice, but it would have returned 0 if it ever
+  were. Header doc updated to match.
+
+### Fixed — tests
+- `tests_regression/v2/CfeBaseAndSavingsConsistencyTests.gs`: banner assertion now reads **B10**
+  (the merged tile's top-left), with a comment recording the tile layout (B=sin-PV / G=con-PV /
+  L=final). Verified: `_baasParseBanner('...$12,838,765')` -> 12,838,765, within 0.01% of D12.
+- `tests_unit/calc/ClientFinWiringTests.gs`: CASE 2 banner mock moved `C10` -> `B10` to match the
+  corrected constant.
+
+### No engine math change
+4.34.0's canonical-base logic is unchanged and was verified correct in the live workbook. This
+patch only corrects which cell the banner consumer/test reads.
+
+
 
 **One canonical annual sin-PV figure, owned by the GDMTH engine, read by every consumer —
 and the latent FACTURACION_NETA export-credit double-count removed.**

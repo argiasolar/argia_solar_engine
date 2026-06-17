@@ -100,11 +100,13 @@ registerTest({
     t.assertNear('CFE_OUTPUT row19+row20 == D12 (rendered detail agrees)',
                  d12, sumDetail, TOL_PCT);
 
-    // Banner C10 (reads bsim_reciboBase -> D12) parses back to the base.
+    // Banner B10 (KPI tile 1, merged B10:E10; reads bsim_reciboBase -> D12).
+    // The value lives in the merge's top-left cell B10 -- C10 is inside the
+    // merge and reads empty. (Tiles: B=sin-PV, G=con-PV, L=final con BESS.)
     var banner = (typeof _baasParseBanner === 'function')
-               ? _baasParseBanner(co.getRange('C10').getValue())
-               : Number(String(co.getRange('C10').getValue()).replace(/[^0-9.]/g, ''));
-    t.assertNear('CFE_OUTPUT C10 banner == D12 (banner consumer agrees)',
+               ? _baasParseBanner(co.getRange('B10').getValue())
+               : Number(String(co.getRange('B10').getValue()).replace(/[^0-9.]/g, ''));
+    t.assertNear('CFE_OUTPUT B10 banner == D12 (banner consumer agrees)',
                  d12, banner, TOL_PCT);
 
     // ---- CLIENT_FINANCIALS consumer -----------------------------------------

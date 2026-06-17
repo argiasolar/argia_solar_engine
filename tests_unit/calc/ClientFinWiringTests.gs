@@ -3,7 +3,7 @@
 // -----------------------------------------------------------------------------
 // [Track B P0] Locks the runClientFinancials wiring readers:
 //   - _cfinReadBills: sin-PV = BESS_SIMULATION!D12 (canonical engine base),
-//     fallback row19+row20, then C10 banner; with = row31, L10 fallback
+//     fallback row19+row20, then B10 banner; with = row31, L10 fallback
 //   - _cfinReadCapexTotalMxn: BOM grand total + INSTALLATION grand total
 //   - _cfinReadDemandSavings: rows 27+28
 //   - _cfinReadEnergyKwh: row 15
@@ -88,11 +88,11 @@ registerTest({
 
     // -- CASE 2: monthly rows empty -> banner fallback ------------------------
     var cells2 = {};
-    cells2['C10'] = 'RECIBO ANUAL SIN PV\n$1,800,000';
+    cells2['B10'] = 'RECIBO ANUAL SIN PV\n$1,800,000';
     cells2['L10'] = 'RECIBO FINAL\n$960,000';
     var ss2 = _cfinMockSs({ 'CFE_OUTPUT_v2': cells2 });
     var bills2 = _cfinReadBills(ss2);
-    t.assert('fallback: sin-PV from C10 banner', 1800000, bills2.billWithoutMxn);
+    t.assert('fallback: sin-PV from B10 banner', 1800000, bills2.billWithoutMxn);
     t.assert('fallback: final from L10 banner',  960000,  bills2.billWithMxn);
     t.assert('fallback: two warnings logged', 2, bills2.warnings.length);
 

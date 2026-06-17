@@ -16,7 +16,7 @@
 //     row 27  Ahorro Capacidad (BESS)      -> demand-charge savings
 //     row 28  Ahorro Distribucion (BESS)   -> demand-charge savings
 //     row 31  Recibo final con BESS        -> bill WITH the full system
-//     banners C10 ('Sin PV') / L10 ('Recibo final con BESS') as fallbacks
+//     banners B10 ('Sin PV') / L10 ('Recibo final con BESS') as fallbacks
 //   BOM_v2          G<GRAND_TOTAL>          -> materials MXN (PV + BESS, total)
 //   INSTALLATION_v2 G<GRAND_TOTAL>          -> installation MXN (total)
 //   INPUT_BAAS      term / escalations / discount / O&M / reserve
@@ -37,7 +37,7 @@ var CLIENT_FIN_CELLS = {
   CFE_ROW_AH_CAP:   27,
   CFE_ROW_AH_DIST:  28,
   CFE_ROW_FINAL:    31,
-  CFE_BANNER_SIN_PV: 'C10',
+  CFE_BANNER_SIN_PV: 'B10',
   CFE_BANNER_FINAL:  'L10',
   BOM_SHEET:        'BOM_v2',
   INSTALL_SHEET:    'INSTALLATION_v2'
