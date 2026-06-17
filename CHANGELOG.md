@@ -1,4 +1,42 @@
-## [4.36.0] — 2026-06-17  (T2.1: returns-basis knob + finish the safe SLIDE repoints)
+## [4.37.0] — 2026-06-17  (T3: registry-driven cross-tab consistency guard)
+
+**Locks "single source" structurally: a data registry of every shared figure → its canonical owner
+→ all consumers, checked within tolerance at end of every engine run and in the test suite. Any
+future fork flips it red immediately.**
+
+### Extended — `09d_ConsistencyGuard.js`
+- `SHARED_FIGURE_REGISTRY` — the single-source contract as **data**. 10 figures, each with a
+  canonical owner + every consumer cell (verified addresses): CFE bills sin/con-PV/con-BESS, PV
+  energy savings, BESS savings, CAPEX **cost** vs **offer/sell** (kept as two figures — the dual
+  basis from T2), system size kWp, annual PV generation, and interconnection mode.
+- Source readers (`_consReadSource` dispatch): `cell`, `api` (API_OUTPUT key), `slide`, `banner`
+  (parse `$`/number from text), `rowsum` (sum C:N, optional scale), `diff` (cellA − cellB), `cellstr`.
+- `resolveRegistryReadings(ss, registry)` turns the registry into `checkConsistency`-shaped readings;
+  `partitionConsistencyViolations` (PURE) splits **enforced** forks (flip red) from **pending** forks
+  (`enforced:false`, e.g. interconnection mode → T5) that are reported but don't fail.
+- `assertCrossTabConsistency` is now registry-driven (keeps the sanity invariants); `_META` stamp now
+  records PASS/FAIL **+ the offending figure** + known-fork count. The pure core (`checkConsistency`,
+  `evalInvariants`, `buildConsistencyReadings`) is unchanged — existing tests still pass.
+
+### Wired — `00_Main.js`
+- New **Step 14.1**: `assertCrossTabConsistency(ss, {throwOnFork:false})` after the identity check.
+  Non-fatal; stamps `_META`. Financials/API_OUTPUT consumers absent at engine-run end (CLIENT_FIN is
+  menu-driven) simply skip (<2 sources); the figure guard runs in full after client financials.
+
+### Tests
+- **NEW** `tests_unit/consistency/ConsistencyRegistryTests.gs` (4 PURE): registry well-formedness;
+  enforced-vs-pending partition; every reader kind dispatched against a mock; and the **deliberate
+  fork** proof — a forked consumer flips an enforced figure red while the healthy version stays green.
+- **NEW** `tests_regression/v2/CrossTabConsistencyTests.gs` — `REG_CROSS_TAB_CONSISTENCY`
+  (workbook-dependent, CULLIGAN-guarded): guard `ok == true`, ≥ 8 figures checked, core figures each
+  cross-check ≥ 2 numeric sources.
+
+### Verified green live
+Run against the live CULLIGAN workbook: **9 figures checked, 0 forks**. Every shared figure agrees
+across all consumers (sin-PV 4 sources, PV savings 5, CAPEX cost 3, offer price 4, system size 4,
+…). `interconnection_mode` skips (string-valued, pending T5) — exactly as the plan anticipated.
+
+
 
 **Completes the offer wiring from T2: a cost-vs-sell knob for the return metrics, and the
 remaining product-neutral SLIDE_DATA keys repointed at API_OUTPUT (including a 10× CO2 fix and a

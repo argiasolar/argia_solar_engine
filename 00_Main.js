@@ -1137,6 +1137,20 @@ function runArgiaEngine(opts) {
         'Output consistency check threw (non-fatal): ' + ocErr.message);
     }
 
+    // Step 14.1: cross-tab figure guard (T3) ---------------------------------
+    // Registry-driven: every shared figure (CFE bills, PV/BESS savings, CAPEX
+    // cost vs sell, system size, PV generation) must agree across all its
+    // consumers within tolerance. Stamps PASS/FAIL + offending figure to _META.
+    // Non-fatal (throwOnFork:false); known forks pending T5/T6 are reported, not
+    // failed. Financials/API_OUTPUT consumers may be absent at engine-run end
+    // (CLIENT_FIN is menu-driven) -- those figures simply skip (<2 sources).
+    try {
+      assertCrossTabConsistency(ss, { throwOnFork: false });
+    } catch (xtErr) {
+      engineLog(ss, 'Engine', 'WARNING',
+        'Cross-tab figure guard threw (non-fatal): ' + xtErr.message);
+    }
+
     // Step 14.5: install cost sanity check (3.7.8 / Chunk 3) -----------------
     // Advisory only. Compares the just-computed install cost against
     // industry-typical ranges (PV MXN/Wp, BESS USD/kWh, blended labor MXN/MH).
