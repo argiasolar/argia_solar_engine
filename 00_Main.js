@@ -712,6 +712,7 @@ function onOpen() {
       .addItem('Repoint CFE Source (FINANCE/SLIDE)',    'runRepairFinanceSlideCfeSource')
       .addItem('Repair FINANCE Model (CAPEX/prod/CO2)', 'runRepairFinanceModel')
       .addItem('FINANCE Market Metrics (NPV/IRR/DSCR)', 'runFinanceMarketMetrics')
+      .addItem('Repair FINANCE (all + notes)',          'runRepairFinanceAll')
       .addSeparator()
       // -- Lifecycle -------------------------------------------
       .addItem('Start New Project (reset to defaults)', 'runStartNewProject')
@@ -2053,6 +2054,11 @@ function startNewProjectCore(ss) {
   // 5. Audit refresh so _AUDIT_INPUTS reflects the clean state.
   try { _refreshInputAudit_(); }
   catch (e) { report.errors.push('audit: ' + e.message); }
+
+  // 6. FINANCE: correct (CFE source / CAPEX / production / CO2 / metrics) and
+  //    document (provenance notes) so the new project ships right by default.
+  try { repairFinanceAll(ss); }
+  catch (e) { report.errors.push('finance: ' + e.message); }
 
   return report;
 }

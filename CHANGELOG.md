@@ -1,3 +1,48 @@
+## [4.32.0] — 2026-06-16  (FINANCE finalize: ship-correct-by-default + provenance notes)
+
+**Two goals: new workbooks ship with the FINANCE fixes by default, and every FINANCE number
+carries a plain-language explanation of how it was derived (internal transparency — so the
+team can explain and defend the numbers, not shown to the customer).**
+
+### Added
+- **`02m_FinanceFinalize.js`** — one orchestrator `repairFinanceAll(ss)`:
+  1. `repairFinanceSlideCfeSource` (4.29) — CFE source repoint
+  2. `repairFinanceModel` (4.30) — CAPEX / production / CO2 correctness
+  3. `repairFinanceMarketMetrics` (4.31) — discounted NPV / IRR / DSCR block
+  4. `_finWriteProvenanceNotes` — **provenance notes** (`setNote`) on every key figure
+
+  **Provenance notes** (ASCII-safe Spanish, matching the engine's existing note style)
+  document, in plain language, the formula and the source cells for: CAPEX (`C3`), CFE
+  tariff & payment (`D16`/`D17`), ARGIA tariff & payment (`D19`/`D20`), the legacy nominal
+  NPV (`C4`), loan principal & payment (`I5`/`I7`), and the whole NPV/IRR/IRR-margin/debt-
+  service/DSCR block. Hover any cell to read how it was calculated and which cells feed it
+  — restoring the click-and-trace verifiability that in-sheet formulas gave, for the
+  numbers that are now script-driven. The metrics block is located by its header (works
+  wherever it sits).
+
+- **Wired into `startNewProjectCore`** (step 6) so every new/reset project applies the
+  repairs + notes automatically — new proposals ship corrected + documented by default.
+  *(Tip: run once on the master template so all clones inherit it. This is the first time
+  engine setup writes to FINANCE — deliberate, idempotent, and exactly what "ship correct
+  by default" requires.)*
+- **Menu**: Administrator Panel → **"Repair FINANCE (all + notes)"** (`runRepairFinanceAll`).
+- **`tests_unit/repairs/FinanceFinalizeTests.gs`** — orchestration (4 steps OK on a
+  realistic multi-sheet mock), sub-repair effect (CAPEX `G80→G94`, CFE→`D12`, metrics block
+  appended), notes (14 written: 8 fixed + 6 block, with the right source references),
+  idempotency (header appears once, notes persist), and abort on missing FINANCE.
+
+### Safety
+Each sub-repair is idempotent and self-guarding; `setNote` overwrites (no accumulation);
+the orchestrator captures per-step failures rather than aborting the whole pass. Aborts only
+if FINANCE is entirely missing.
+
+### Apply
+Deploy, then either run **ARGIA → Administrator Panel → Repair FINANCE (all + notes)** once
+per workbook (and once on the master template), or just **Start New Project** — it now
+applies everything. Hover the FINANCE figures to read the derivation notes.
+
+---
+
 ## [4.31.0] — 2026-06-16  (FINANCE market-standard metrics: discounted NPV, IRR, DSCR)
 
 **Makes the FINANCE PPA model a market-standard benchmark.** The model reported `C4`

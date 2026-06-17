@@ -530,8 +530,19 @@
 // since the deal is 100% debt-financed. Header-anchored + idempotent (re-run
 // rewrites in place, never duplicates); aborts if FINANCE or INPUT_BAAS is
 // missing. No engine math changes. See CHANGELOG.md.
+//
+// 4.32.0 — MINOR (2026-06-16). FINANCE finalize: ship-correct-by-default +
+// provenance notes (02m_FinanceFinalize.js). One orchestrator repairFinanceAll()
+// runs the three FINANCE repairs (4.29/4.30/4.31) then writes plain-language
+// derivation notes (ASCII-safe Spanish) on every key FINANCE figure -- CAPEX,
+// CFE/ARGIA tariff & payment, loan, and the NPV/IRR/DSCR block -- so the team
+// can hover any number and see HOW it was calculated and WHICH cells feed it
+// (internal transparency; not shown to the customer). Wired into
+// startNewProjectCore so new/reset projects ship corrected + documented, and
+// exposed as menu item "Repair FINANCE (all + notes)". Idempotent. No engine
+// math changes. See CHANGELOG.md.
 // -----------------------------------------------------------------------------
-var ENGINE_VERSION = '4.31.0';
+var ENGINE_VERSION = '4.32.0';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default
