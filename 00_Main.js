@@ -711,6 +711,7 @@ function onOpen() {
       .addItem('Repair Input Layout (keeps values)',    'runRepairInputLayouts')
       .addItem('Repoint CFE Source (FINANCE/SLIDE)',    'runRepairFinanceSlideCfeSource')
       .addItem('Repair FINANCE Model (CAPEX/prod/CO2)', 'runRepairFinanceModel')
+      .addItem('FINANCE Market Metrics (NPV/IRR/DSCR)', 'runFinanceMarketMetrics')
       .addSeparator()
       // -- Lifecycle -------------------------------------------
       .addItem('Start New Project (reset to defaults)', 'runStartNewProject')

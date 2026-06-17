@@ -520,8 +520,18 @@
 // No engine math changes; runs on demand, repairs FINANCE template formulas
 // only. KNOWN GAP (separate chunk): C4 "NPV" is undiscounted and there is no
 // IRR/DSCR -- a market-standard benchmark pass is proposed next. See CHANGELOG.
+//
+// 4.31.0 — MINOR (2026-06-16). FINANCE market-standard metrics block
+// (02l_FinanceMarketMetrics.js, menu: Administrator Panel -> "FINANCE Market
+// Metrics (NPV/IRR/DSCR)"). Adds discounted NPV, project IRR, IRR-vs-target,
+// and a loan-term-aware DSCR (min/avg) as LIVE formulas, reusing the existing
+// ARGIA discount rate INPUT_BAAS!D15 (WACC) and target IRR INPUT_BAAS!D14 -- no
+// duplicate input. Unlevered project basis (revenue vs CAPEX, matching C4),
+// since the deal is 100% debt-financed. Header-anchored + idempotent (re-run
+// rewrites in place, never duplicates); aborts if FINANCE or INPUT_BAAS is
+// missing. No engine math changes. See CHANGELOG.md.
 // -----------------------------------------------------------------------------
-var ENGINE_VERSION = '4.30.0';
+var ENGINE_VERSION = '4.31.0';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default

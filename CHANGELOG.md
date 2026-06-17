@@ -1,3 +1,59 @@
+## [4.31.0] — 2026-06-16  (FINANCE market-standard metrics: discounted NPV, IRR, DSCR)
+
+**Makes the FINANCE PPA model a market-standard benchmark.** The model reported `C4`
+"NPV" = `SUM(D30:X30) − C3` — nominal profit, **undiscounted** — with no IRR or DSCR.
+This adds the standard project-finance metrics as **live formulas**.
+
+### Added
+- **`02l_FinanceMarketMetrics.js`** — appends/refreshes a metrics block on the FINANCE
+  sheet:
+
+  | Metric | Formula |
+  |---|---|
+  | Discount rate (WACC) | `=INPUT_BAAS!D15` |
+  | ARGIA target IRR | `=INPUT_BAAS!D14` |
+  | Project cashflow | `[-C3, =D30 … =X30]` (t0 = −CAPEX) |
+  | Discounted NPV (project) | `=-C3+NPV(INPUT_BAAS!D15,D30:X30)` |
+  | IRR (project) | `=IFERROR(IRR(cashflow),"n/a")` |
+  | IRR margin vs target | `=IRR − INPUT_BAAS!D14` |
+  | Annual debt service | `=I7*12` |
+  | DSCR by year (loan term) | `=IF(COLUMN()-COLUMN($D$row)<$F$7, revenue/debt, "")` |
+  | Min / Avg DSCR | `=MIN(…)` / `=AVERAGE(…)` |
+
+  - **Discount rate is single-source.** ARGIA's WACC already lives at `INPUT_BAAS!D15`
+    (12%) and target IRR at `INPUT_BAAS!D14` (15%) — both populated regardless of deal
+    type and already used by the BaaS NPV. We reuse them rather than mint a divergent
+    cell. They are independent of the BanBajío loan rate (`F9`).
+  - **Unlevered project basis** (revenue vs CAPEX, matching `C4`); levered/equity IRR is
+    undefined at 100% debt (`F8 = 1.0`).
+  - **DSCR follows the loan term dynamically** — gated by `F7` via a column offset, not a
+    hardcoded window.
+
+- **Menu**: Administrator Panel → **"FINANCE Market Metrics (NPV/IRR/DSCR)"**
+  (`runFinanceMarketMetrics`).
+- **`tests_unit/repairs/FinanceMarketMetricsTests.gs`** — append placement, every key
+  formula string, the cashflow row, idempotency (header appears exactly once on re-run),
+  and abort on missing FINANCE / INPUT_BAAS.
+
+### Safety
+Aborts if FINANCE or INPUT_BAAS is missing (no `#REF!` source). Header-anchored +
+idempotent (found → rewritten in place, not found → appended after the last content row;
+never duplicated). Additive — writes only its own block, touches no existing content.
+
+### Verification
+The repair's formula construction is unit-tested. The numeric results (NPV/IRR/DSCR) are
+native Google Sheets functions, verified on a live workbook. Worked reference (verifies the
+mechanics): CAPEX 1,000,000; revenue 200,000/yr × 10; WACC 10% → **NPV ≈ 228,913**,
+**IRR ≈ 15.1%**; debt service 150,000/yr → **DSCR = 1.33**. Directional checks on the live
+sheet: discounted NPV should sit below the undiscounted `C4`; IRR a few points around
+12–15% if the PPA is sound; Min DSCR > 1.0 means debt is covered.
+
+### Apply
+Deploy, then run **ARGIA → Administrator Panel → FINANCE Market Metrics (NPV/IRR/DSCR)**
+once per workbook (idempotent). The block appears below the existing FINANCE content.
+
+---
+
 ## [4.30.0] — 2026-06-16  (FINANCE model correctness: CAPEX BOM ref, Y00 production floor, CO2 factor)
 
 **The FINANCE/PPA numbers were wrong, not just the CFE tariff. Three signature-matched,
