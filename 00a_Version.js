@@ -504,8 +504,24 @@
 // aborts wholesale if BESS_SIMULATION is missing. No engine math changes;
 // old projects recalc identically -- this only repoints three legacy template
 // formulas. See CHANGELOG.md.
+//
+// 4.30.0 — MINOR (2026-06-16). FINANCE model correctness repair
+// (02k_RepairFinanceModel.js, menu: Administrator Panel -> "Repair FINANCE
+// Model (CAPEX/prod/CO2)"). Three signature-matched, idempotent fixes to the
+// legacy FINANCE PPA sheet:
+//   1. CAPEX (C3) read BOM_v2!G80 (the BESS battery LINE ITEM, ~$28.8M) instead
+//      of BOM_v2!G94 (the BOM grand total, ~$36.7M -- the cell the engine's own
+//      CAPEX reader uses). v2 template drift. The whole model hangs off C3
+//      (I5 loan principal = C3*F8, read by 41M_FINANCE_CALCULATOR), so this one
+//      fix corrects the NPV, the cash ROI (C34=C3/1.16) AND the loan schedule.
+//   2. Year-0 production (D15) could go negative when interconnection delay
+//      pushes go-live into the next year; now floored with MAX(0, ...).
+//   3. CO2 factor 0.438 -> 0.444 (verified FE-SEN 2024), per the CO2 invariant.
+// No engine math changes; runs on demand, repairs FINANCE template formulas
+// only. KNOWN GAP (separate chunk): C4 "NPV" is undiscounted and there is no
+// IRR/DSCR -- a market-standard benchmark pass is proposed next. See CHANGELOG.
 // -----------------------------------------------------------------------------
-var ENGINE_VERSION = '4.29.0';
+var ENGINE_VERSION = '4.30.0';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default

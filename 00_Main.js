@@ -710,6 +710,7 @@ function onOpen() {
       // -- Repairs ---------------------------------------------
       .addItem('Repair Input Layout (keeps values)',    'runRepairInputLayouts')
       .addItem('Repoint CFE Source (FINANCE/SLIDE)',    'runRepairFinanceSlideCfeSource')
+      .addItem('Repair FINANCE Model (CAPEX/prod/CO2)', 'runRepairFinanceModel')
       .addSeparator()
       // -- Lifecycle -------------------------------------------
       .addItem('Start New Project (reset to defaults)', 'runStartNewProject')

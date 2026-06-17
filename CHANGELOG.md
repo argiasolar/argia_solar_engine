@@ -1,3 +1,62 @@
+## [4.30.0] — 2026-06-16  (FINANCE model correctness: CAPEX BOM ref, Y00 production floor, CO2 factor)
+
+**The FINANCE/PPA numbers were wrong, not just the CFE tariff. Three signature-matched,
+idempotent fixes, all in the legacy FINANCE sheet (run on demand).**
+
+> Investigated against a live CULLIGAN workbook + the full FINANCE -> 41M_FINANCE_CALCULATOR chain.
+
+### Added
+- **`02k_RepairFinanceModel.js`** — repair with three fixes, each fired only on its
+  exact known-bad formula signature (so it self-guards and is idempotent):
+
+  1. **CAPEX stale BOM reference (the big one).** `FINANCE!C3 = (INSTALLATION_v2!G9 +
+     BOM_v2!G80) / (1 - INPUT_PROJECT!D35)`. `BOM_v2!G80` is the **BESS battery line
+     item** (~$28.8M), not the BOM grand total. The grand total is `BOM_v2!G94`
+     ($36.7M) — the exact cell the engine's own CAPEX reader uses
+     (`BOM_ROW.GRAND_TOTAL = 94`). FINANCE silently dropped the entire PV BOM and most
+     of the BESS BOS, landing at $34.76M near the real figure only by coincidence.
+     v2 template drift. `INSTALLATION_v2!G9` is correct (it IS the install grand total).
+     **The whole model hangs off `C3`** — `I5 (loan principal) = C3*F8`, read by
+     `41M_FINANCE_CALCULATOR` — so this one fix corrects the PPA NPV, the cash ROI
+     (`C34 = C3/1.16`), the loan principal, the monthly payment, the total interest,
+     **and the entire amortization schedule**. `G80 -> G94`.
+
+  2. **Year-0 production goes negative.** `D15 = (12 - MONTH(TODAY()) - C5) *
+     (SUM(CFE_SIMULATION!O8)/12)/1000`, where `C5` is the interconnection delay in
+     months. When current month + delay > 12 (e.g. a June run + 8-month interconnect →
+     go-live next Feb), the term goes negative → negative MWh and negative "CO2 savings."
+     Floored with `MAX(0, 12 - MONTH(TODAY()) - C5)`.
+
+  3. **Stale CO2 factor.** FINANCE CO2 rows used `0.438`; the engine standardized on the
+     verified FE-SEN 2024 value `0.444` (CO2 may never appear without that factor — a
+     structural invariant). `0.438 -> 0.444` wherever a `0.438*` factor appears.
+
+- **Menu**: Administrator Panel → **"Repair FINANCE Model (CAPEX/prod/CO2)"**
+  (`runRepairFinanceModel`).
+- **`tests_unit/repairs/RepairFinanceModelTests.gs`** — happy path / no-collateral-damage
+  (`C34`, full-year `E15` untouched) / idempotent (no MAX double-wrap) / partial
+  (already-fixed CAPEX skipped) / abort (FINANCE missing).
+
+### Safety
+Aborts if FINANCE is missing; signature-matched (only the exact bad pattern is touched);
+idempotent (post-fix formula no longer matches; production fix refuses to double-wrap MAX);
+array-formula safe (ARRAYFORMULA cells skipped); write-verified (read back after set).
+
+### Known gap — proposed next chunk (market-standard benchmark)
+After these fixes the FINANCE numbers are *correct*, but the PPA model is not yet
+market-standard: `C4` "NPV" is `Σ(payments) − CAPEX` — **undiscounted** — and there is no
+IRR or DSCR. A true benchmark = discounted NPV at the project cost of capital (the model is
+100% debt-financed at `F9 = 12.66%`, so WACC ≈ the loan rate), IRR, and DSCR against the
+`41M_FINANCE_CALCULATOR` debt service. That is a *structural* addition to the template and
+will ship as its own confirmed chunk.
+
+### Apply
+Deploy, then run **ARGIA → Administrator Panel → Repair FINANCE Model (CAPEX/prod/CO2)**
+once per workbook (idempotent). Verify FINANCE CAPEX now reflects the full system, the loan
+schedule in `41M_FINANCE_CALCULATOR` updates, and Y00 production is ≥ 0.
+
+---
+
 ## [4.29.0] — 2026-06-16  (FINANCE/PPA + SLIDE_DATA: repoint CFE source off the dead INPUT_CFE stub)
 
 **Fixes the FINANCE/PPA economics ($0 CFE tariff -> DSCR 0%, %savings #DIV/0!) and the
