@@ -70,9 +70,14 @@ function _cfinSumCfeRow(cfe, row) {
 
 // ---------------------------------------------------------------------------
 // _cfinReadBills(ss) -> { billWithoutMxn, billWithMxn, ok, warnings }
-// Sin-sistema bill = con-PV (row 19) + ahorro-vs-sin-PV (row 20), the same
-// monthly series behind the C10 banner. Bill WITH system = recibo final con
-// BESS (row 31). Banner parses (reusing 30b's _baasParseBanner) as fallbacks.
+// Sin-sistema bill = the ONE canonical engine base in BESS_SIMULATION!D12
+// (written as a value by writeAuthoritativeCfeSavings / 20b -- the same cell
+// the CFE_OUTPUT banner, SLIDE_DATA and FINANCE all read). T1 repoint: read it
+// directly instead of reconstructing con-PV (row 19) + ahorro (row 20), so
+// CLIENT_FINANCIALS consumes the identical figure as every other consumer and
+// can no longer fork from them. Fallbacks preserve standalone robustness:
+// D12 -> row19+row20 -> C10 banner parse. Bill WITH system = recibo final con
+// BESS (row 31), with the L10 banner as fallback.
 // ---------------------------------------------------------------------------
 function _cfinReadBills(ss) {
   var C = CLIENT_FIN_CELLS;
@@ -84,9 +89,24 @@ function _cfinReadBills(ss) {
                       + 'Run the engine + CFE output first.'] };
   }
 
-  var conPv    = _cfinSumCfeRow(cfe, C.CFE_ROW_CON_PV);
-  var ahorroPv = _cfinSumCfeRow(cfe, C.CFE_ROW_AHORRO_PV);
-  var sinPv    = conPv + ahorroPv;
+  // PRIMARY: canonical engine base, BESS_SIMULATION!D12 (value written by 20b).
+  var sinPv = 0;
+  var bsim = ss.getSheetByName('BESS_SIMULATION');
+  if (bsim) {
+    var d12 = bsim.getRange('D12').getValue();
+    if (typeof d12 === 'number' && d12 > 0) sinPv = d12;
+  }
+  // FALLBACK 1: con-PV (row 19) + ahorro-vs-sin-PV (row 20), the rendered series.
+  if (!(sinPv > 0)) {
+    var conPv    = _cfinSumCfeRow(cfe, C.CFE_ROW_CON_PV);
+    var ahorroPv = _cfinSumCfeRow(cfe, C.CFE_ROW_AHORRO_PV);
+    sinPv = conPv + ahorroPv;
+    if (sinPv > 0) {
+      warnings.push('ClientFin: sin-PV from CFE_OUTPUT row19+row20 fallback '
+                  + '(BESS_SIMULATION!D12 canonical base unavailable).');
+    }
+  }
+  // FALLBACK 2: the C10 banner parse.
   if (!(sinPv > 0)) {
     sinPv = _baasParseBanner(cfe.getRange(C.CFE_BANNER_SIN_PV).getValue());
     warnings.push('ClientFin: sin-PV annual fell back to ' + C.CFE_BANNER_SIN_PV

@@ -2,7 +2,8 @@
 // ARGIA TESTS -- tests_unit/calc/ClientFinWiringTests.gs
 // -----------------------------------------------------------------------------
 // [Track B P0] Locks the runClientFinancials wiring readers:
-//   - _cfinReadBills: sin-PV = row19+row20, with = row31, banner fallbacks
+//   - _cfinReadBills: sin-PV = BESS_SIMULATION!D12 (canonical engine base),
+//     fallback row19+row20, then C10 banner; with = row31, L10 fallback
 //   - _cfinReadCapexTotalMxn: BOM grand total + INSTALLATION grand total
 //   - _cfinReadDemandSavings: rows 27+28
 //   - _cfinReadEnergyKwh: row 15
@@ -49,10 +50,12 @@ registerTest({
   fn: function (t, ctx) {
     t.suite('UNIT calc/client_financials: wiring readers');
 
-    // -- CASE 1: fully populated (flat monthly values, hand-computable) ------
-    // row19 con-PV 100k/mo, row20 ahorro-PV 50k/mo -> sinPV 1.8M annual
+    // -- CASE 1: fully populated, canonical D12 present (the happy path) -----
+    // BESS_SIMULATION!D12 = 1.8M is the canonical engine base (written by 20b).
+    // row19 con-PV 100k/mo, row20 ahorro-PV 50k/mo also reconstruct to 1.8M.
     // row31 final 80k/mo -> 0.96M; rows 27/28 -> 180k; row15 50k kWh -> 600k
     var ss1 = _cfinMockSs({
+      'BESS_SIMULATION': { 'D12': 1800000 },
       'CFE_OUTPUT_v2': _cfinCfeCells({ 15: 50000, 19: 100000, 20: 50000,
                                        27: 10000, 28: 5000, 31: 80000 }),
       'BOM_v2':          (function () { var c = {}; c[BOM_ROW.GRAND_TOTAL + ',' + BOM_COL.TOTAL_MXN] = 12000000; return c; })(),
@@ -60,10 +63,19 @@ registerTest({
     });
 
     var bills1 = _cfinReadBills(ss1);
-    t.assert('bills: sin-PV = 12x(100k+50k) = 1.8M', 1800000, bills1.billWithoutMxn);
+    t.assert('bills: sin-PV = canonical D12 = 1.8M', 1800000, bills1.billWithoutMxn);
     t.assert('bills: with system = 12x80k = 960k',   960000,  bills1.billWithMxn);
     t.assertTrue('bills: ok', bills1.ok);
-    t.assert('bills: no warnings on direct read', 0, bills1.warnings.length);
+    t.assert('bills: no warnings on canonical D12 read', 0, bills1.warnings.length);
+
+    // -- CASE 1b: D12 absent -> row19+row20 fallback, value intact, 1 warning -
+    var ss1b = _cfinMockSs({
+      'CFE_OUTPUT_v2': _cfinCfeCells({ 19: 100000, 20: 50000, 31: 80000 })
+    });
+    var bills1b = _cfinReadBills(ss1b);
+    t.assert('fallback: sin-PV from row19+row20 = 1.8M', 1800000, bills1b.billWithoutMxn);
+    t.assert('fallback: exactly 1 warning (D12 unavailable)', 1, bills1b.warnings.length);
+    t.assertTrue('fallback: still ok', bills1b.ok);
 
     var capex1 = _cfinReadCapexTotalMxn(ss1);
     t.assert('capex: materials from BOM G' + BOM_ROW.GRAND_TOTAL, 12000000, capex1.materialsMxn);

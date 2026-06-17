@@ -29,11 +29,21 @@
 //     audited function in 04a (calcCfeBillWithPv / calcBessImpact both build on
 //     it). row 39 is NOT touched.
 //
-// SAFETY: rows 39/41/D12 verified to be plain per-cell formulas (no array
-//   formulas), so setValues over C41:N41 is safe under the array-formula rule.
+// SAFETY: rows 39/41 and D12/D13/D14 verified to be plain per-cell formulas/
+//   values (no array formulas), so setValues/setFormula are safe under the
+//   array-formula rule.
+//
+// T1 (v4.34.0) -- CANONICAL BASE SURFACED HERE:
+//   In addition to row 41, this writer now surfaces the single canonical sin-PV
+//   base into BESS_SIMULATION!D12 as a VALUE (= sum of the 12 engine no-PV
+//   bills). This replaces the legacy template formula D12 = O39 + O41 + O40,
+//   whose +O40 term double-counted the FACTURACION_NETA export credit and forked
+//   the customer-facing number from CLIENT_FINANCIALS. D14 = CFE_SIMULATION!O39
+//   (audited con-PV), D13 = D14-D12 (derived -ahorro). See surfaceCfeBaseline_.
 //
 // ARCHITECTURE (Node-self-test friendly):
 //   computeAuthoritativeCfeSavings(monthlyInputs, tarMonths, sheetConPv)  PURE
+//   surfaceCfeBaseline_(annualBase)                                       PURE
 //   writeAuthoritativeCfeSavings(ss)                                      LIVE
 // =============================================================================
 
@@ -72,6 +82,43 @@ function computeAuthoritativeCfeSavings(monthlyInputs, tarMonths, sheetConPv) {
     base.push(b); conPv.push(c); savings.push(s);
   }
   return { base: base, conPv: conPv, savings: savings, warnings: warnings };
+}
+
+/**
+ * Emit the BESS_SIMULATION D12/D13/D14 cell-write spec from the canonical
+ * engine numbers. PURE: no Spreadsheet access, no sheet reads.
+ *
+ * THE CANONICAL RULE (T1): the sin-PV base is the DIRECT engine annual bill
+ *   (sum of calcCfeBill(PV=0).total over 12 months) -- surfaced as a VALUE in
+ *   D12, never the legacy add-back reconstruction.
+ *
+ *   LEGACY (deleted): D12 = CFE_SIMULATION!O39 + O41 + O40
+ *     = con-PV + savings + export-credit. The +O40 term double-counted the
+ *     FACTURACION_NETA export credit (O40 = 0 only for no-export modes such as
+ *     CULLIGAN's MEDICION_NETA), so D12 silently OVERSTATED the base by the
+ *     export credit for any net-billing project. Every D12 consumer
+ *     (CFE_OUTPUT banner, SLIDE_DATA, FINANCE) inherited that error, while
+ *     CLIENT_FINANCIALS reconstructed O39+O41 (no +O40) and diverged.
+ *
+ *   FIX: d12 === annualBase, full stop. There is NO code path by which an
+ *   export credit can enter this value. D14 (con-PV) stays the sheet's audited
+ *   cascade (=CFE_SIMULATION!O39); D13 (-ahorro) is DERIVED (=D14-D12) so the
+ *   column reconciles exactly (D12 + D13 = D14, i.e. base - ahorro = con-PV)
+ *   in every interconnection mode, no O40 contamination.
+ *
+ * @param {number} annualBase  sum of the 12 engine no-PV monthly bills
+ * @return {Object} { d12:number, d13Formula:string, d14Formula:string }
+ */
+function surfaceCfeBaseline_(annualBase) {
+  var base = Number(annualBase);
+  if (!isFinite(base)) {
+    throw new Error('surfaceCfeBaseline_: annualBase not finite (' + annualBase + ')');
+  }
+  return {
+    d12:        base,                       // canonical engine base, as a VALUE
+    d13Formula: '=D14-D12',                 // -ahorro, derived, always reconciles
+    d14Formula: '=CFE_SIMULATION!O39'       // con-PV = audited sheet cascade
+  };
 }
 
 /** Map buildFullBillFromInputCfe monthly arrays + context -> calcCfeBill inp. PURE.
@@ -188,12 +235,34 @@ function writeAuthoritativeCfeSavings(ss) {
 
   // Overwrite C41:N41 with engine savings (per-cell formulas verified, no arrays).
   cs.getRange(41, 3, 1, 12).setValues([res.savings]);
-  SpreadsheetApp.flush();
 
   var annual = annualBase - annualConPv;
+
+  // SURFACE THE CANONICAL BASE (T1): BESS_SIMULATION!D12 holds the DIRECT engine
+  // annual base as a VALUE -- the single source every consumer reads (CFE_OUTPUT
+  // banner, SLIDE_DATA, FINANCE via 02j; CLIENT_FINANCIALS via 31a). This
+  // replaces the legacy template formula D12 = O39 + O41 + O40, whose +O40 term
+  // double-counted the FACTURACION_NETA export credit. D14 stays the audited
+  // con-PV cascade; D13 is derived so the column reconciles in every mode.
+  var bs = ss.getSheetByName('BESS_SIMULATION');
+  if (bs) {
+    var spec = surfaceCfeBaseline_(annualBase);
+    bs.getRange('D14').setFormula(spec.d14Formula);  // con-PV = CFE_SIMULATION!O39
+    bs.getRange('D12').setValue(spec.d12);            // canonical engine base (value)
+    bs.getRange('D13').setFormula(spec.d13Formula);   // -ahorro = D14-D12 (derived)
+    bs.getRange('D12').setNote(
+      'ARGIA canonical CFE base (sin PV): sum of calcCfeBillAnnual(PV=0) over 12 '
+      + 'months, per-month GDMTH tariffs. Written by writeAuthoritativeCfeSavings '
+      + '(20b). NOT the legacy O39+O41+O40 reconstruction (which double-counted '
+      + 'the FACTURACION_NETA export credit O40).');
+  } else {
+    res.warnings.push('BESS_SIMULATION sheet not found -- D12 canonical base NOT surfaced');
+  }
+
+  SpreadsheetApp.flush();
 
   if (res.warnings.length && typeof Logger !== 'undefined' && Logger.log) {
     Logger.log('writeAuthoritativeCfeSavings warnings: ' + res.warnings.join(' | '));
   }
-  return { ok: true, annualSavings: annual, warnings: res.warnings };
+  return { ok: true, annualSavings: annual, annualBase: annualBase, warnings: res.warnings };
 }

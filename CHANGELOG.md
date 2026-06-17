@@ -1,4 +1,50 @@
-## [4.33.0] — 2026-06-17  (FINANCE metrics block: professional styling + DSCR window fix)
+## [4.34.0] — 2026-06-17  (T1: single canonical "CFE bill, sin PV" base)
+
+**One canonical annual sin-PV figure, owned by the GDMTH engine, read by every consumer —
+and the latent FACTURACION_NETA export-credit double-count removed.**
+
+### Root cause
+`BESS_SIMULATION!D12` (the customer-facing sin-PV base that CFE_OUTPUT's banner, SLIDE_DATA
+and FINANCE all read via 02j) was a workbook formula `= CFE_SIMULATION!O39 + O41 + O40`
+(con-PV + savings + export-credit). The `+O40` term double-counted the FACTURACION_NETA
+export credit, so for any net-billing project D12 **overstated** the base by the export credit.
+Meanwhile CLIENT_FINANCIALS reconstructed `O39 + O41` (no `+O40`) and silently diverged.
+CULLIGAN (MEDICION_NETA) has `O40 = 0`, which hid the fork in the golden master.
+
+### Changed — `20b_WriteAuthoritativeCfeSavings.js`
+- New PURE helper `surfaceCfeBaseline_(annualBase)` returns the D12/D13/D14 cell-write spec.
+  **Invariant: `d12 === annualBase`** — the direct engine base (Σ `calcCfeBill(PV=0).total`
+  over 12 months). There is no code path by which an export credit can enter it.
+- `writeAuthoritativeCfeSavings(ss)` now also surfaces the canonical base: writes
+  `D12 = annualBase` (VALUE, with a provenance note), `D14 = '=CFE_SIMULATION!O39'` (audited
+  con-PV), `D13 = '=D14-D12'` (derived −ahorro). The column reconciles exactly
+  (`D12 + D13 = D14 = con-PV`) in **every** interconnection mode. Returns `annualBase`.
+  The hard sanity gate (`base > con-PV`, never poison on failure) is unchanged.
+
+### Changed — `31a_RunClientFinancials.js`
+- `_cfinReadBills` now reads the canonical base from `BESS_SIMULATION!D12` directly, with
+  `row19+row20` and the C10 banner as fallbacks. CLIENT_FINANCIALS now consumes the identical
+  figure as every other consumer and can no longer fork from them.
+
+### Tests
+- **NEW** `tests_unit/calc/CfeBaselineSavingsTests.gs` (4 PURE unit tests): reproduces the
+  CULLIGAN no-PV base 12,838,765.45 from first principles (baked GDMTH GOLFO NORTE tariffs,
+  fpThreshold 0.90); locks the savings identity; locks the `surfaceCfeBaseline_` spec; and
+  **UNIT_CFE_BASELINE_EXPORT_SAFETY** proves D12 equals the engine base, NOT the legacy
+  `O39+O41+O40` add-back (the `+O40` double-count is structurally gone).
+- **NEW** `tests_regression/v2/CfeBaseAndSavingsConsistencyTests.gs` —
+  **REG_CFE_BASE_AND_SAVINGS** (workbook-dependent, CULLIGAN-guarded): D12 == rendered detail
+  (row19+row20) == banner C10 == CLIENT_FIN billWithoutMxn, all within 0.01%; savings identity
+  `Σrow41 = D12 − O39`; column reconciliation `D12 + D13 = D14 = O39`; `O40 = 0` for CULLIGAN.
+- **Updated** `tests_unit/calc/ClientFinWiringTests.gs`: CASE 1 now supplies the canonical
+  `BESS_SIMULATION!D12` (happy path, 0 warnings); new CASE 1b locks the row19+row20 fallback.
+
+### Golden master
+**CULLIGAN sin-PV base = 12,838,765.45 is UNCHANGED** (it is MEDICION_NETA, so `O40 = 0` and
+the old reconstruction already equalled the engine base). This is a structural single-source
+fix with a zero-delta golden; the divergence it removes only manifested on net-billing projects.
+
+
 
 **Make the MARKET-STANDARD METRICS block read like the financial section above instead of
 raw decimals, and fix the misleading Min DSCR = 0.**
