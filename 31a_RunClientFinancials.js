@@ -284,6 +284,23 @@ function runClientFinancials(ss, opts) {
     valorDeCompra: valorDeCompra   // [4.21.0] buyout schedule, may be null
   });
 
+  // [T2 / 4.35.0] API_OUTPUT -- single offer interface. Written here (the offer
+  // generation flow) because it needs the canonical financials computed above.
+  // fin/capex are passed through so API_OUTPUT never re-runs the engine. Then
+  // repoint the SAFE SLIDE_DATA figure keys at API_OUTPUT (the 5 basis-conflicted
+  // figures are deferred -- see WriteApiOutputV2 / CHANGELOG).
+  try {
+    if (typeof writeApiOutputV2 === 'function') {
+      var apiRet = writeApiOutputV2(ss, { fin: fin, capex: capex });
+      warnings = warnings.concat(apiRet.warnings || []);
+      if (typeof repairSlideDataFromApiOutput === 'function') {
+        repairSlideDataFromApiOutput(ss);
+      }
+    }
+  } catch (apiErr) {
+    warnings.push('ClientFin: API_OUTPUT write skipped: ' + apiErr.message);
+  }
+
   return {
     ok: (bills.ok && capex.ok),
     warnings: warnings,

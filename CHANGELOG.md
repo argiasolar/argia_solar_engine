@@ -1,4 +1,60 @@
-## [4.34.1] — 2026-06-17  (T1 follow-up: banner cell fix surfaced by live CULLIGAN E2E)
+## [4.35.0] — 2026-06-17  (T2: API_OUTPUT — the single offer interface)
+
+**One flat tab holding every canonical offer figure, written as values from the owning module
+(no recomputation, nothing that can `#REF!`). The offer/presentation reads API_OUTPUT; API_OUTPUT
+reads the owners.**
+
+### Added — `writers_v2/WriteApiOutputV2.js`
+- `API_OUTPUT_FIELDS` — the canonical offer field spec (26 fields: identity, size, generation,
+  CFE sin/con-PV/con-BESS, savings, CAPEX, financials, CO2, interconnection mode, status).
+- `buildApiOutputRows(sources)` — PURE builder → `{key, value, units, source}` rows.
+- `writeApiOutputV2(ss, {fin, capex})` — resolves each field from its owner and renders the
+  `API_OUTPUT` tab. CFE from BESS_SIMULATION D12/D14/D18 (T1); size from MDC_v2; generation from
+  CFE_OUTPUT row 15 (solar MWh); mode from `INPUT_CFE!C41`; offer price from PROJECT_CARD_v2 sell
+  TOTAL; financials passed through from `runClientFinancials` (never re-run).
+- `repairSlideDataFromApiOutput(ss)` — repoints the **safe** SLIDE_DATA figure keys at API_OUTPUT
+  via `INDEX/MATCH` (label-anchored, idempotent, guarded — never clobbers a hand-edited cell).
+
+### Two CAPEX bases, on purpose
+`capex_cost_mxn` (model/cost, 37.05M) and `offer_price_mxn` (what the customer pays / sell price,
+43.59M) are **separate keys**. Likewise `pv_only_savings_year1_mxn` vs `full_system_savings_year1_mxn`.
+Conflating them is the silent fork this tab exists to kill. Cost-basis financials are tagged
+`[cost basis]` in the source column.
+
+### Wired — `31a_RunClientFinancials.js`
+- After `writeClientFinancialsV2`, calls `writeApiOutputV2` (offer-generation flow, where the
+  canonical financials exist) then `repairSlideDataFromApiOutput`. Fail-soft.
+
+### SLIDE_DATA repoint — SAFE subset only (2 of 7)
+Investigation found SLIDE_DATA and CLIENT_FINANCIALS disagree on 6 customer-facing figures on a
+**basis** level, not broken formulas:
+
+| SLIDE_DATA (offer) | engine canonical | fork |
+|---|---|---|
+| annual_savings 1,928,019 | year-1 2,728,149 | PV-only vs PV+BESS |
+| capex_total 43,590,463 | CAPEX 37,051,893 | sell vs cost |
+| roi_years 13.6 | payback 11.1 | sell vs cost basis |
+| irr_10yr −3.1% | IRR +4.8% | 10yr/sell vs 15yr/cost (sign flip) |
+| co2_tons 6,153 | CO2 y1 587 | ~10× |
+| annual_mwh 4,475 | solar gen 1,321 MWh | consumption mislabelled as generation |
+
+Repointing these would **silently restate the offer**, so only the two no-change-of-meaning keys
+were repointed: `annual_energy_cost` → `cfe_bill_sin_pv_mxn` (already = D12) and `system_kwp` →
+`system_kwp_dc` (was live `#REF!` — strict fix). **The 6 basis-conflicted figures are DEFERRED to a
+basis-decision task** (sell-vs-cost is the "parked pending direction" item from 4.33.0). API_OUTPUT
+carries both bases so that decision is unblocked without rework. `PROJECT_STATUS` ships as a
+placeholder (`PENDING_T4`) until T4 builds the status engine.
+
+### Tests
+- **NEW** `tests_unit/writers_v2/ApiOutputV2Tests.gs` (4 PURE): locks the 26-key set (no dupes,
+  every field has provenance); pure builder maps sources→rows and keeps the full key set on partial
+  input; dual-bases anti-fork guard; every T2-enumerated offer field has a key.
+- **NEW** `tests_regression/v2/ApiOutputConsistencyTests.gs` — **REG_API_OUTPUT** (workbook-dependent,
+  CULLIGAN-guarded): API_OUTPUT figures == their owners within 0.01% (CFE three-way, capex cost vs
+  sell, full-system savings, NPV/IRR/LCOE/CO2, size); cost ≠ sell; and the safe SLIDE repoints
+  resolve through API_OUTPUT (`system_kwp` no longer `#REF!`).
+
+
 
 **The live CULLIGAN E2E on 4.34.0 returned 1 failure — `REG_CFE_BASE_AND_SAVINGS` ▸ "banner
 consumer agrees" — which traced to a wrong banner CELL, not the engine. The canonical base
