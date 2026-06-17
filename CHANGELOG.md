@@ -1,3 +1,34 @@
+## [4.28.1] — 2026-06-16  (CULLIGAN fixture fidelity: restore Helioscope DC wire)
+
+**Fixes the 22 remaining CULLIGAN E2E failures, which all cascade from one missing
+fixture field — not an engine bug.**
+
+> The CULLIGAN fixture carried `helioscopeMonthly` (PV production) but had lost
+> `dcStringWireM` (INPUT_DESIGN C30, the Helioscope DC string-wire total). With it
+> at 0 the engine correctly falls back to the geometry ESTIMATE for DC cable length:
+>   75 strings x 2 x ~115 m x 1.2 = 20792 m   (vs the locked Helioscope 6111 m)
+> That over-count cascaded into DC conductor (10->8 AWG), voltage drop (0.75->1.41%),
+> DC cost ($49.6k->$73.1k), CAPEX (+1.2%), and every CAPEX-derived financial
+> (NPV / IRR / payback / ROI / LCOE / y15) plus PROJECT_CARD sell/profit.
+>
+> PROOF it was Helioscope, not a drifted estimate: the estimate has a hard floor of
+> >=12,600 m for CULLIGAN (75 x 2 x >=70 m base x 1.2), so 6111 m could never have
+> come from it. 6111 m was always the Helioscope value.
+>
+> FIX: restore `dcStringWireM: 5820` to the fixture (5820 x 1.05 waste = 6111 m).
+> The same field drives the HELIOSCOPE-AVG vdrop run (5820/75 = 77.6 m), reproducing
+> the locked 0.75% drop / 10 AWG conductor.
+>
+> NOT a baseline re-lock: the engine's Helioscope-preferred behaviour is correct;
+> the fixture was simply incomplete.
+>
+> SEPARATE, STILL OPEN (surfaced in this run's screenshots — distinct subsystems):
+>   - INPUT_CFE rows 30-37 bill display formulas error to #VALUE! / #DIV/0!
+>     (workbook-template formula bug; also the likely source of SLIDE_DATA
+>     [annual_energy_cost] = #VALUE!). My 4.28.0 repoint already keeps CFE_OUTPUT
+>     and CLIENT_FINANCIALS off this broken cell.
+>   - FINANCE (PPA) sheet shows CFE Tariff = $0.0000 -> DSCR 0%, % savings #DIV/0!.
+>     PPA-module wiring; CFE tariff/payment not reaching the FINANCE sheet.
 ## [4.28.0] — 2026-06-16  (Phase 0.1 single-source CFE: real fix)
 
 **Completes the single-source CFE bill and removes the silent split that 4.27.0 only half-closed. The customer's sin-PV/savings was being computed FOUR different ways; this collapses them onto one engine base.**

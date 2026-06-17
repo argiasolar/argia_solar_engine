@@ -92,6 +92,13 @@ var CULLIGAN_BASELINE = {
       distAcProt: 15,
       distGrid: 50,
       groundingLen: 2500,
+      // Helioscope DC string-wire total (INPUT_DESIGN C30). Real CULLIGAN had a
+      // Helioscope import; without it the engine falls back to the geometry
+      // ESTIMATE (75 strings x 2 x ~115 m x 1.2 = 20792 m), which over-counts
+      // dispersed layouts. 5820 x 1.05 waste = 6111 m = the locked baseline, and
+      // the same value drives the HELIOSCOPE-AVG vdrop (5820/75 = 77.6 m) ->
+      // 0.75% drop / 10 AWG. Restoring it fixes the entire DC->CAPEX->finance cascade.
+      dcStringWireM: 5820,
       areaRequired: 3800,
       availableSpace: 5000,
       aspectRatio: 1.5,
