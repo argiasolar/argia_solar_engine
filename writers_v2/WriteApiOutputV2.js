@@ -65,11 +65,12 @@ var API_OUTPUT_FIELDS = [
   { key: 'capex_cost_mxn',               units: 'MXN',     src: 'CLIENT_FIN capex.totalMxn (COST basis)', from: 'capexCostMxn' },
   { key: 'offer_price_mxn',              units: 'MXN',     src: 'PROJECT_CARD_v2!I40 (SELL price)',       from: 'offerPriceMxn' },
 
-  { key: 'payback_years',                units: 'years',   src: 'CLIENT_FIN fin.cash.simplePaybackYears [cost basis]', from: 'paybackYears' },
-  { key: 'npv_mxn',                      units: 'MXN',     src: 'CLIENT_FIN fin.cash.npvMxn [cost basis]', from: 'npvMxn' },
-  { key: 'irr',                          units: 'ratio',   src: 'CLIENT_FIN fin.cash.irr [cost basis]',    from: 'irr' },
-  { key: 'roi_pct_term',                 units: 'ratio',   src: 'CLIENT_FIN fin.cash.roiPctOverTerm [cost basis]', from: 'roiPctTerm' },
+  { key: 'payback_years',                units: 'years',   src: 'CLIENT_FIN fin.cash.simplePaybackYears [see returns_basis]', from: 'paybackYears' },
+  { key: 'npv_mxn',                      units: 'MXN',     src: 'CLIENT_FIN fin.cash.npvMxn [see returns_basis]', from: 'npvMxn' },
+  { key: 'irr',                          units: 'ratio',   src: 'CLIENT_FIN fin.cash.irr [see returns_basis]',    from: 'irr' },
+  { key: 'roi_pct_term',                 units: 'ratio',   src: 'CLIENT_FIN fin.cash.roiPctOverTerm [see returns_basis]', from: 'roiPctTerm' },
   { key: 'lcoe_mxn_per_kwh',             units: 'MXN/kWh', src: 'CLIENT_FIN fin.lcoe.mxnPerKwh',          from: 'lcoeMxnPerKwh' },
+  { key: 'returns_basis',                units: '',        src: 'CLIENT_FIN returnsBasis (COST | OFFER_PRICE)', from: 'returnsBasis' },
 
   { key: 'co2_tons_year1',               units: 'tCO2e',   src: 'CLIENT_FIN fin.co2.year1Tons',           from: 'co2TonsYear1' },
   { key: 'co2_tons_term',                units: 'tCO2e',   src: 'CLIENT_FIN fin.co2.termTons',            from: 'co2TonsTerm' },
@@ -194,6 +195,7 @@ function _apiResolveSources(ss, opts, warnings) {
     co2TonsYear1:       fin ? num_(fin.co2 && fin.co2.year1Tons) : null,
     co2TonsTerm:        fin ? num_(fin.co2 && fin.co2.termTons) : null,
 
+    returnsBasis:       opts.returnsBasis || 'COST',
     projectStatus:      'PENDING_T4'
   };
 }
@@ -259,15 +261,19 @@ function writeApiOutputV2(ss, opts) {
 
 
 // -----------------------------------------------------------------------------
-// SLIDE_DATA SAFE REPOINTS (T2, option B -- safe subset only)
+// SLIDE_DATA SAFE REPOINTS (T2 / T2.1 -- product-neutral subset only)
 // -----------------------------------------------------------------------------
 // Repoint SLIDE_DATA figure keys to read API_OUTPUT by key (INDEX/MATCH, robust
-// to row reordering). ONLY the no-change-of-meaning keys are repointed here:
-//   - annual_energy_cost -> cfe_bill_sin_pv_mxn  (already = D12; same value)
-//   - system_kwp         -> system_kwp_dc        (currently #REF!; strict fix)
-// The 5 basis-conflicted figures (savings / capex / payback / irr / co2) are
-// DEFERRED to the basis-decision task -- repointing them would silently restate
-// the customer offer (sell-vs-cost, PV-only-vs-full-system). See CHANGELOG.
+// to row reordering). Only PRODUCT-NEUTRAL quantities (same whether PPA or
+// direct purchase) are repointed; each is either no-value-change or a fix:
+//   annual_energy_cost -> cfe_bill_sin_pv_mxn   (= D12; no change)
+//   system_kwp         -> system_kwp_dc         (fix stale =MDC!C14 -> 864 kWp)
+//   capex_total        -> offer_price_mxn       (= FINANCE!C3 sell; no change)
+//   annual_savings     -> pv_only_savings_year1 (= FINANCE!C37; no change)
+//   co2_tons           -> co2_tons_year1        (fix 6153 -> 587 t/yr, ~10x)
+// LEFT ALONE (product-specific PPA returns from the FINANCE model -- a different
+// commercial product than CLIENT_FIN's purchase analysis): roi_years, irr_10yr,
+// savings_10yr. annual_mwh stays (it is site consumption, a correct value).
 // -----------------------------------------------------------------------------
 
 var _API_SLIDE_TARGETS = [
@@ -278,7 +284,32 @@ var _API_SLIDE_TARGETS = [
   },
   {
     id: 'SLIDE_DATA[system_kwp]', labelText: 'system_kwp', apiKey: 'system_kwp_dc',
-    allowedCurrentContains: ['#REF!']
+    // current formula is a STALE ref to the renamed 'MDC' sheet (=MDC!C14) ->
+    // resolves to #REF!. Repoint to the canonical system size. No value change
+    // (both = 864 kWp) -- this just fixes the broken link.
+    allowedCurrentContains: ['MDC!C14', '#REF!']
+  },
+  {
+    id: 'SLIDE_DATA[capex_total]', labelText: 'capex_total', apiKey: 'offer_price_mxn',
+    // current = FINANCE!C3 (sell price). API offer_price_mxn is the same sell
+    // price (PROJECT_CARD TOTAL) -- canonicalize, no value change.
+    allowedCurrentContains: ['FINANCE!C3', '#REF!']
+  },
+  {
+    id: 'SLIDE_DATA[annual_savings]', labelText: 'annual_savings', apiKey: 'pv_only_savings_year1_mxn',
+    // current = FINANCE!C37 (= D12-D14, PV-only CFE savings). API
+    // pv_only_savings_year1_mxn is the same quantity -- canonicalize, no value
+    // change. (Full-system savings is a separate key; switching the offer to it
+    // is the deferred savings-scope decision.)
+    allowedCurrentContains: ['FINANCE!C37', '#REF!']
+  },
+  {
+    id: 'SLIDE_DATA[co2_tons]', labelText: 'co2_tons', apiKey: 'co2_tons_year1',
+    // current = SUM(FINANCE!D22:O22) = 6153 t/yr, physically impossible for an
+    // 864 kWp system (would need ~13,860 MWh/yr). Canonical annual = solar
+    // generation x emission factor = 587 t/yr. This CORRECTS a ~10x error and
+    // matches the slide key's own "per year" semantics.
+    allowedCurrentContains: ['FINANCE!D22', 'SUM(FINANCE', '#REF!']
   }
 ];
 

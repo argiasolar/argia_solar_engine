@@ -50,8 +50,54 @@ var CLIENT_FIN_DEFAULTS = {
   // update this constant (and the REG_CLIENT_FINANCIALS_CULLIGAN_V2 CO2
   // assertion) when it lands. Longer-term home: a MASTER_DB row.
   co2FactorTonPerMwh: 0.444,
-  panelDegradationPct: 0.005
+  panelDegradationPct: 0.005,
+
+  // [T2.1 / 4.36.0] Basis for the RETURN metrics (payback / NPV / IRR / ROI):
+  //   'COST'        -> capex.totalMxn (engine cost). DEFAULT -- preserves the
+  //                    locked CULLIGAN goldens.
+  //   'OFFER_PRICE' -> the sell price the customer actually pays
+  //                    (= cost / (1 - margin), surfaced on PROJECT_CARD_v2).
+  // At margin = 0 the two coincide. At margin > 0, 'COST' UNDERSTATES the
+  // customer's real payback (they pay sell, not cost); 'OFFER_PRICE' is the
+  // customer-correct basis for a direct purchase. Overridable per call via
+  // opts.returnsBasis. CAPEX *display* (capex_cost_mxn) and Valor de Compra stay
+  // on cost regardless -- this knob only moves the return-metric investment.
+  returnsBasis: 'COST'
 };
+
+
+// ---------------------------------------------------------------------------
+// _cfinResolveReturnsCapex(basis, costMxn, offerMxn) -> { capexMxn, basis, note }
+// PURE. Picks the investment figure the return metrics are computed on.
+// Falls back to cost (with a note) when OFFER_PRICE is requested but the sell
+// price is unavailable -- never silently returns 0/NaN.
+// ---------------------------------------------------------------------------
+function _cfinResolveReturnsCapex(basis, costMxn, offerMxn) {
+  var cost  = Number(costMxn);
+  var offer = Number(offerMxn);
+  if (basis === 'OFFER_PRICE') {
+    if (isFinite(offer) && offer > 0) {
+      return { capexMxn: offer, basis: 'OFFER_PRICE', note: '' };
+    }
+    return { capexMxn: (isFinite(cost) ? cost : 0), basis: 'COST',
+             note: 'OFFER_PRICE requested but sell price unavailable -- fell back to COST' };
+  }
+  return { capexMxn: (isFinite(cost) ? cost : 0), basis: 'COST', note: '' };
+}
+
+// ---------------------------------------------------------------------------
+// _cfinReadOfferPriceMxn(ss) -> sell-price TOTAL (MXN) or null.
+// PROJECT_CARD_v2 TOTAL row, MXN_SALES col (cost / (1 - margin)). Uses the
+// engine PC_ROW/PC_COL constants when present, else fixed I40.
+// ---------------------------------------------------------------------------
+function _cfinReadOfferPriceMxn(ss) {
+  var pc = ss.getSheetByName('PROJECT_CARD_v2');
+  if (!pc) return null;
+  var row = (typeof PC_ROW !== 'undefined' && PC_ROW.COST_TOTAL) ? PC_ROW.COST_TOTAL : 40;
+  var col = (typeof PC_COL !== 'undefined' && PC_COL.MXN_SALES)  ? PC_COL.MXN_SALES  : 9;
+  var v = Number(pc.getRange(row, col).getValue());
+  return (isFinite(v) && v > 0) ? v : null;
+}
 
 
 // ---------------------------------------------------------------------------
@@ -246,12 +292,19 @@ function runClientFinancials(ss, opts) {
     warnings.push('ClientFin: PV kWh row sums to 0 -- LCOE and CO2 will be 0.');
   }
 
+  // [T2.1 / 4.36.0] Return-metric basis. Default 'COST' (preserves goldens);
+  // 'OFFER_PRICE' computes payback/NPV/IRR on the sell price the customer pays.
+  var returnsBasis = opts.returnsBasis || CLIENT_FIN_DEFAULTS.returnsBasis;
+  var offerPriceMxn = _cfinReadOfferPriceMxn(ss);
+  var rc = _cfinResolveReturnsCapex(returnsBasis, capex.totalMxn, offerPriceMxn);
+  if (rc.note) warnings.push('ClientFin: ' + rc.note);
+
   var fin = calcClientFinancials({
     analysisTermYears:       inp.leaseTermYears,
     billEscalationPct:       inp.billEscalationPct,
     savingsEscalationPct:    inp.savingsEscalationPct,
     discountRate:            inp.discountRate,
-    capexMxn:                capex.totalMxn,
+    capexMxn:                rc.capexMxn,   // return-metric investment (basis-driven)
     omCostMxnPerYear:        inp.omCostMxnPerYear,
     replacementReserveMxnPerYear: inp.replacementReserveMxnPerYear,
     year1BillWithoutMxn:     bills.billWithoutMxn,
@@ -291,7 +344,7 @@ function runClientFinancials(ss, opts) {
   // figures are deferred -- see WriteApiOutputV2 / CHANGELOG).
   try {
     if (typeof writeApiOutputV2 === 'function') {
-      var apiRet = writeApiOutputV2(ss, { fin: fin, capex: capex });
+      var apiRet = writeApiOutputV2(ss, { fin: fin, capex: capex, returnsBasis: rc.basis });
       warnings = warnings.concat(apiRet.warnings || []);
       if (typeof repairSlideDataFromApiOutput === 'function') {
         repairSlideDataFromApiOutput(ss);

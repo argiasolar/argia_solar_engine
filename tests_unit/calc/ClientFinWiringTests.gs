@@ -115,3 +115,41 @@ registerTest({
                  !_cfinReadBills(ss4).ok);
   }
 });
+
+
+registerTest({
+  id      : 'UNIT_CLIENT_FIN_RETURNS_BASIS',
+  group   : 'unit',
+  module  : 'calc/client_financials',
+  scenarios: [],
+  tags    : ['calc', 'financials', 'returns_basis', 't2'],
+  source  : 'tests_unit/calc/ClientFinWiringTests.gs',
+  fn: function (t, ctx) {
+    t.suite('UNIT calc/client_financials: returns-basis resolver');
+
+    var COST = 37051893, SELL = 43590463;
+
+    // Default / COST -> cost figure, basis COST, no note.
+    var c = _cfinResolveReturnsCapex('COST', COST, SELL);
+    t.assert('COST -> cost capex', COST, c.capexMxn);
+    t.assert('COST -> basis COST', 'COST', c.basis);
+    t.assert('COST -> no note', '', c.note);
+
+    // OFFER_PRICE with a valid sell price -> sell figure.
+    var o = _cfinResolveReturnsCapex('OFFER_PRICE', COST, SELL);
+    t.assert('OFFER_PRICE -> sell capex', SELL, o.capexMxn);
+    t.assert('OFFER_PRICE -> basis OFFER_PRICE', 'OFFER_PRICE', o.basis);
+
+    // OFFER_PRICE but sell unavailable -> safe fallback to cost, with a note.
+    var f = _cfinResolveReturnsCapex('OFFER_PRICE', COST, null);
+    t.assert('fallback -> cost capex', COST, f.capexMxn);
+    t.assert('fallback -> basis COST', 'COST', f.basis);
+    t.assertTrue('fallback -> note explains', f.note.length > 0);
+
+    // At margin 0 the two bases coincide (sell == cost): both paths agree.
+    var eqCost = _cfinResolveReturnsCapex('COST', COST, COST);
+    var eqOff  = _cfinResolveReturnsCapex('OFFER_PRICE', COST, COST);
+    t.assert('margin 0: COST path == sell', COST, eqCost.capexMxn);
+    t.assert('margin 0: OFFER_PRICE path == cost', COST, eqOff.capexMxn);
+  }
+});

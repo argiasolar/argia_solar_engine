@@ -1,4 +1,52 @@
-## [4.35.0] — 2026-06-17  (T2: API_OUTPUT — the single offer interface)
+## [4.36.0] — 2026-06-17  (T2.1: returns-basis knob + finish the safe SLIDE repoints)
+
+**Completes the offer wiring from T2: a cost-vs-sell knob for the return metrics, and the
+remaining product-neutral SLIDE_DATA keys repointed at API_OUTPUT (including a 10× CO2 fix and a
+broken-link fix that T2's guard would have silently skipped).**
+
+### Added — returns basis knob (`31a_RunClientFinancials.js`)
+- `CLIENT_FIN_DEFAULTS.returnsBasis` (`'COST'` | `'OFFER_PRICE'`, default **COST**), overridable via
+  `opts.returnsBasis`. Pure resolver `_cfinResolveReturnsCapex(basis, cost, offer)` picks the
+  investment the return metrics (payback / NPV / IRR / ROI) are computed on; `OFFER_PRICE` falls
+  back to cost with a warning if the sell price is unavailable.
+- `_cfinReadOfferPriceMxn(ss)` reads the PROJECT_CARD_v2 sell TOTAL.
+- Default COST **preserves the locked CULLIGAN goldens** (identical capex into the calc). At margin 0
+  the two bases coincide; at margin > 0, `OFFER_PRICE` is the customer-correct basis (they pay sell,
+  not cost). `capex_cost_mxn` display and Valor de Compra stay on cost regardless.
+- `API_OUTPUT` gains a `returns_basis` field recording which basis the returns used (27 fields now).
+
+### Fixed + extended — SLIDE_DATA repoints (`writers_v2/WriteApiOutputV2.js`)
+Reading the **actual** live formulas corrected two assumptions:
+- `system_kwp` was `=MDC!C14` — a stale ref to the renamed `MDC` sheet (now `MDC_v2`), resolving to
+  `#REF!`. T2's guard checked for `#REF!` in the *formula* and would have **silently skipped** the
+  repoint. Guard fixed (`MDC!C14`); now repoints to `system_kwp_dc` (864 kWp).
+- SLIDE_DATA is fed from the **FINANCE (PPA) model**, not CLIENT_FIN. So the divergent figures
+  (`roi_years`, `irr_10yr`, `savings_10yr`) are PPA-product returns — a different commercial product —
+  and are correctly **left alone**.
+
+Repointed (all product-neutral — same whether PPA or purchase):
+
+| SLIDE key | was | now → API key | effect |
+|---|---|---|---|
+| annual_energy_cost | `=BESS_SIMULATION!D12` | cfe_bill_sin_pv_mxn | no change |
+| system_kwp | `=MDC!C14` (#REF!) | system_kwp_dc | fixes broken link → 864 |
+| capex_total | `=FINANCE!C3` | offer_price_mxn | no change (sell = sell) |
+| annual_savings | `=FINANCE!C37` | pv_only_savings_year1_mxn | no change (PV-only) |
+| co2_tons | `=SUM(FINANCE!D22:O22)` | co2_tons_year1 | **fix 6,153 → 587 t/yr** |
+
+The CO2 fix: 6,153 t/yr is physically impossible for 864 kWp (≈13,860 MWh/yr); the canonical annual
+= solar generation × 0.444 = 587 t/yr, matching the slide key's own "per year" semantics.
+`annual_savings` is preserved as **PV-only** (no silent restatement); switching the offer to
+full-system savings remains a one-key flip and a deferred decision.
+
+### Tests
+- **NEW** `UNIT_CLIENT_FIN_RETURNS_BASIS` (pure): COST→cost, OFFER_PRICE→sell, missing-sell fallback
+  to cost with note, and margin-0 equivalence.
+- `ApiOutputV2Tests` key set updated to 27 (adds `returns_basis`).
+- `REG_API_OUTPUT` extended: `returns_basis` defaults COST; the 3 new SLIDE repoints resolve through
+  API_OUTPUT (capex_total == offer_price, annual_savings == pv_only, co2_tons == co2_year1).
+
+
 
 **One flat tab holding every canonical offer figure, written as values from the owning module
 (no recomputation, nothing that can `#REF!`). The offer/presentation reads API_OUTPUT; API_OUTPUT

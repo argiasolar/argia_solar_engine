@@ -27,7 +27,7 @@ var _API_EXPECTED_KEYS = [
   'cfe_bill_sin_pv_mxn', 'cfe_bill_con_pv_mxn', 'cfe_bill_con_bess_mxn',
   'pv_only_savings_year1_mxn', 'full_system_savings_year1_mxn', 'savings_term_mxn',
   'capex_cost_mxn', 'offer_price_mxn',
-  'payback_years', 'npv_mxn', 'irr', 'roi_pct_term', 'lcoe_mxn_per_kwh',
+  'payback_years', 'npv_mxn', 'irr', 'roi_pct_term', 'lcoe_mxn_per_kwh', 'returns_basis',
   'co2_tons_year1', 'co2_tons_term',
   'project_status'
 ];

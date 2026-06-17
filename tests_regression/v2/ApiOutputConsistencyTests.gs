@@ -101,6 +101,9 @@ registerTest({
     // ---- Generation present (solar MWh, not consumption) --------------------
     t.assertTrue('annual_generation_mwh > 0', n(api['annual_generation_mwh']) > 0);
 
+    // ---- returns_basis present + default COST ------------------------------
+    t.assert('returns_basis default COST', 'COST', String(api['returns_basis']));
+
     // ---- SLIDE_DATA safe repoints resolve through API_OUTPUT ----------------
     var sd = ss.getSheetByName('SLIDE_DATA');
     if (sd) {
@@ -118,6 +121,13 @@ registerTest({
       t.assertTrue('SLIDE system_kwp no longer #REF! (numeric)', isFinite(sKwp));
       t.assertNear('SLIDE system_kwp resolves == system_kwp_dc',
                    n(api['system_kwp_dc']), sKwp, 0.5);
+      // T2.1 added repoints:
+      t.assertNear('SLIDE capex_total resolves == offer_price_mxn',
+                   n(api['offer_price_mxn']), slideVal('capex_total'), Math.max(2, n(api['offer_price_mxn']) * 0.0001));
+      t.assertNear('SLIDE annual_savings resolves == pv_only_savings',
+                   n(api['pv_only_savings_year1_mxn']), slideVal('annual_savings'), TOL);
+      t.assertNear('SLIDE co2_tons resolves == co2_tons_year1 (fixed ~10x)',
+                   n(api['co2_tons_year1']), slideVal('co2_tons'), 0.5);
     } else {
       t.info('slide_data', 'SLIDE_DATA absent; repoint check skipped.');
     }
@@ -126,6 +136,7 @@ registerTest({
          + '  sinPV=' + n(api['cfe_bill_sin_pv_mxn']).toFixed(2)
          + '  cost=' + n(api['capex_cost_mxn']).toFixed(0)
          + '  sell=' + n(api['offer_price_mxn']).toFixed(0)
+         + '  returns=' + api['returns_basis']
          + '  genMWh=' + n(api['annual_generation_mwh']).toFixed(1));
   }
 });

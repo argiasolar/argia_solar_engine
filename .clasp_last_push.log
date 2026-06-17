@@ -1,4 +1,4 @@
-Pushed 239 files at 12:28:43 PM.
+Pushed 242 files at 12:59:58 PM.
 └─ 00_Main.js
 └─ 00a_Version.js
 └─ 00c_SetupSectionGuard.js
@@ -124,6 +124,7 @@ Pushed 239 files at 12:28:43 PM.
 └─ tests_regression\Pass5HygieneTests.gs
 └─ tests_regression\Pass6TrustTests.gs
 └─ tests_regression\sheet_formulas\BessSimulationFormulasTests.gs
+└─ tests_regression\v2\ApiOutputConsistencyTests.gs
 └─ tests_regression\v2\CfeBaseAndSavingsConsistencyTests.gs
 └─ tests_regression\v2\ClientFinancialsCulliganTests.gs
 └─ tests_regression\v2\CulliganBaselineV2Tests.gs
@@ -208,6 +209,7 @@ Pushed 239 files at 12:28:43 PM.
 └─ tests_unit\templates\TemplateRegistryTests.gs
 └─ tests_unit\wiring\BessPickerWiringTests.gs
 └─ tests_unit\wiring\ProgressDialogTests.gs
+└─ tests_unit\writers_v2\ApiOutputV2Tests.gs
 └─ tests_unit\writers_v2\BomDbHelpersTests.gs
 └─ tests_unit\writers_v2\CfeOutputSourceMapTests.gs
 └─ tests_unit\writers_v2\CfeStrategyExplainerTests.gs
@@ -229,6 +231,7 @@ Pushed 239 files at 12:28:43 PM.
 └─ writers_v2\helpers\BomDbHelpers.js
 └─ writers_v2\helpers\CfeOutputSourceMap.js
 └─ writers_v2\helpers\RfqBomReader.js
+└─ writers_v2\WriteApiOutputV2.js
 └─ writers_v2\WriteBaasProjectionV2.js
 └─ writers_v2\WriteBomV2.js
 └─ writers_v2\WriteCfeOutputV2_Chunk5.js
