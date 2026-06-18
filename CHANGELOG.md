@@ -1,4 +1,37 @@
-## [4.48.0] — 2026-06-18  (T11b: provenance notes on CFE_OUTPUT headline figures)
+## [4.49.0] — 2026-06-18  (SLIDE_DATA rebuild · chunk 1: API_OUTPUT projection)
+
+**Rebuilds the broken SLIDE_DATA tab as a clean projection of API_OUTPUT. Every covered figure key now
+reads API_OUTPUT by key via a robust INDEX/MATCH; config + not-yet-exposed figures are clean blanks
+(never #REF!). Fixes the stale/#REF! figures (e.g. annual_mwh 4475 → ~1321) and supersedes the T2
+5-key repair. No guarded value changes.**
+
+### New — `38_WriteSlideData.js`
+- `SLIDE_DATA_PLAN_V2` — the 43-key contract (the external tool's key list), each tagged `api` /
+  `config` / `derived`.
+- `buildSlideDataPlan()` (pure) — validated plan + the four ConsistencyGuard keys.
+- `_slideApiFormula(apiKey)` (pure) — `=INDEX(API_OUTPUT!B:B, MATCH("<key>", API_OUTPUT!A:A, 0))`.
+- `writeSlideDataV2(ss)` (live) — rebuilds rows 1..N: `api` keys → INDEX/MATCH on API_OUTPUT; `config`
+  / `derived` keys → clean blank + a "pendiente" note. Rows below N (the IMAGES block) left untouched.
+
+### Changed — `31a_RunClientFinancials.js`
+- The post-API_OUTPUT hook now calls `writeSlideDataV2` (full projection) instead of the T2 5-key
+  `repairSlideDataFromApiOutput` (kept as fallback). The four ConsistencyGuard keys
+  (annual_energy_cost, annual_savings, capex_total, system_kwp) keep their exact T2 API mappings.
+
+### Tests
+- **NEW** `UNIT_SLIDE_DATA_PLAN`: 43-key contract, guard keys on exact mappings, api/config/derived
+  split, formula shape.
+- **NEW** `REG_SLIDE_DATA_CULLIGAN` (live): rebuilt tab has no #REF!; guarded figures resolve to
+  CULLIGAN goldens (system_kwp 864, sin-PV 12.84M, offer 43.67M); annual_mwh ~1321 (was 4475 stale);
+  config keys clean-blank.
+
+### Architecture / next chunks
+SLIDE_DATA = projection of API_OUTPUT + (chunk 2) a `99_SETUP` config tab for salesperson/dates/
+observations (API keys in Script Properties, not sheet cells) + API_OUTPUT figure extensions
+(panel_w, inv_kw, area_m2, coverage, avg_price, prod_jan..dec); (chunk 3) offer-type variation
+(derived from `businessCase`) + the IMAGES/Drive block. MDC/CFE_OUTPUT/BOM/FINANCE already traced.
+
+
 
 **Applies the T11 provenance helper to the CFE_OUTPUT_v2 headline recibo tiles. Notes only — no
 values move.**

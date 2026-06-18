@@ -346,14 +346,19 @@ function runClientFinancials(ss, opts) {
   // [T2 / 4.35.0] API_OUTPUT -- single offer interface. Written here (the offer
   // generation flow) because it needs the canonical financials computed above.
   // fin/capex are passed through so API_OUTPUT never re-runs the engine. Then
-  // repoint the SAFE SLIDE_DATA figure keys at API_OUTPUT (the 5 basis-conflicted
-  // figures are deferred -- see WriteApiOutputV2 / CHANGELOG).
+  // rebuild SLIDE_DATA as a clean projection of API_OUTPUT (every covered figure
+  // key reads API_OUTPUT by key; config / not-yet-exposed figures are clean
+  // blanks). Supersedes the T2 5-key repair; keeps the 4 ConsistencyGuard keys
+  // (annual_energy_cost, annual_savings, capex_total, system_kwp) on their exact
+  // T2 API mappings -> no guarded value changes.
   try {
     if (typeof writeApiOutputV2 === 'function') {
       var apiRet = writeApiOutputV2(ss, { fin: fin, capex: capex, returnsBasis: rc.basis });
       warnings = warnings.concat(apiRet.warnings || []);
-      if (typeof repairSlideDataFromApiOutput === 'function') {
-        repairSlideDataFromApiOutput(ss);
+      if (typeof writeSlideDataV2 === 'function') {
+        writeSlideDataV2(ss);
+      } else if (typeof repairSlideDataFromApiOutput === 'function') {
+        repairSlideDataFromApiOutput(ss);   // fallback to the T2 partial repair
       }
     }
   } catch (apiErr) {
