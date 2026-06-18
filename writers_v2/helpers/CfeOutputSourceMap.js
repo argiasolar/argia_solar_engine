@@ -64,8 +64,9 @@ var CFE_OUT_SRC_V2 = (typeof CFE_OUT_SRC_V2 !== 'undefined' && CFE_OUT_SRC_V2) ?
   input_kWinter         : { sheet: 'INPUT_CFE', row: 14 },
   input_kWpunta         : { sheet: 'INPUT_CFE', row: 15 },
   input_demandaFact     : { sheet: 'INPUT_CFE', row: 20 },
-  input_facturacion     : { sheet: 'INPUT_CFE', row: 35 },
-  input_total           : { sheet: 'INPUT_CFE', row: 37 },
+  // input_facturacion (row 35) / input_total (row 37): RETIRED in 4.51.0 along
+  // with the INPUT_CFE bill reconstruction (rows 30-37). No consumer ever
+  // requested them; the v2 writer does not read this legacy map for the bill.
 
   // INPUT_CFE interconnection mode (scalar)
   // 4.0.0 fix: was row 40 — display read the wrong cell and showed blank.

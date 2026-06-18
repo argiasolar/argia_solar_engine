@@ -1,4 +1,39 @@
-## [4.50.0] — 2026-06-18  (T12 · chunk a: synthetic golden fixtures — declarative registry + INPUT_MAP routing)
+## [4.51.0] — 2026-06-18  (Retire legacy INPUT_CFE bill reconstruction, rows 30-37)
+
+**Removes the orphaned in-sheet CFE bill reconstruction (INPUT_CFE rows 30-37: Energía Total / 2%
+Baja Tensión / Cargo FP / Subtotal / IVA / Facturación / DAP / TOTAL). Nothing in the engine reads
+it — the bill is computed in code (04a_CalcCFEBill), the sin-PV bill is BESS_SIMULATION!D12, and
+FINANCE/SLIDE_DATA/CFE_OUTPUT were repointed off row 37 (the "dead stub") in T1/T2. It was also
+fragile, throwing #DIV/0! / #VALUE! on partial monthly data.**
+
+### New — `39_RetireCfeBillReconstruction.js`
+- `cfeBillReconClearRange()` (pure) — single source for the range: INPUT_CFE!B30:N37.
+- `retireCfeBillReconstruction(ss)` (live) — clears B30:N37 (labels + formulas). Idempotent.
+  Does **not** touch the pasted components (rows 21-29, which the engine consumes), the consumption
+  inputs (10-20), or the PV interconnection block (rows 39+). Does **not** delete rows (deleting
+  would shift row 39+ and break INPUT_MAP coords — `cfeInterconnMode` is at row 41).
+- `runRetireCfeBillReconstruction()` — Administrator Panel → Repairs menu item.
+
+### Changed
+- `writers_v2/helpers/CfeOutputSourceMap.js` — removed the two dead keys `input_facturacion` (row 35)
+  and `input_total` (row 37). No production consumer requested them.
+- `tests_unit/writers_v2/CfeOutputSourceMapTests.gs` — the monthly-read tests used `input_total` as a
+  sample key; repointed to `input_demandaFact` (row 20). Dropped `input_total` from the critical-keys
+  contract.
+- `00_Main.js` — new Repairs menu item.
+
+### Tests
+- **NEW** `UNIT_CFE_BILL_RECON_RANGE` — clear range is exactly INPUT_CFE B30:N37, never reaching the
+  components (≤29) or PV block (≥39).
+- **NEW** `UNIT_CFE_OUT_SRC_NO_DEAD_KEYS` — `input_facturacion`/`input_total` gone, `input_demandaFact`
+  kept.
+
+Self-test ALL GREEN. Persistent content (`setupInputCFE` only styles, and only when the optional
+INPUT_CFE_RAW tab exists — it doesn't), so a single clear retires it; no DEFAULT rebuild re-adds it.
+Run **Administrator Panel → Repairs → Retire CFE Bill Reconstruction** on your live sheet to clear the
+current broken cells.
+
+
 
 **The "launch evidence" track begins. T12 proves the engine end-to-end from EXPLICIT INPUTS ONLY at
 three market-typical sizes. This chunk delivers the verified, Node-checkable foundation: the three

@@ -132,13 +132,13 @@ registerTest({
   fn: function (t) {
     t.suite('readCfeMonthly: reads cols C..N of mapped row');
 
-    // input_total is INPUT_CFE row 37 \u2014 build row[36] with 12 values starting col 3 (index 2)
+    // input_demandaFact is INPUT_CFE row 20 \u2014 build row[19] with 12 values starting col 3 (index 2)
     var rows = [];
-    while (rows.length < 38) rows.push([]);
-    rows[36] = [null, null, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200];
+    while (rows.length < 21) rows.push([]);
+    rows[19] = [null, null, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200];
 
     var ss = _makeCfeMockSs({ 'INPUT_CFE': rows });
-    var arr = readCfeMonthly(ss, 'input_total');
+    var arr = readCfeMonthly(ss, 'input_demandaFact');
 
     t.assert('array length 12', 12, arr.length);
     t.assert('first month',     100, arr[0]);
@@ -161,7 +161,7 @@ registerTest({
     t.suite('readCfeMonthly: returns 12 zeros when sheet missing');
 
     var ss = _makeCfeMockSs({});
-    var arr = readCfeMonthly(ss, 'input_total');
+    var arr = readCfeMonthly(ss, 'input_demandaFact');
     t.assert('length 12', 12, arr.length);
     for (var i = 0; i < 12; i++) t.assert('zero at ' + i, 0, arr[i]);
   }
@@ -205,7 +205,7 @@ registerTest({
 
     var required = [
       'input_tariffCode', 'input_serviceName', 'input_serviceNumber',
-      'input_contractedKw', 'input_interconnMode', 'input_total',
+      'input_contractedKw', 'input_interconnMode',
       'csim_total', 'csim_solarKwh', 'csim_pvExportado',
       'bsim_reciboBase', 'bsim_reciboTrasPv', 'bsim_reciboFinal',
       'bsim_ahorroMesCap', 'bsim_ahorroMesDist', 'bsim_ahorroMesVar',
