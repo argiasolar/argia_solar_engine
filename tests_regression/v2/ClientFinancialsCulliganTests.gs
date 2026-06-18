@@ -84,20 +84,23 @@ registerTest({
     // -- Wiring locks ---------------------------------------------------------
     t.assertNear('sin-PV annual bill', 12838765.45, ret.bills.billWithoutMxn, 2);
     t.assertNear('final (PV+BESS) bill', 10110616.39, ret.bills.billWithMxn, 2);
-    t.assertNear('CAPEX total (BOM+INSTALL)', 37051893.49, ret.capex.totalMxn, 2);
+    t.assertNear('CAPEX total (BOM+INSTALL)', 37120502.25, ret.capex.totalMxn, 2);
     t.assertTrue('wiring ok flag', ret.ok);
 
+    // [T8 v4.42.0] REFRESHED for labor burden x1.65 (CAPEX 37,051,893.49->37,120,502.25):
+    // payback 11.0617->11.0780, ROI 0.47435->0.471622, NPV -14,170,417.83->-14,239,026.56,
+    // IRR 0.04792->0.047671, LCOE 4.2202->4.2280. Savings/bills unchanged (CFE-based).
     // -- Headline / cash locks -------------------------------------------------
     var h = ret.fin.headline, c = ret.fin.cash;
     t.assertNear('Yr-1 savings',        2728149.06, h.year1SavingsMxn, 2);
     t.assertNear('savings % of bill',   0.21249,    h.savingsPctOfBill, 0.0005);
     t.assertNear('demand-charge slice', 502793.88,  h.demandChargeSavingMxnYear1, 2);
-    t.assertNear('simple payback',      11.0617,    c.simplePaybackYears, 0.01);
+    t.assertNear('simple payback',      11.0780,    c.simplePaybackYears, 0.01);
     t.assert('discounted payback: never in term', null, c.discountedPaybackYears);
-    t.assertNear('ROI over term',       0.47435,    c.roiPctOverTerm, 0.0005);
-    t.assertNear('NPV',                -14170417.83, c.npvMxn, 5);
-    t.assertNear('IRR',                 0.04792,    c.irr, 0.0005);
-    t.assertNear('LCOE MXN/kWh',        4.2202,     ret.fin.lcoe.mxnPerKwh, 0.005);
+    t.assertNear('ROI over term',       0.471622,   c.roiPctOverTerm, 0.0005);
+    t.assertNear('NPV',                -14239026.56, c.npvMxn, 5);
+    t.assertNear('IRR',                 0.047671,   c.irr, 0.0005);
+    t.assertNear('LCOE MXN/kWh',        4.2280,     ret.fin.lcoe.mxnPerKwh, 0.005);
     t.assertNear('CO2 Yr-1 tonnes (FE-SEN 2024 = 0.444)', 586.69, ret.fin.co2.year1Tons, 0.05);
 
     // -- Scenario locks (y15) ----------------------------------------------------

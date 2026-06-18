@@ -1,4 +1,63 @@
-## [4.41.0] — 2026-06-17  (T7: structure cost engine + roof-type pricelist)
+## [4.42.0] — 2026-06-17  (T8: install labor burden factor)
+
+**A configurable labor burden factor (default 1.65×) now corrects the systematic understatement of
+labor cost from raw `$/MH` role rates. This is an intentional, documented golden refresh — CULLIGAN's
+install, CAPEX, and return metrics move.**
+
+### Why
+Raw `$/MH` role rates ignore the real cost of subcontracted labor (IMSS, benefits, overhead, markup),
+so install labor — and therefore margin — was fictionally low. A single tunable factor fixes this
+without editing every role rate (tunable, version-controlled, testable).
+
+### Engine — `13_CalcInstallCost.js`
+- `LABOR_BURDEN_DEFAULT = 1.65` (constant; `1.0` = off).
+- `applyLaborBurden(result, drivers, burdenOverride)` — a post-step (runs after `applyKwpBenchmarks`)
+  that multiplies **MH-based labor** (`LABOR_*` cost types) by the factor, then recomputes section
+  totals, grand totals, the PERCENT_OF items (insurance on labor+equip, contingency on subtotal) on
+  the **new burdened base**, and the role breakdown. Day-rate indirect roles (supervision/HSE/QAQC,
+  `OTHER_FIXED`) are quoted per day, not per MH, so they are **not** burdened.
+- `_icResolveLaborBurden(ss)` — optional per-project override via an `INPUT_INSTALL` `laborBurden`
+  cell; guarded so a missing cell falls back to the constant (no template dependency).
+
+### Golden refresh (CULLIGAN, burden 1.65) — validated
+Model validated against the live install components (insurance `0.03×(G5+G6)` and contingency
+`0.05×subtotal` reproduce the current 7,938.40 / 35,240.63 exactly), and the financial recompute was
+cross-checked by reproducing the **old** payback/NPV/IRR/ROI from `calcClientFinancials` before
+applying the new CAPEX.
+
+| Metric | Before | After |
+|--------|--------|-------|
+| INSTALL G5 LABOR | 97,733.27 | **161,259.90** |
+| INSTALL G6 EQUIP | 166,880.00 | 166,880.00 (unchanged) |
+| INSTALL G7 OTHER | 483,378.43 | **488,460.56** |
+| INSTALL G9 GRAND | 747,991.70 | **816,600.46** |
+| INSTALL G10 MXN/kWp | 866.0 | **945.14** |
+| CAPEX total (MXN) | 37,051,893.49 | **37,120,502.25** |
+| Simple payback (yr) | 11.0617 | **11.0780** |
+| ROI over term | 0.47435 | **0.471622** |
+| NPV (MXN) | −14,170,417.83 | **−14,239,026.56** |
+| IRR | 0.04792 | **0.047671** |
+| LCOE (MXN/kWh) | 4.2202 | **4.2280** |
+
+Savings and bills are CFE-based and unchanged. Consistency tests (capex_cost == capex.totalMxn,
+offer == sell) check relationships, not absolutes, so they stay green as every tab moves together.
+
+### Tests
+- **NEW** `UNIT_INSTALL_LABOR_BURDEN` (pure): burden math + PERCENT/total/role recompute at CULLIGAN
+  scale, the `1.0` no-op, and the default factor.
+- **REFRESHED** `CulliganBaselineV2Tests` (G5/G7/G9/G10, D40) and `ClientFinancialsCulliganTests`
+  (CAPEX, payback, ROI, NPV, IRR, LCOE) — annotated inline with before→after.
+
+### ⚠ DATA → LATER (your INSTALL_DB edits — not in this code package)
+These move goldens **again** when applied; coordinate a second refresh.
+1. **HD_CRANE re-quote.** `93M_INSTALL_EQUIP_RATES` row for `HD_CRANE`: `MXN_PER_DAY` is **100,000**
+   (high). Typical 25–50k; suggested placeholder **37,500**. CULLIGAN uses the BESS crane (item
+   `BESS-I-04`), so this moves G6/EQUIP. One-cell edit in INSTALL_DB.
+2. **94M benchmark table.** `94M_INSTALL_BENCHMARKS` is currently a project-log layout
+   (PROJECT_ID/CUSTOMER/…), not a min/typical/high `$/kWp` table. T10 will read a benchmark table;
+   we need to decide its structure and seed placeholder values. Parked pending your call.
+
+
 
 **Structure cost is now driven by a configurable `$/kWp` pricelist keyed on roof type, replacing the
 fragile per-product (`USD/panel`) lookup as the cost source. `structure_cost = system_kWp ×

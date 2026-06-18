@@ -313,16 +313,19 @@ registerTest({
       t.assert('INSTALL_v2.B9 inverter count',  5, inst.getRange('B9').getValue());
 
       // -- C2: totals (G column = MXN) --
+      // [T8 v4.42.0] REFRESHED for labor burden x1.65: LABOR 97,733.27->161,259.90,
+      // OTHER 483,378.43->488,460.56 (insurance/contingency recompute), GRAND
+      // 747,991.70->816,600.46, MXN/kWp 866->945.14, CAPEX D40 +68,608.76. EQUIP unchanged.
       t.assertNear('INSTALL_v2.G5 TOTAL LABOR MXN',
-                   97733.27,  inst.getRange('G5').getValue(), TOL_MXN);
+                   161259.90, inst.getRange('G5').getValue(), TOL_MXN);
       t.assertNear('INSTALL_v2.G6 TOTAL EQUIP MXN',
                    166880.00, inst.getRange('G6').getValue(), TOL_MXN);
       t.assertNear('INSTALL_v2.G7 TOTAL OTHER MXN',
-                   483378.43, inst.getRange('G7').getValue(), TOL_MXN);
+                   488460.56, inst.getRange('G7').getValue(), TOL_MXN);
       t.assertNear('INSTALL_v2.G9 GRAND TOTAL MXN',
-                   747991.70, inst.getRange('G9').getValue(), TOL_MXN);
+                   816600.46, inst.getRange('G9').getValue(), TOL_MXN);
       t.assertNear('INSTALL_v2.G10 MXN per kWp',
-                   866.0,     inst.getRange('G10').getValue(), 1.0);
+                   945.14,    inst.getRange('G10').getValue(), 1.0);
 
       // -- C3: PARITY vs legacy INSTALLATION -- REMOVE AT CUTOVER (Chunk 11) --
       var legacyInst = ss.getSheetByName('INSTALLATION');
@@ -387,7 +390,7 @@ registerTest({
       t.assertNear('PC_v2.C40 TOTAL cost USD',
                    2002805.0, pc.getRange('C40').getValue(), TOL_USD);
       t.assertNear('PC_v2.D40 TOTAL cost MXN',
-                   37051893.0, pc.getRange('D40').getValue(), TOL_MXN);
+                   37120502.0, pc.getRange('D40').getValue(), TOL_MXN);
 
       // -- D4: sell side -- USD/Wp string and gross profit --
       var sellRaw = String(pc.getRange('H17').getValue() || '');

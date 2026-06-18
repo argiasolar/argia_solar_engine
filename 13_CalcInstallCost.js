@@ -43,6 +43,15 @@ function bessItemGatedToZero(item, driverQtyVal) {
 // ---------------------------------------------------------------------------
 var INSTALL_TARGET_MH_PER_KWP = 0;   // 0 = no MH-target scaling (use DB productivity as-is). Set >0 (e.g. 4-5) to normalise labour to that MH/kWp.
 
+// [T8] Labor burden multiplier on MH-based labor. The raw $/MH role rates
+// understate the real subcontracted cost of labor (benefits, overhead, IMSS,
+// markup); a single tunable factor corrects this without editing every role
+// rate. Applied as a post-step (applyLaborBurden) to LABOR cost-type items only
+// -- day-rate indirect roles (supervision/HSE) are not $/MH-based and are left
+// alone. Configurable per project via the optional INPUT_INSTALL 'laborBurden'
+// cell; blank -> this constant. 1.0 = burden off (raw rates).
+var LABOR_BURDEN_DEFAULT = 1.65;
+
 // ---------------------------------------------------------------------------
 // applyTotalMhTarget(result, kWp, targetMhPerKwp) -> {applied, scale, ...}
 // PURE. Scales every productive LABOR item proportionally so the sum of their
@@ -1487,6 +1496,101 @@ function applyKwpBenchmarks(ss, result, drivers) {
 }
 
 // ---------------------------------------------------------------------------
+// [T8] applyLaborBurden(result, drivers, burdenOverride)
+// ---------------------------------------------------------------------------
+// Multiplies MH-based labor by the burden factor, then recomputes every total
+// the same way applyKwpBenchmarks does, so the burden flows consistently into:
+//   - per-item laborMxn / totalMxn
+//   - section totals, grand totals (G5/G7/G9)
+//   - PERCENT_OF items (insurance on labor+equip, contingency on subtotal) --
+//     recomputed on the NEW burdened base, not just scaled
+//   - the role man-hour/$ breakdown (roleAgg)
+//
+// Only LABOR cost-type items are burdened (their cost is $/MH × MH). Day-rate
+// indirect roles (supervision/HSE/QAQC, costType OTHER_FIXED) are quoted per day,
+// not per MH, so they are left untouched -- burdening them would double-count.
+//
+// Runs AFTER applyKwpBenchmarks so it operates on the benchmark-scaled MH.
+// PURE w.r.t. the workbook: reads no sheet (the factor is resolved by the caller).
+function applyLaborBurden(result, drivers, burdenOverride) {
+  var burden = (typeof burdenOverride === 'number' && isFinite(burdenOverride) && burdenOverride > 0)
+    ? burdenOverride : LABOR_BURDEN_DEFAULT;
+
+  result.burden = { factor: burden, applied: (burden !== 1) };
+  if (!result.items || !result.items.length) return result;
+
+  // 1) Burden MH-based labor in place.
+  result.items.forEach(function (res) {
+    var ct = (res.item && res.item.costType) ? String(res.item.costType) : '';
+    if (ct.indexOf('LABOR') !== -1 && res.laborMxn > 0) {
+      res.laborMxn = res.laborMxn * burden;
+      res.totalMxn = res.laborMxn + res.equipMxn + res.otherMxn;
+    }
+  });
+
+  // 2) Recompute section + grand totals (excl INDIRECT), mirroring
+  //    applyKwpBenchmarks so the two post-steps stay in lockstep.
+  var newSec = {};
+  result.items.forEach(function (res) {
+    var sec = res.item.section;
+    if (sec === 'INDIRECT') return;
+    if (!newSec[sec]) newSec[sec] = { labor: 0, equip: 0, other: 0, total: 0 };
+    newSec[sec].labor += res.laborMxn;
+    newSec[sec].equip += res.equipMxn;
+    newSec[sec].other += res.otherMxn;
+    newSec[sec].total += res.totalMxn;
+  });
+
+  var gL = 0, gE = 0, gO = 0;
+  Object.keys(newSec).forEach(function (k) {
+    gL += newSec[k].labor; gE += newSec[k].equip; gO += newSec[k].other;
+  });
+
+  // 3) Recompute PERCENT_OF items on the new burdened base.
+  var leSubtotal      = gL + gE;
+  var installSubtotal = gL + gE + gO;
+  newSec['INDIRECT']  = { labor: 0, equip: 0, other: 0, total: 0 };
+  result.items.forEach(function (res) {
+    var ct = res.item.costType;
+    if (ct === 'PERCENT_OF_LABOR_EQUIP') {
+      res.otherMxn = drivers.insurancePct * leSubtotal;
+    } else if (ct === 'PERCENT_OF_SUBTOTAL') {
+      res.otherMxn = drivers.contingencyPct * installSubtotal;
+    } else { return; }
+    res.totalMxn = res.otherMxn;
+    newSec['INDIRECT'].other += res.otherMxn;
+    newSec['INDIRECT'].total += res.otherMxn;
+  });
+
+  // Clean recompute of gO (non-INDIRECT day-rate other + INDIRECT percent).
+  gO = 0;
+  result.items.forEach(function (r) { gO += r.otherMxn; });
+
+  var grandTotal = gL + gE + gO;
+  var totalMH    = result.items.reduce(function (s, r) { return s + r.mhComputed; }, 0);
+
+  result.sectionTotals = newSec;
+  result.totals = {
+    labor        : gL,
+    equip        : gE,
+    other        : gO,
+    total        : grandTotal,
+    perWp        : drivers.projectDcWp  > 0 ? grandTotal / drivers.projectDcWp  : 0,
+    perKwp       : drivers.projectDcKwp > 0 ? grandTotal / drivers.projectDcKwp : 0,
+    perM2        : drivers.arrayGrossAreaM2 > 0 ? grandTotal / drivers.arrayGrossAreaM2 : 0,
+    totalMH      : totalMH,
+    impliedDays  : (drivers.crewSize > 0 && totalMH > 0)
+                   ? Math.round(totalMH / drivers.crewSize / 8) : 0,
+    avgRateMxnMH : totalMH > 0 ? Math.round(gL / totalMH) : 0,
+  };
+
+  // Rebuild role breakdown from the burdened items (reconciliation guard).
+  result.roleAgg = _icBuildRoleAgg(result.items);
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // SECTION STYLING CONSTANTS
 // ---------------------------------------------------------------------------
 var SEC_HDR_BG = {
@@ -1536,6 +1640,20 @@ var SEC_SUB_BG = {
 // MAIN ORCHESTRATOR — called from runArgiaEngine() step 12
 // Also called standalone from menu.
 // ---------------------------------------------------------------------------
+// [T8] Resolve the labor burden factor: optional per-project INPUT_INSTALL
+// 'laborBurden' override, else the LABOR_BURDEN_DEFAULT constant. Guarded so a
+// missing INPUT_MAP entry/cell silently falls back to the default (no template
+// dependency).
+function _icResolveLaborBurden(ss) {
+  try {
+    if (typeof INPUT_MAP === 'object' && INPUT_MAP && INPUT_MAP['laborBurden']) {
+      var v = parseFloat(readInput(ss, 'laborBurden'));
+      if (isFinite(v) && v > 0) return v;
+    }
+  } catch (e) { /* optional cell -- fall through to constant */ }
+  return LABOR_BURDEN_DEFAULT;
+}
+
 function runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult) {
   // NOTE (Phase 2a, 2026-04-24): setupInstallInputsSection() was removed from
   // the orchestrator. Install inputs now live on INPUT_INSTALL and are set up
@@ -1573,6 +1691,15 @@ function runInstallCost(ss, inp, invBank, dc, ac, lay, bessResult) {
 
   // Apply kWp productivity benchmarks if set in INPUT_DESIGN rows 80-83
   result = applyKwpBenchmarks(ss, result, drivers);
+
+  // [T8] Apply the labor burden factor on MH-based labor (default 1.65x).
+  // Runs after benchmarks so it burdens the scaled MH. Factor is configurable
+  // per project via the optional INPUT_INSTALL 'laborBurden' cell.
+  var _laborBurden = _icResolveLaborBurden(ss);
+  result = applyLaborBurden(result, drivers, _laborBurden);
+  engineLog(ss, 'InstallCost', 'INFO',
+    'Labor burden applied: x' + _laborBurden + '  (TOTAL LABOR -> ' +
+    Math.round(result.totals.labor) + ', GRAND -> ' + Math.round(result.totals.total) + ')');
 
   // Tier 2 cutover (2026-05-26): legacy writeInstallCost +
   // writeInstallDriverMap functions were deleted from this file (~370
