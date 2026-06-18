@@ -1,4 +1,4 @@
-Pushed 255 files at 7:51:38 AM.
+Pushed 258 files at 8:47:24 AM.
 └─ 00_Main.js
 └─ 00a_Version.js
 └─ 00c_SetupSectionGuard.js
@@ -63,6 +63,7 @@ Pushed 255 files at 7:51:38 AM.
 └─ 32_CalcValorDeCompra.js
 └─ 33_CalcProjectStatus.js
 └─ 34_CalcStructureCost.js
+└─ 35_CalcBomCompleteness.js
 └─ 97_InputAudit.js
 └─ 98_InputDesignDescriptions.js
 └─ appsscript.json
@@ -127,6 +128,7 @@ Pushed 255 files at 7:51:38 AM.
 └─ tests_regression\Pass6TrustTests.gs
 └─ tests_regression\sheet_formulas\BessSimulationFormulasTests.gs
 └─ tests_regression\v2\ApiOutputConsistencyTests.gs
+└─ tests_regression\v2\BomCompletenessCulliganTests.gs
 └─ tests_regression\v2\CfeBaseAndSavingsConsistencyTests.gs
 └─ tests_regression\v2\ClientFinancialsCulliganTests.gs
 └─ tests_regression\v2\CrossTabConsistencyTests.gs
@@ -145,6 +147,7 @@ Pushed 255 files at 7:51:38 AM.
 └─ tests_unit\calc\BessGridChargeDecisionTests.gs
 └─ tests_unit\calc\BessWearCostTests.gs
 └─ tests_unit\calc\BessZeroExportArchetypeTests.gs
+└─ tests_unit\calc\BomCompletenessTests.gs
 └─ tests_unit\calc\BomMemoriaTraceTests.gs
 └─ tests_unit\calc\BomOptimizerSelectionTests.gs
 └─ tests_unit\calc\CalcAcStatusBugTests.gs

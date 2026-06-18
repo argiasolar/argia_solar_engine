@@ -35,6 +35,11 @@ var BOM_COMPLETENESS_FAMILIES = [
 
 var BOM_MISSING_PRICE_TINT = '#FDECEA';   // writer's MISSING_PRICE red tint
 
+// [T10] Configurable severity band. A BOM below this completeness % is treated
+// as structurally unsellable (BLOCKED); at/above it, an incompleteness is a
+// REVIEW_REQUIRED (override-able). Ops can retune without code changes.
+var BOM_COMPLETENESS_BLOCK_PCT = 60;
+
 // PURE. familyStatus = { KEY: { present: bool, sinCotizar: bool } }.
 // A CORE family is always required; a CONDITIONAL family is required only when
 // present (a missing optional family is not a gap, an unpriced one is).
@@ -117,12 +122,16 @@ function _psRuleBomCompleteness(c) {
   var parts = [];
   if (c.missingFamilies.length)    parts.push('familias faltantes: ' + c.missingFamilies.join(', '));
   if (c.sinCotizarFamilies.length) parts.push('SIN COTIZAR: ' + c.sinCotizarFamilies.join(', '));
+  // [T10] band: below the block threshold the BOM is structurally unsellable.
+  var blocked = c.completenessPct < BOM_COMPLETENESS_BLOCK_PCT;
   return {
-    level: 'REVIEW_REQUIRED', code: 'BOM_INCOMPLETE',
+    level: blocked ? 'BLOCKED' : 'REVIEW_REQUIRED', code: 'BOM_INCOMPLETE',
     message: 'BOM INCOMPLETO (' + c.completenessPct + '%) -- ' + parts.join('; ') +
-             '. La oferta no es emitible sin revision.',
+             (blocked ? '. Oferta BLOQUEADA (por debajo de ' + BOM_COMPLETENESS_BLOCK_PCT + '%).'
+                      : '. La oferta no es emitible sin revision.'),
     evidence: {
       completenessPct:    c.completenessPct,
+      blockThresholdPct:  BOM_COMPLETENESS_BLOCK_PCT,
       missingFamilies:    c.missingFamilies,
       sinCotizarFamilies: c.sinCotizarFamilies
     }

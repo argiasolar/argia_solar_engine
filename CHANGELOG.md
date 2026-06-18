@@ -1,4 +1,30 @@
-## [4.43.0] — 2026-06-17  (T9: BOM completeness families + SIN COTIZAR propagation)
+## [4.44.0] — 2026-06-17  (T10a: status rules pack — structure-present + BOM band)
+
+**First slice of the T10 status-rules pack. Adds the structure-cost-present rule and completes the
+BOM-completeness severity band. CULLIGAN keeps a priced structure and a 100% BOM → stays PASS /
+emittable.** (T10 is split into focused chunks; the data-dependent rules — install-benchmark,
+CFE data-quality, BESS-decision — follow once each is verified against CULLIGAN.)
+
+### New — `36_CalcStatusRules.js` (rules-pack home; grows with later T10 chunks)
+- `_psRuleStructureCost(usd)` (pure): `> 0` → PASS `STRUCTURE_COST_PRESENT`; `== 0` → **BLOCKED**
+  `STRUCTURE_COST_ZERO` (racking not costed — stricter than the BOM "family present" check);
+  unknown/NaN → PASS `STRUCTURE_NOT_EVALUATED` (never a false block).
+- `_psReadStructureCostUsd(ss)` / `runStructureCostRule(ss)` (live): reads BOM_v2 SUBTOTAL_STRUCTURE.
+- Wired into `33_` `collectProjectStatusRules` (guarded).
+
+### Changed — `35_CalcBomCompleteness.js` (BOM rule band, reads T9)
+- New configurable `BOM_COMPLETENESS_BLOCK_PCT = 60`. `_psRuleBomCompleteness` now escalates to
+  **BLOCKED** below the threshold (structurally unsellable); at/above it an incompleteness stays
+  REVIEW_REQUIRED (override-able). SIN COTIZAR-only (100% present) stays REVIEW_REQUIRED.
+
+### Tests
+- **NEW** `UNIT_PS_RULE_STRUCTURE_COST`: present → PASS, zero → BLOCKED (not emittable even with
+  override), unknown → NOT_EVALUATED.
+- **NEW** `UNIT_PS_RULE_BOM_BAND`: `<60%` → BLOCKED, partial `≥60%` → REVIEW, SIN COTIZAR-only → REVIEW.
+- **NEW** `REG_STATUS_RULES_CULLIGAN` (live): CULLIGAN structure priced → PASS, offer emittable.
+- T9 `UNIT_PS_RULE_BOM_COMPLETENESS` unchanged (SIN COTIZAR transformer still REVIEW_REQUIRED).
+
+
 
 **A required-material-families checklist with a completeness %, and loud SIN COTIZAR propagation: a
 BOM that omits a required family or carries an unpriced line now shows up as INCOMPLETE (not PASS) on

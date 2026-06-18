@@ -157,6 +157,13 @@ function collectProjectStatusRules(ss) {
       message: 'BOM completeness check failed: ' + (e && e.message ? e.message : e),
       evidence: {} });
   }
+  try {
+    rules.push(runStructureCostRule(ss));
+  } catch (e) {
+    rules.push({ level: 'REVIEW_REQUIRED', code: 'STRUCTURE_CHECK_ERROR',
+      message: 'Structure cost check failed: ' + (e && e.message ? e.message : e),
+      evidence: {} });
+  }
   return rules;
 }
 
