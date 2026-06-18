@@ -1,4 +1,41 @@
-## [4.49.0] — 2026-06-18  (SLIDE_DATA rebuild · chunk 1: API_OUTPUT projection)
+## [4.50.0] — 2026-06-18  (T12 · chunk a: synthetic golden fixtures — declarative registry + INPUT_MAP routing)
+
+**The "launch evidence" track begins. T12 proves the engine end-to-end from EXPLICIT INPUTS ONLY at
+three market-typical sizes. This chunk delivers the verified, Node-checkable foundation: the three
+fixtures as declarative input sets routed entirely through INPUT_MAP, plus structural/negative
+assertion specs. The LIVE runner and the CAPTURED numeric goldens are chunk b/c — those numbers come
+from running the engine, never guessed.**
+
+### New — `tests_regression/synthetic/SyntheticFixtures.gs`
+- `SYNTHETIC_FIXTURES` — three fixtures, each `{ inputs: {mapKey: value}, structural: {...} }`:
+  - **SYNTH_500** ~500 kWp, KR18, GDMTH, **BESS OFF** (`bessStrategy NONE`) → BESS gates must zero;
+    emittable.
+  - **SYNTH_600** ~600 kWp, KR18, GDMTH, **BESS ON (PEAK_SHAVING)**; emittable.
+  - **SYNTH_650** ~650 kWp, concrete (RT37), GDMTH, **BESS ON (LOAD_SHIFTING / FACTURACION_NETA)**;
+    `structure` key **intentionally omitted** → ESTRUCTURA NO SELECCIONADA / SIN COTIZAR →
+    **not emittable (BLOCKED)** — the negative-path proof.
+- `validateSyntheticFixtureKeys()` (pure) — every fixture input key must exist in INPUT_MAP. This is
+  the plan's input-map completeness test: any input that couldn't be written via `writeInput` surfaces.
+- `syntheticPrefillKeys()` (pure) — the engine-consumed numeric keys the prefill tripwire (chunk b)
+  asserts blank after a DEFAULT rebuild.
+- 12-month CFE profiles built from `_synthMonthly(annual, shape)` / `_synthFlat(v)`.
+
+### Tests — `tests_unit/synthetic/SyntheticFixtureTests.gs`
+- `UNIT_SYNTHETIC_FIXTURES_WELLFORMED` — 3 fixtures, 12-month ranges have 12 values, SYNTH_500 BESS
+  off, SYNTH_650 omits `structure` + SIN COTIZAR + not emittable.
+- `UNIT_SYNTHETIC_INPUT_MAP_COMPLETENESS` — all 27 fixture keys route through INPUT_MAP (validates the
+  fixtures use real keys).
+- `UNIT_SYNTHETIC_PREFILL_KEYS` — prefill key set non-empty, every key in INPUT_MAP.
+
+### Next chunks
+- **T12-b** — live `runSyntheticE2E(id)` mirroring `runCulliganE2E` (snapshot → Start New Project →
+  prefill tripwire → `writeInput` loop → `runArgiaEngine` → assert → restore) + Administrator Panel →
+  Synthetic Test Mode menu. Run it to CAPTURE actuals.
+- **T12-c** — lock the captured numeric goldens (~25–35 each) + structural assertions per fixture.
+
+CULLIGAN E2E untouched (synthetic fixtures are a separate module). Self-test ALL GREEN.
+
+
 
 **Rebuilds the broken SLIDE_DATA tab as a clean projection of API_OUTPUT. Every covered figure key now
 reads API_OUTPUT by key via a robust INDEX/MATCH; config + not-yet-exposed figures are clean blanks
