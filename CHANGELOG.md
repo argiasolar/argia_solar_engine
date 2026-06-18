@@ -1,4 +1,44 @@
-## [4.51.0] — 2026-06-18  (Retire legacy INPUT_CFE bill reconstruction, rows 30-37)
+## [4.53.0] — 2026-06-18  (T12 · chunk b: live synthetic E2E runner + capture)
+
+**The live half of the synthetic launch evidence. `runSyntheticE2E` mirrors `runCulliganE2E` but
+proves the engine from a CLEAN, explicit-input state, and CAPTURES the actual outputs for review
+before they're locked as goldens (chunk c).**
+
+### New — `40_SyntheticE2E.js`
+Per fixture: snapshot inputs → `startNewProjectCore` (DEFAULT rebuild) → **prefill tripwire**
+(`syntheticPrefillCheck`: every engine-consumed numeric input must be blank/default after the
+rebuild; leftover project values are leaks) → write fixture inputs via `writeInput` only → run the
+engine silently → **capture** (`captureSyntheticOutputs`: API_OUTPUT wholesale + BOM grand/structure/
+BESS subtotals) → compare to the fixture's declared structural spec (`_synthCompareStructural`:
+emittable / BESS-off / SIN COTIZAR) → restore inputs (finally; layout-invariant verified, auto-repair
+on drift). Captured numbers land in the **`_SYNTH_CAPTURE`** sheet (one column per fixture).
+- `runSyntheticE2E(id)`, `runSyntheticE2E_ALL()`, + per-fixture wrappers.
+
+### Changed — `00_Main.js`
+- Administrator Panel → Test → **Synthetic Test Mode** submenu (Run SYNTH_500 / 600 / 650 / ALL).
+
+### Tests
+- **NEW** `UNIT_SYNTHETIC_E2E_HELPERS` — pure helpers: `_synthFlatten`, `_synthIsBlankOrDefault`
+  (the leak test), `_synthCompareStructural` (SYNTH_650 BLOCKED-on-blank-structure matches; violations
+  produce notes; SYNTH_500 BESS-off matches / BESS-on flags).
+
+Self-test ALL GREEN. The runner is live-only (like `runCulliganE2E`), so no workbook-test count change.
+Run **Administrator Panel → Test → Synthetic Test Mode → Run ALL** to capture the actuals into
+`_SYNTH_CAPTURE`; review them, then chunk c locks them as goldens.
+
+
+
+Extends the 4.51.0 retire: `retireCfeBillReconstruction(ss)` now also **hides** rows 30-37 after
+clearing them, so the empty band disappears between the bill components (row 29) and the PV
+INTERCONNECTION block (row 39). Hiding does NOT move cells — CFE_SIMULATION's 181 INPUT_CFE-bound
+formulas and the INPUT_MAP coordinates for rows 39+ are unaffected — and it is not tracked by the
+layout fingerprint (merges / frozen panes / title only), so the CULLIGAN E2E stays green. Idempotent:
+re-running on an already-cleared sheet still hides the band. Report gains `rowsHidden`.
+
+Run **Administrator Panel → Repairs → Retire CFE Bill Reconstruction** again to hide the band on your
+live sheet (it's safe to re-run).
+
+
 
 **Removes the orphaned in-sheet CFE bill reconstruction (INPUT_CFE rows 30-37: Energía Total / 2%
 Baja Tensión / Cargo FP / Subtotal / IVA / Facturación / DAP / TOTAL). Nothing in the engine reads

@@ -705,7 +705,12 @@ function onOpen() {
         .addItem('Run Regression Tests',                      'runRegressionTests')
         .addItem('Run ALL Tests',                             'runTests')
         .addItem('Run CULLIGAN E2E (load/generate/verify/restore)', 'runCulliganE2E')
-        .addItem('Run ZERO_EXPORT Arbitrage E2E (verifies option #1)', 'runZeroExportArbitrageE2E'))
+        .addItem('Run ZERO_EXPORT Arbitrage E2E (verifies option #1)', 'runZeroExportArbitrageE2E')
+        .addSubMenu(ui.createMenu('Synthetic Test Mode')
+          .addItem('Run SYNTH_500 (~500 kWp, BESS OFF)', 'runSyntheticE2E_500')
+          .addItem('Run SYNTH_600 (~600 kWp, PEAK_SHAVING)', 'runSyntheticE2E_600')
+          .addItem('Run SYNTH_650 (~650 kWp, blank structure -> BLOCKED)', 'runSyntheticE2E_650')
+          .addItem('Run ALL Synthetic (capture -> _SYNTH_CAPTURE)', 'runSyntheticE2E_ALL')))
       .addSeparator()
       // -- Repairs ---------------------------------------------
       .addItem('Repair Input Layout (keeps values)',    'runRepairInputLayouts')

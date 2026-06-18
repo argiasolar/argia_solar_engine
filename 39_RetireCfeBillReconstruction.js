@@ -57,15 +57,23 @@ function retireCfeBillReconstruction(ss) {
       if (vals[r][c] !== '' && vals[r][c] !== null) nonEmpty++;
     }
   }
-  if (nonEmpty === 0) {
-    return { ok: true, sheetMissing: false, alreadyEmpty: true, clearedCells: 0, a1: spec.a1 };
+  if (nonEmpty > 0) {
+    rng.clearContent();                          // values + formulas; keeps layout
+    if (typeof rng.clearNote === 'function') { try { rng.clearNote(); } catch (e) {} }
   }
 
-  rng.clearContent();                          // values + formulas; keeps layout
-  if (typeof rng.clearNote === 'function') { try { rng.clearNote(); } catch (e) {} }
-  try { if (typeof Logger !== 'undefined') Logger.log('Retired CFE bill reconstruction: cleared ' + nonEmpty + ' cells in ' + spec.sheet + '!' + spec.a1); } catch (e) {}
+  // Hide the now-empty band so it disappears visually. Hiding does NOT move
+  // cells -- CFE_SIMULATION's formulas and the INPUT_MAP coords for rows 39+
+  // are unaffected -- and it is not tracked by the layout fingerprint
+  // (merges / frozen panes / title only), so the CULLIGAN E2E stays green.
+  var rowsHidden = false;
+  if (typeof sh.hideRows === 'function') {
+    try { sh.hideRows(spec.firstRow, nRows); rowsHidden = true; } catch (e) {}
+  }
+  try { if (typeof Logger !== 'undefined') Logger.log('Retired CFE bill reconstruction: cleared ' + nonEmpty + ' cells, hid rows ' + spec.firstRow + '-' + spec.lastRow); } catch (e) {}
 
-  return { ok: true, sheetMissing: false, alreadyEmpty: false, clearedCells: nonEmpty, a1: spec.a1 };
+  return { ok: true, sheetMissing: false, alreadyEmpty: nonEmpty === 0,
+           clearedCells: nonEmpty, rowsHidden: rowsHidden, a1: spec.a1 };
 }
 
 // UI wrapper (Administrator Panel > Repairs).
@@ -86,7 +94,7 @@ function runRetireCfeBillReconstruction() {
 
   var rep = retireCfeBillReconstruction(ss);
   var msg = rep.sheetMissing ? 'INPUT_CFE not found -- nothing to do.'
-          : rep.alreadyEmpty ? 'Already retired -- INPUT_CFE!' + rep.a1 + ' was empty.'
-          : 'Retired. Cleared ' + rep.clearedCells + ' cell(s) in INPUT_CFE!' + rep.a1 + '.';
+          : rep.alreadyEmpty ? 'Already retired -- INPUT_CFE!' + rep.a1 + ' was empty; rows 30-37 hidden.'
+          : 'Retired. Cleared ' + rep.clearedCells + ' cell(s) in INPUT_CFE!' + rep.a1 + ' and hid rows 30-37.';
   ui.alert('Retire CFE Bill Reconstruction', msg, ui.ButtonSet.OK);
 }
