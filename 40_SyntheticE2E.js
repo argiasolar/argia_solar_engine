@@ -233,6 +233,8 @@ function _runSyntheticE2ECore(ss, fixtureIds) {
         var cap = captureSyntheticOutputs(ss);
         captures[id] = cap;
         res.structuralNotes = _synthCompareStructural(fx, cap);
+        res.goldenNotes = (typeof compareSyntheticGoldens === 'function')
+          ? compareSyntheticGoldens(fx, cap) : [];
         res.ok = true;
       } catch (eFix) {
         res.reason = 'aborted during "' + phase + '": ' + eFix.message;
@@ -310,10 +312,18 @@ function _synthResultSummary(results) {
     lines.push(icon + id + (r.ok ? ' captured' : ' \u2014 ' + r.reason));
     if (r.prefillLeaks && r.prefillLeaks.length) lines.push('   prefill LEAK: ' + r.prefillLeaks.slice(0, 5).join(', '));
     if (r.structuralNotes && r.structuralNotes.length) lines.push('   structural: ' + r.structuralNotes.join('; '));
+    if (r.ok) {
+      if (r.goldenNotes && r.goldenNotes.length) {
+        lines.push('   \u274c goldens: ' + r.goldenNotes.join('; '));
+      } else {
+        lines.push('   \u2705 goldens PASS (locked structural facts)');
+      }
+    }
   });
   lines.push('');
-  lines.push('Captured numbers are in the _SYNTH_CAPTURE sheet. Review them, then');
-  lines.push('they get locked as goldens (chunk c). Your inputs were restored.');
+  lines.push('Locked structural goldens are checked above (sizes, counts, identity,');
+  lines.push('interconnection). Economics are not locked here (deferred / CULLIGAN).');
+  lines.push('Full numbers are in _SYNTH_CAPTURE. Your inputs were restored.');
   return lines.join('\n');
 }
 

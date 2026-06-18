@@ -53,6 +53,21 @@ var SYNTHETIC_FIXTURES = {
       bessOff: true,                 // BESS gates -> 0 (no battery line, no BESS savings)
       structurePresent: true,        // KR18 priced -> structure rule PASS
       offerEmittableExpected: true
+    },
+    // T12-c LOCKED GOLDENS (verified live 2026-06-18). exact = pricing-independent
+    // structural facts; positive = DB-priced totals (lock sign/presence, not the
+    // peso amount, per the no-live-pricing rule). Economics (bill/savings/CO2/
+    // LCOE/BESS cost) are intentionally NOT locked here -- deferred to chunk A /
+    // covered by the CULLIGAN E2E which has a real complete bill.
+    goldens: {
+      exact: {
+        'api.system_kwp_dc': 499.2, 'api.system_kwac': 500, 'api.module_qty': 780,
+        'api.inverter_qty': 5, 'api.modules_per_string': 18,
+        'api.project_name': 'SYNTH_500', 'api.interconnection_mode': 'ZERO_EXPORT',
+        'mdc.system_kwp_C15': 499.2,
+        'bom.bess_subtotal_F92': 0          // BESS OFF -> exactly 0 (deterministic)
+      },
+      positive: ['bom.grand_total_G94', 'bom.structure_subtotal_F25']
     }
   },
 
@@ -79,6 +94,18 @@ var SYNTHETIC_FIXTURES = {
       bessOff: false,                // BESS present -> battery line + BESS savings
       structurePresent: true,
       offerEmittableExpected: true
+    },
+    goldens: {
+      exact: {
+        'api.system_kwp_dc': 600.32, 'api.system_kwac': 600, 'api.module_qty': 938,
+        'api.inverter_qty': 6, 'api.modules_per_string': 18,
+        'api.project_name': 'SYNTH_600', 'api.interconnection_mode': 'ZERO_EXPORT',
+        'mdc.system_kwp_C15': 600.32
+        // bom.bess_subtotal_F92 NOT locked: BESS-on but CUSTOM_MANUAL spec is
+        // incomplete -> currently 0 (the deferred economic gap). Locking 0 would
+        // freeze a known-wrong value, so chunk A can fix it without a golden bump.
+      },
+      positive: ['bom.grand_total_G94', 'bom.structure_subtotal_F25']
     }
   },
 
@@ -106,10 +133,25 @@ var SYNTHETIC_FIXTURES = {
       // NOTE: `structure` is intentionally NOT set -> ESTRUCTURA NO SELECCIONADA / SIN COTIZAR.
     },
     structural: {
+      // T12-c CORRECTION: the live capture proved that omitting the `structure`
+      // key does NOT yield SIN COTIZAR. Structure cost is priced from roofType x
+      // module count (RT37 -> 19.2/module), so RT37 always prices a structure and
+      // the offer is emittable. SYNTH_650 is therefore a third EMITTABLE fixture,
+      // not the blocked-path demo. The structure_cost==0 -> BLOCKED rule (T10a)
+      // stays covered in isolation by StructureCostTests / StatusRulesTests /
+      // ProjectStatusTests. A genuine blocked-path E2E fixture is deferred.
       bessOff: false,
-      structurePresent: false,       // blank structure -> SIN COTIZAR
-      sinCotizarStructureExpected: true,
-      offerEmittableExpected: false  // structure_cost == 0 -> BLOCKED (T10a)
+      structurePresent: true,        // RT37 priced -> structure rule PASS
+      offerEmittableExpected: true
+    },
+    goldens: {
+      exact: {
+        'api.system_kwp_dc': 650.24, 'api.system_kwac': 700, 'api.module_qty': 1016,
+        'api.inverter_qty': 7, 'api.modules_per_string': 18,
+        'api.project_name': 'SYNTH_650', 'api.interconnection_mode': 'NET_BILLING',
+        'mdc.system_kwp_C15': 650.24
+      },
+      positive: ['bom.grand_total_G94', 'bom.structure_subtotal_F25']
     }
   }
 };
@@ -143,4 +185,63 @@ function syntheticPrefillKeys() {
     var consumed = m && m.consumedBy && m.consumedBy.indexOf('engine') >= 0;
     return consumed && m.type === 'number';
   });
+}
+
+// ===========================================================================
+// T12-c GOLDEN COMPARISON (PURE)
+// ===========================================================================
+// compareSyntheticGoldens(fixture, cap): compare a captured {key:value} map to
+// the fixture's locked goldens. Returns an array of human-readable failure
+// notes (empty == PASS). Pure -> unit-testable in Node and reusable live.
+//   - exact   : number -> |got-exp| <= 0.01 ; string -> trimmed case-insensitive
+//   - positive: Number(got) must be > 0 (DB-priced totals: sign/presence only)
+function compareSyntheticGoldens(fixture, cap) {
+  var notes = [];
+  var g = (fixture && fixture.goldens) || {};
+  cap = cap || {};
+  var exact = g.exact || {};
+  Object.keys(exact).forEach(function (k) {
+    var exp = exact[k];
+    var got = cap[k];
+    if (typeof exp === 'number') {
+      var n = Number(got);
+      if (!isFinite(n) || Math.abs(n - exp) > 0.01) {
+        notes.push(k + ': expected ' + exp + ', got ' + got);
+      }
+    } else {
+      if (String(got == null ? '' : got).trim().toUpperCase() !==
+          String(exp).trim().toUpperCase()) {
+        notes.push(k + ': expected "' + exp + '", got "' + got + '"');
+      }
+    }
+  });
+  (g.positive || []).forEach(function (k) {
+    var n = Number(cap[k]);
+    if (!isFinite(n) || n <= 0) {
+      notes.push(k + ': expected > 0, got ' + cap[k]);
+    }
+  });
+  return notes;
+}
+
+// compareSyntheticGoldensMonotonic(capById): cross-fixture sanity -- the
+// DB-priced totals and system size must scale 500 < 600 < 650. Only fires for a
+// key when all three fixture columns are present; returns failure notes.
+function compareSyntheticGoldensMonotonic(capById) {
+  var notes = [];
+  capById = capById || {};
+  var order = ['SYNTH_500', 'SYNTH_600', 'SYNTH_650'];
+  var keys = ['api.system_kwp_dc', 'bom.grand_total_G94', 'bom.structure_subtotal_F25'];
+  keys.forEach(function (k) {
+    var vals = [], haveAll = true;
+    for (var i = 0; i < order.length; i++) {
+      var c = capById[order[i]];
+      if (!c || c[k] === undefined || c[k] === null || c[k] === '') { haveAll = false; break; }
+      vals.push(Number(c[k]));
+    }
+    if (haveAll && !(vals[0] < vals[1] && vals[1] < vals[2])) {
+      notes.push(k + ': expected 500<600<650, got ' + vals.join(' / '));
+    }
+  });
+  return notes;
 }

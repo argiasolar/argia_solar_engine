@@ -1,4 +1,41 @@
-## [4.58.0] — 2026-06-18  (T12-b round 4: synthetic runner runs the full offer pipeline)
+## [4.59.0] — 2026-06-18  (T12-c: lock synthetic structural goldens)
+
+**Decision (Option C): lock the verified structural chain now; defer synthetic economics.** The
+4.58.0 capture proved the input→engine chain is correct and distinct across all three fixtures
+(sizes, counts, identity, interconnection), while the economics (bill/savings/CO2/LCOE/BESS cost) need
+a fuller input set — those stay CULLIGAN's job for now.
+
+### Locked goldens — `tests_regression/synthetic/SyntheticFixtures.gs`
+Each fixture gains a `goldens` block:
+- `exact` — pricing-independent structural facts: `system_kwp_dc`, `system_kwac`, `module_qty`,
+  `inverter_qty`, `modules_per_string`, `project_name`, `interconnection_mode`, `mdc.system_kwp_C15`
+  (SYNTH_500 also locks `bess_subtotal_F92 = 0`, BESS-off → deterministic).
+- `positive` — DB-priced totals (`bom.grand_total_G94`, `bom.structure_subtotal_F25`) locked on
+  sign/presence only, not the peso amount (no-live-pricing rule). BESS-on fixtures do NOT lock their
+  BESS subtotal (currently 0; the deferred economic gap).
+
+Two pure comparators (Node-unit-tested, reused live): `compareSyntheticGoldens(fixture, cap)` and
+`compareSyntheticGoldensMonotonic(capById)` (500<600<650 scaling, only when all three present).
+
+### SYNTH_650 correction
+The capture disproved the fixture's assumption that omitting the `structure` key yields SIN COTIZAR.
+Structure cost is priced from roofType × module count (RT37 → 19.2/module), so RT37 always prices a
+structure and the offer is emittable. **SYNTH_650 is now a third EMITTABLE fixture.** The
+`structure_cost==0 → BLOCKED` rule (T10a) stays covered in isolation by `StructureCostTests` /
+`StatusRulesTests` / `ProjectStatusTests`; a genuine blocked-path E2E fixture is deferred.
+
+### Wiring + tests
+- `40_SyntheticE2E.js`: runner sets `res.goldenNotes` and the result alert shows `✅ goldens PASS` or
+  the specific mismatches per fixture.
+- New live regression `REG_SYNTHETIC_GOLDENS` (`tests_regression/synthetic/SyntheticGoldenTests.gs`):
+  reads `_SYNTH_CAPTURE`, asserts each present column against its goldens + the monotonic check.
+  Read-only; skips cleanly with no spreadsheet context (no new workbook-dependent ERROR).
+- New unit tests `UNIT_SYNTHETIC_GOLDENS_WELLFORMED` + `UNIT_SYNTHETIC_GOLDENS_COMPARE`; updated
+  `UNIT_SYNTHETIC_FIXTURES_WELLFORMED` and the E2E-helper test for the SYNTH_650 correction.
+
+Self-test ALL GREEN (FAIL 0, unit ERROR 0).
+
+
 
 **The first clean capture revealed BOM scaled correctly per fixture (3.78M/4.55M/5.48M) but every
 `api.*` value was identical stale CULLIGAN data. Root cause: `runArgiaEngine` writes MDC + BOM only —

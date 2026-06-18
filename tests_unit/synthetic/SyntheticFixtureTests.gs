@@ -39,14 +39,14 @@ registerTest({
     t.assert('SYNTH_600 strategy', 'PEAK_SHAVING', SYNTHETIC_FIXTURES.SYNTH_600.inputs.bessStrategy);
     t.assertFalse('SYNTH_600 not bessOff', SYNTHETIC_FIXTURES.SYNTH_600.structural.bessOff);
 
-    // SYNTH_650: structure intentionally OMITTED -> SIN COTIZAR -> NOT emittable
-    t.assertFalse('SYNTH_650 omits structure key',
-      SYNTHETIC_FIXTURES.SYNTH_650.inputs.hasOwnProperty('structure'));
+    // SYNTH_650: T12-c -- omitting `structure` does NOT yield SIN COTIZAR (the
+    // capture proved RT37 prices the structure), so 650 is a third EMITTABLE
+    // fixture. The structure_cost==0 -> BLOCKED rule stays covered in isolation
+    // by StructureCostTests / StatusRulesTests / ProjectStatusTests.
     t.assert('SYNTH_650 strategy', 'LOAD_SHIFTING', SYNTHETIC_FIXTURES.SYNTH_650.inputs.bessStrategy);
-    t.assertTrue('SYNTH_650 sinCotizar expected',
-      SYNTHETIC_FIXTURES.SYNTH_650.structural.sinCotizarStructureExpected === true);
-    t.assertFalse('SYNTH_650 NOT emittable (BLOCKED)',
-      SYNTHETIC_FIXTURES.SYNTH_650.structural.offerEmittableExpected);
+    t.assertTrue('SYNTH_650 structurePresent', SYNTHETIC_FIXTURES.SYNTH_650.structural.structurePresent === true);
+    t.assertTrue('SYNTH_650 emittable',
+      SYNTHETIC_FIXTURES.SYNTH_650.structural.offerEmittableExpected === true);
   }
 });
 
@@ -85,5 +85,85 @@ registerTest({
       return !(typeof inputMapHas === 'function' ? inputMapHas(k) : INPUT_MAP.hasOwnProperty(k));
     });
     t.assert('every prefill key is in INPUT_MAP', 0, bad.length);
+  }
+});
+
+registerTest({
+  id: 'UNIT_SYNTHETIC_GOLDENS_WELLFORMED',
+  group: 'unit', module: 'synthetic/goldens',
+  scenarios: [], tags: ['synthetic', 't12', 'goldens'],
+  source: 'tests_unit/synthetic/SyntheticFixtureTests.gs',
+  fn: function (t, ctx) {
+    t.suite('UNIT synthetic/goldens: locked goldens registry is well-formed');
+    ['SYNTH_500', 'SYNTH_600', 'SYNTH_650'].forEach(function (id) {
+      var g = SYNTHETIC_FIXTURES[id].goldens;
+      t.assertTrue(id + ' has goldens', !!g);
+      t.assertTrue(id + ' goldens.exact present', g && g.exact && Object.keys(g.exact).length >= 6);
+      t.assertTrue(id + ' goldens.positive present', g && g.positive && g.positive.length >= 1);
+      // identity + size goldens must exist (the lockable structural facts)
+      ['api.system_kwp_dc', 'api.system_kwac', 'api.module_qty', 'api.inverter_qty',
+       'api.project_name', 'api.interconnection_mode'].forEach(function (k) {
+        t.assertTrue(id + ' golden has ' + k, g.exact[k] !== undefined);
+      });
+      // project_name golden must equal the fixture id
+      t.assert(id + ' golden project_name', id, g.exact['api.project_name']);
+    });
+    // BESS-off fixture locks BESS subtotal exactly 0; BESS-on fixtures do NOT
+    // lock it (deferred economic gap).
+    t.assert('SYNTH_500 locks bess subtotal 0', 0, SYNTHETIC_FIXTURES.SYNTH_500.goldens.exact['bom.bess_subtotal_F92']);
+    t.assertTrue('SYNTH_600 does not lock bess subtotal',
+      SYNTHETIC_FIXTURES.SYNTH_600.goldens.exact['bom.bess_subtotal_F92'] === undefined);
+  }
+});
+
+registerTest({
+  id: 'UNIT_SYNTHETIC_GOLDENS_COMPARE',
+  group: 'unit', module: 'synthetic/goldens',
+  scenarios: [], tags: ['synthetic', 't12', 'goldens'],
+  source: 'tests_unit/synthetic/SyntheticFixtureTests.gs',
+  fn: function (t, ctx) {
+    t.suite('UNIT synthetic/goldens: compareSyntheticGoldens logic');
+    var fx = SYNTHETIC_FIXTURES.SYNTH_500;
+
+    // PASS: feed the goldens back as the capture + valid positive totals
+    var ok = {};
+    Object.keys(fx.goldens.exact).forEach(function (k) { ok[k] = fx.goldens.exact[k]; });
+    ok['bom.grand_total_G94'] = 3782633; ok['bom.structure_subtotal_F25'] = 14040;
+    t.assert('matching capture -> 0 notes', 0, compareSyntheticGoldens(fx, ok).length);
+
+    // FAIL exact (number): wrong system size
+    var bad = {}; Object.keys(ok).forEach(function (k) { bad[k] = ok[k]; });
+    bad['api.system_kwp_dc'] = 864;
+    t.assertTrue('wrong kWp -> >=1 note', compareSyntheticGoldens(fx, bad).length >= 1);
+
+    // FAIL exact (string): wrong interconnection enum (case-insensitive trim still mismatches)
+    var bad2 = {}; Object.keys(ok).forEach(function (k) { bad2[k] = ok[k]; });
+    bad2['api.interconnection_mode'] = 'NET_BILLING';
+    t.assertTrue('wrong interconnection -> >=1 note', compareSyntheticGoldens(fx, bad2).length >= 1);
+
+    // string compare is trim/case-insensitive: lowercase + spaces still PASS
+    var ok2 = {}; Object.keys(ok).forEach(function (k) { ok2[k] = ok[k]; });
+    ok2['api.interconnection_mode'] = '  zero_export  ';
+    ok2['api.project_name'] = 'synth_500';
+    t.assert('case/space-insensitive string match -> 0 notes', 0, compareSyntheticGoldens(fx, ok2).length);
+
+    // FAIL positive: DB-priced total <= 0
+    var bad3 = {}; Object.keys(ok).forEach(function (k) { bad3[k] = ok[k]; });
+    bad3['bom.structure_subtotal_F25'] = 0;
+    t.assertTrue('zero structure subtotal -> >=1 note', compareSyntheticGoldens(fx, bad3).length >= 1);
+
+    // monotonic: scaling 500<600<650 passes; a regression (650 < 600) fails
+    var capById = {
+      SYNTH_500: { 'api.system_kwp_dc': 499.2, 'bom.grand_total_G94': 3782633, 'bom.structure_subtotal_F25': 14040 },
+      SYNTH_600: { 'api.system_kwp_dc': 600.32, 'bom.grand_total_G94': 4546973, 'bom.structure_subtotal_F25': 16884 },
+      SYNTH_650: { 'api.system_kwp_dc': 650.24, 'bom.grand_total_G94': 5475491, 'bom.structure_subtotal_F25': 19507.2 }
+    };
+    t.assert('monotonic scaling -> 0 notes', 0, compareSyntheticGoldensMonotonic(capById).length);
+    capById.SYNTH_650['bom.grand_total_G94'] = 100;   // smaller than 600 -> break
+    t.assertTrue('non-monotonic -> >=1 note', compareSyntheticGoldensMonotonic(capById).length >= 1);
+
+    // monotonic only fires when all three present (partial run = no false fail)
+    t.assert('partial captures -> 0 notes', 0,
+      compareSyntheticGoldensMonotonic({ SYNTH_500: capById.SYNTH_500 }).length);
   }
 });

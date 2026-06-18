@@ -25,17 +25,25 @@ registerTest({
     t.assertFalse('864 over default 0 LEAK', _synthIsBlankDefaultOrSeed(864, 0, undefined));
     t.assertFalse('foreign w/ seed set LEAK', _synthIsBlankDefaultOrSeed(999, 0, 2000000) === true);
 
-    // _synthCompareStructural — SYNTH_650 (blank structure -> BLOCKED) matches
-    var ok650 = _synthCompareStructural(SYNTHETIC_FIXTURES.SYNTH_650, {
-      'api.project_status': 'BLOCKED', 'bom.structure_subtotal_F25': 0, 'bom.bess_subtotal_F92': 50000
+    // _synthCompareStructural LOGIC (decoupled from any one fixture's intent):
+    // a blank-structure / blocked spec must MATCH a blocked+zero-structure capture
+    // and FLAG an emittable+priced one.
+    var blockedSpec = { structural: { structurePresent: false, offerEmittableExpected: false, bessOff: false } };
+    var okBlocked = _synthCompareStructural(blockedSpec, {
+      'api.project_status': 'BLOCKED', 'bom.structure_subtotal_F25': 0
     });
-    t.assert('SYNTH_650 matching -> no notes', 0, ok650.length);
-
-    // SYNTH_650 violated: emittable + structure priced -> two notes
-    var bad650 = _synthCompareStructural(SYNTHETIC_FIXTURES.SYNTH_650, {
+    t.assert('blocked spec matches blocked capture -> 0 notes', 0, okBlocked.length);
+    var badBlocked = _synthCompareStructural(blockedSpec, {
       'api.project_status': 'PASS', 'bom.structure_subtotal_F25': 5000
     });
-    t.assertTrue('SYNTH_650 violated -> notes', bad650.length >= 2);
+    t.assertTrue('blocked spec vs emittable+priced -> >=2 notes', badBlocked.length >= 2);
+
+    // The REAL SYNTH_650 is now an EMITTABLE fixture (RT37 prices structure):
+    // a PASS_WITH_WARNINGS + priced-structure capture must produce no notes.
+    var ok650 = _synthCompareStructural(SYNTHETIC_FIXTURES.SYNTH_650, {
+      'api.project_status': 'PASS_WITH_WARNINGS', 'bom.structure_subtotal_F25': 19507.2, 'bom.bess_subtotal_F92': 0
+    });
+    t.assert('real SYNTH_650 emittable -> no notes', 0, ok650.length);
 
     // SYNTH_500 (BESS OFF, emittable) matches when BESS subtotal 0 + not blocked
     var ok500 = _synthCompareStructural(SYNTHETIC_FIXTURES.SYNTH_500, {
