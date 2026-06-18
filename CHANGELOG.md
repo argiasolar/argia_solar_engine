@@ -1,4 +1,29 @@
-## [4.46.0] — 2026-06-18  (T10c: status rules pack — BESS-decision transparency)
+## [4.47.0] — 2026-06-18  (T11a: output-provenance helper + CLIENT_FINANCIALS notes)
+
+**Generalizes the FINANCE 4.32 provenance pattern into a reusable helper, and applies it to the
+CLIENT_FINANCIALS headline metrics. Each key figure can now carry a plain-language note saying where
+it came from (label, derivation, sources, engine version). Notes only — no values move.**
+(T11 rollout is chunked; MDC / CFE_OUTPUT / SLIDE_DATA follow.)
+
+### New — `37_CalcProvenance.js`
+- `buildProvenanceNote(rec)` (pure): `{label, formula, sources, version, date}` → ASCII-safe Spanish
+  note (`TRAZABILIDAD: … / Calculo: … / Fuente: … / Motor v… - date`). Omits empty fields; an empty
+  record yields `''` (no bare version-only note); version falls back to `ENGINE_VERSION`.
+- `stampProvenanceNote(rng, rec)` (live, guarded): `typeof rng.setNote === 'function'` guard so
+  unit-test mock ranges never throw; returns true/false.
+
+### Applied — `writers_v2/WriteClientFinancialsV2.js`
+- Stamps provenance notes on the 10 headline KPI value cells (Ahorro Año 1, demanda, CAPEX, payback,
+  descontada, ROI, VPN, TIR, LCOE, ahorro total) via the guarded helper.
+
+### Tests
+- **NEW** `UNIT_PROVENANCE_NOTE`: exact note for a full record, string-vs-array sources, version
+  fallback, omitted lines, empty/null → `''`, stamp guard (mock without setNote → false, capturing
+  mock → true + exact content).
+- **NEW** `REG_PROVENANCE_CULLIGAN` (live): after a CULLIGAN run, the payback / VPN / LCOE cells carry
+  the expected provenance notes (label + derivation + sources + version).
+
+
 
 **Adds the BESS-decision transparency rule: when the engine recommends a battery but the project
 excludes it, the status surfaces the reason + omitted annual savings so the designer makes a conscious

@@ -99,6 +99,36 @@ function writeClientFinancialsV2(ss, fin, opts) {
     sh.getRange(kpiRow + i, 2).setValue(kpis[i][0]).setFontWeight('bold');
     sh.getRange(kpiRow + i, 4).setValue(kpis[i][1]);
   }
+
+  // [T11] Provenance notes on the headline value cells (col 4). Guarded; the
+  // index matches the kpis[] order above. Reusable helper in 37_CalcProvenance.
+  if (typeof stampProvenanceNote === 'function') {
+    var _finProv = [
+      { label: 'Ahorro Ano 1', formula: 'factura_sin - factura_con (Ano 1)',
+        sources: ['CFE_OUTPUT_v2', 'simulacion PV+BESS'] },
+      { label: 'Ahorro por demanda (Ano 1)', formula: 'reduccion del cargo de demanda (Ano 1)',
+        sources: ['CFE_OUTPUT_v2 (demanda)'] },
+      { label: 'Inversion (CAPEX total)', formula: 'materiales + instalacion',
+        sources: ['BOM_v2!G94', 'INSTALLATION_v2!G9'] },
+      { label: 'Recuperacion simple', formula: 'CAPEX / ahorro_neto_Ano1',
+        sources: ['CAPEX', 'ahorro neto Ano 1'] },
+      { label: 'Recuperacion descontada', formula: 'ano en que el flujo descontado acumulado >= 0',
+        sources: ['flujos netos', 'WACC INPUT_BAAS!D15'] },
+      { label: 'ROI al plazo', formula: '(ahorro_total_plazo - CAPEX) / CAPEX',
+        sources: ['flujos netos', 'CAPEX'] },
+      { label: 'VPN', formula: 'VPN(WACC; flujos netos) - CAPEX',
+        sources: ['INPUT_BAAS!D15 (WACC)', 'flujos netos'] },
+      { label: 'TIR', formula: 'TIR(flujos incluyendo -CAPEX en ano 0)',
+        sources: ['flujos netos', 'CAPEX'] },
+      { label: 'LCOE', formula: 'CAPEX / energia_generada_descontada',
+        sources: ['CAPEX', 'generacion PV'] },
+      { label: 'Ahorro total al plazo', formula: 'suma de ahorros netos anuales (plazo)',
+        sources: ['flujos netos'] }
+    ];
+    for (var pi = 0; pi < _finProv.length && pi < kpis.length; pi++) {
+      stampProvenanceNote(sh.getRange(kpiRow + pi, 4), _finProv[pi]);
+    }
+  }
   if (opts.capexBreakdown) {
     sh.getRange(kpiRow + kpis.length, 2, 1, 8).merge()
       .setValue('CAPEX = materiales (BOM_v2) $' + fmt(opts.capexBreakdown.materialsMxn)
