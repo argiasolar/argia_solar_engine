@@ -1,4 +1,4 @@
-Pushed 246 files at 2:37:11 PM.
+Pushed 249 files at 8:29:15 PM.
 └─ 00_Main.js
 └─ 00a_Version.js
 └─ 00c_SetupSectionGuard.js
@@ -61,6 +61,7 @@ Pushed 246 files at 2:37:11 PM.
 └─ 31_CalcClientFinancials.js
 └─ 31a_RunClientFinancials.js
 └─ 32_CalcValorDeCompra.js
+└─ 33_CalcProjectStatus.js
 └─ 97_InputAudit.js
 └─ 98_InputDesignDescriptions.js
 └─ appsscript.json
@@ -130,6 +131,7 @@ Pushed 246 files at 2:37:11 PM.
 └─ tests_regression\v2\CrossTabConsistencyTests.gs
 └─ tests_regression\v2\CulliganBaselineV2Tests.gs
 └─ tests_regression\v2\InterconnModeConsistentTests.gs
+└─ tests_regression\v2\ProjectStatusCulliganTests.gs
 └─ tests_regression\ValidationOptimizerSkipTests.gs
 └─ tests_regression\ZeroExportArbitrageFixtureTests.gs
 └─ tests_unit\calc\BaasEconomicsTests.gs
@@ -168,6 +170,7 @@ Pushed 246 files at 2:37:11 PM.
 └─ tests_unit\calc\ExistingPvCaptureTests.gs
 └─ tests_unit\calc\InstallReclassTests.gs
 └─ tests_unit\calc\PlanMonthlyBessScheduleTests.gs
+└─ tests_unit\calc\ProjectStatusTests.gs
 └─ tests_unit\calc\PvScenarioTests.gs
 └─ tests_unit\calc\ResilienceValueTests.gs
 └─ tests_unit\calc\SetupInputProjectPvTests.gs

@@ -1,4 +1,43 @@
-## [4.39.0] — 2026-06-17  (T4: PROJECT_STATUS engine + offer gate)
+## [4.40.0] — 2026-06-17  (T6: install role man-hours reconciliation)
+
+**The MAN-HOURS BREAKDOWN now reconciles: Σ(role MH) == total MH. Before, the breakdown summed to
+~2.9× the project total (INSTALLER alone exceeded the whole-project MH). The grand total was always
+correct — this fixes the breakdown only.**
+
+### Root cause
+`applyKwpBenchmarks` runs after `calcInstallCost` and scales every line item's `mhComputed` down to a
+benchmark MH/kWp target, then recomputes `sectionTotals` and `totals` — but it never rebuilt
+`roleAgg`. So the role breakdown kept `calcInstallCost`'s **pre-benchmark** MH (CULLIGAN: 2,417 MH)
+while the line items and total held the **post-benchmark** MH (869 MH). The stale snapshot is the
+2.9× inflation; INSTALLER showed 1,594 MH vs the 869 total.
+
+### Fix — `13_CalcInstallCost.js`
+- New pure `_icBuildRoleAgg(items)` builds the per-role MH/cost breakdown from a results list, so
+  `Σ(role MH) == Σ(item MH) == totals.totalMH` by construction. It counts every task-MH line (incl.
+  0-cost inspection MH like QAQC) and skips role-less equipment/percentage lines.
+- `calcInstallCost` now builds `roleAgg` via the helper (single source).
+- **`applyKwpBenchmarks` rebuilds `roleAgg` from the SCALED items** at the end (the actual fix), right
+  after it recomputes the totals.
+
+No change to the grand total, labor total, section totals, or any line item — only the role
+breakdown is corrected.
+
+### Verified
+CULLIGAN: the breakdown now sums to 869 MH (was 2,417), matching the total; INSTALLER 493.6 ≤ total.
+
+### Tests
+- **NEW** `UNIT_INSTALL_ROLE_MH_RECONCILES` (pure): Σ(role MH) == Σ(item MH) across a mixed fixture
+  (incl. a 0-cost task-MH role and a role-less equipment line), plus the stale-vs-rebuilt scenario
+  proving the fix is what reconciles after scaling.
+- **NEW** `REG_INSTALL_ROLE_MH_RECONCILES` (CULLIGAN): the rendered MAN-HOURS BREAKDOWN sums to the
+  TOTAL row, and no single role exceeds the total.
+
+### Note (honest)
+The role LABOR column sums to ~0.3% under the TOTAL labor — that residual is indirect labour
+(supervision / HSE officer / QAQC day-rate) that correctly lives in the grand total but isn't
+attributable to a task-MH role. Out of scope here (this task is the MH breakdown); flagged.
+
+
 
 **One place decides whether a project is sellable. A status engine reduces rule results to a single
 level (PASS / PASS_WITH_WARNINGS / REVIEW_REQUIRED / BLOCKED), surfaces it on `_META`, the Project

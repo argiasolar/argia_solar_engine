@@ -219,6 +219,24 @@ function _icBucketDeltas(result) {
            secLaborIndirect: 0, secTotal: result.totalMxn };
 }
 
+// -- PURE: build the per-role man-hours / labour breakdown from a results list.
+// -- Σ(role MH) == Σ(item MH) == totals.totalMH by construction (every task-MH
+// -- item carries a laborRole; equip/other/percent items have mhComputed 0).
+// -- MUST be rebuilt from the FINAL items after any MH scaling (kWp benchmarks),
+// -- or the breakdown goes stale and inflates vs the total (the T6 bug).
+function _icBuildRoleAgg(items) {
+  var roleAgg = {};
+  (items || []).forEach(function (res) {
+    if (!res || !res.item || !res.item.laborRole) return;
+    if (!(res.mhComputed > 0) && !(res.laborMxn > 0)) return;  // skip pure equip/other/percent
+    var role = res.item.laborRole;
+    if (!roleAgg[role]) roleAgg[role] = { mh: 0, cost: 0, rate: res.roleRateVal || 0 };
+    roleAgg[role].mh   += res.mhComputed;
+    roleAgg[role].cost += res.laborMxn;
+  });
+  return roleAgg;
+}
+
 var IC_SECTIONS = [  'AC','DC','RACKING SYSTEM','CONNECTION','SAFETY','GENERAL SITE','EQUIPMENT','BESS','INDIRECT'
 ];
 
@@ -1079,15 +1097,9 @@ function calcInstallCost(instLib, drivers) {
   };
 
   // -- Role aggregation for man-hours block -----------------------------------
-  var roleAgg = {};
-  items.forEach(function(res) {
-    if (res.laborMxn > 0 && res.item.laborRole) {
-      var role = res.item.laborRole;
-      if (!roleAgg[role]) roleAgg[role] = { mh: 0, cost: 0, rate: res.roleRateVal || 0 };
-      roleAgg[role].mh   += res.mhComputed;
-      roleAgg[role].cost += res.laborMxn;
-    }
-  });
+  // Built from items here; REBUILT in applyKwpBenchmarks after MH scaling so the
+  // breakdown always reconciles to totals.totalMH (see _icBuildRoleAgg).
+  var roleAgg = _icBuildRoleAgg(items);
 
   return { items: items, sectionTotals: sectionTotals, totals: totals, roleAgg: roleAgg };
 }
@@ -1465,6 +1477,11 @@ function applyKwpBenchmarks(ss, result, drivers) {
                    ? Math.round(totalMH / drivers.crewSize / 8) : 0,
     avgRateMxnMH : totalMH > 0 ? Math.round(gL / totalMH) : 0,
   };
+
+  // [T6] REBUILD the role breakdown from the SCALED items. Without this the
+  // breakdown keeps calcInstallCost's pre-benchmark MH and inflates ~2.9x vs the
+  // total (Σ role MH now reconciles to totals.totalMH).
+  result.roleAgg = _icBuildRoleAgg(result.items);
 
   return result;
 }
