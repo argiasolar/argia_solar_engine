@@ -136,3 +136,43 @@ registerTest({
     t.assert('code CFE_DQ_NOT_EVALUATED', 'CFE_DQ_NOT_EVALUATED', none.code);
   }
 });
+
+registerTest({
+  id: 'UNIT_PS_RULE_BESS_DECISION',
+  group: 'unit', module: 'calc/status_rules',
+  scenarios: [], tags: ['calc', 'project_status', 'bess', 't10'],
+  source: 'tests_unit/calc/StatusRulesTests.gs',
+  fn: function (t, ctx) {
+    t.suite('UNIT calc/status_rules: BESS-decision transparency');
+
+    // recommended & included -> PASS
+    var incl = _psRuleBessDecision({ recommended: true, included: true });
+    t.assert('recommended+included -> PASS', 'PASS', incl.level);
+    t.assert('code BESS_RECOMMENDED_INCLUDED', 'BESS_RECOMMENDED_INCLUDED', incl.code);
+
+    // recommended & excluded -> PASS_WITH_WARNINGS + omitted savings disclosed
+    var excl = _psRuleBessDecision({ recommended: true, included: false,
+      recommendedLabel: '2 x HW_LUNA_2MWH', omittedSavingsAnnualMxn: 5124120, omittedSavingsPct: 39.9 });
+    t.assert('recommended+excluded -> PASS_WITH_WARNINGS', 'PASS_WITH_WARNINGS', excl.level);
+    t.assert('code BESS_RECOMMENDED_EXCLUDED', 'BESS_RECOMMENDED_EXCLUDED', excl.code);
+    t.assert('omitted savings in evidence', 5124120, excl.evidence.omittedSavingsAnnualMxn);
+    t.assert('omitted % in evidence', 39.9, excl.evidence.omittedSavingsPct);
+    t.assertContains('label disclosed in message', excl.message, 'HW_LUNA_2MWH');
+
+    // soft gate: surfaces (not emittable without override) but override-able (disclosure, not hard block)
+    var reduced = reduceProjectStatus([
+      { level: 'PASS', code: 'CAPEX_PRESENT', message: '', evidence: {} }, excl ]);
+    t.assert('worst = PASS_WITH_WARNINGS', 'PASS_WITH_WARNINGS', reduced.status);
+    t.assertFalse('excluded BESS not emittable without override', isOfferEmittable(reduced.status, false));
+    t.assertTrue('override emits (conscious disclosure)', isOfferEmittable(reduced.status, true));
+
+    // not recommended -> PASS
+    t.assert('not recommended -> PASS', 'PASS', _psRuleBessDecision({ recommended: false }).level);
+    t.assert('code BESS_NOT_RECOMMENDED', 'BESS_NOT_RECOMMENDED', _psRuleBessDecision({ recommended: false }).code);
+
+    // no data -> NOT_EVALUATED
+    var none = _psRuleBessDecision(null);
+    t.assert('no recommendations sheet -> PASS', 'PASS', none.level);
+    t.assert('code BESS_DECISION_NOT_EVALUATED', 'BESS_DECISION_NOT_EVALUATED', none.code);
+  }
+});

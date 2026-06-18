@@ -1,4 +1,31 @@
-## [4.45.0] — 2026-06-18  (T10b: status rules pack — CFE data-quality score)
+## [4.46.0] — 2026-06-18  (T10c: status rules pack — BESS-decision transparency)
+
+**Adds the BESS-decision transparency rule: when the engine recommends a battery but the project
+excludes it, the status surfaces the reason + omitted annual savings so the designer makes a conscious
+call. CULLIGAN includes BESS → PASS / emittable.** This is the last gating/advisory rule of the T10
+pack; only the install-benchmark rule remains deferred (see 4.45.0 note — bounds/94M decision).
+
+### Added — `36_CalcStatusRules.js`: BESS-decision rule (reads BESS_RECOMMENDATIONS + BOM_v2)
+- `_psRuleBessDecision(d)` (pure): recommended ∧ included → PASS `BESS_RECOMMENDED_INCLUDED`;
+  recommended ∧ excluded → **PASS_WITH_WARNINGS** `BESS_RECOMMENDED_EXCLUDED` (advisory soft-gate,
+  override-able — disclosure, not a hard block) with the omitted savings in the message + evidence;
+  not recommended → PASS `BESS_NOT_RECOMMENDED`; no data → `BESS_DECISION_NOT_EVALUATED`.
+- `collectBessDecision(ss)` / `runBessDecisionRule(ss)` (live): recommendation from the
+  BESS_RECOMMENDATIONS row-2 banner; inclusion from BOM BESS subtotal (>0); when excluded, omitted
+  annual savings = best candidate Total $/yr, expressed as % of the CFE base (sin-PV) bill
+  (BESS_SIMULATION!D12). All reads guarded; the check-error fallback is PASS (advisory never blocks).
+- Wired into `33_` `collectProjectStatusRules` (guarded, PASS-on-error).
+
+### Tests
+- **NEW** `UNIT_PS_RULE_BESS_DECISION`: included → PASS · excluded → PASS_WITH_WARNINGS + omitted
+  savings disclosed + soft-gate (override-able) · not recommended → PASS · no data → NOT_EVALUATED.
+- **NEW** `REG_BESS_DECISION_CULLIGAN` (live): CULLIGAN BESS included → PASS, emittable.
+
+### T10 status
+Shipped: BOM-completeness band (T10a), structure-present (T10a), CFE data-quality (T10b),
+BESS-decision (T10c). **Deferred**: install-benchmark — pending the labor-only-bounds / 94M decision.
+
+
 
 **Adds the CFE data-quality rule to the status pack: a confident bill model needs complete billing
 history, so this scores five dimensions and bands the result. CULLIGAN has full 12-month data on

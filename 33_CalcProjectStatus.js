@@ -171,6 +171,13 @@ function collectProjectStatusRules(ss) {
       message: 'CFE data-quality check failed: ' + (e && e.message ? e.message : e),
       evidence: {} });
   }
+  try {
+    rules.push(runBessDecisionRule(ss));
+  } catch (e) {
+    rules.push({ level: 'PASS', code: 'BESS_DECISION_CHECK_ERROR',
+      message: 'BESS decision check failed: ' + (e && e.message ? e.message : e),
+      evidence: {} });
+  }
   return rules;
 }
 

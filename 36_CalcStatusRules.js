@@ -145,3 +145,102 @@ function collectCfeDataQuality(ss) {
 function runCfeDataQualityRule(ss) {
   return _psRuleCfeDataQuality(scoreCfeDataQuality(collectCfeDataQuality(ss)));
 }
+
+// -----------------------------------------------------------------------------
+// RULE: BESS-decision transparency  (reads BESS_RECOMMENDATIONS + BOM_v2)
+// If the engine recommends a battery but the project excludes it, the offer
+// silently leaves peak-shaving / arbitrage savings on the table. Surface it:
+// record the reason + the omitted annual savings so the designer makes a
+// conscious call. Advisory (PASS_WITH_WARNINGS) — disclosure, not a hard block.
+//   recommended & included  -> PASS  (BESS_RECOMMENDED_INCLUDED)
+//   recommended & excluded  -> PASS_WITH_WARNINGS (BESS_RECOMMENDED_EXCLUDED)
+//   not recommended         -> PASS  (BESS_NOT_RECOMMENDED)
+//   no recommendations sheet -> NOT_EVALUATED
+// -----------------------------------------------------------------------------
+
+// PURE. d = { recommended, included, recommendedLabel, omittedSavingsAnnualMxn,
+//             omittedSavingsPct }  (null -> not evaluated).
+function _psRuleBessDecision(d) {
+  if (!d) {
+    return { level: 'PASS', code: 'BESS_DECISION_NOT_EVALUATED',
+             message: 'Decision BESS no evaluada (sin BESS_RECOMMENDATIONS).',
+             evidence: { evaluated: false } };
+  }
+  if (d.recommended !== true) {
+    return { level: 'PASS', code: 'BESS_NOT_RECOMMENDED',
+             message: 'Sin bateria recomendada para este perfil -- nada que divulgar.',
+             evidence: { recommended: false } };
+  }
+  if (d.included) {
+    return { level: 'PASS', code: 'BESS_RECOMMENDED_INCLUDED',
+             message: 'Bateria recomendada e incluida en la propuesta.',
+             evidence: { recommended: true, included: true } };
+  }
+  // recommended but excluded -> disclose.
+  var savTxt = (d.omittedSavingsAnnualMxn > 0)
+    ? ' Ahorro anual omitido ~$' + Math.round(d.omittedSavingsAnnualMxn).toLocaleString('en-US') + ' MXN'
+      + (d.omittedSavingsPct != null ? ' (~' + d.omittedSavingsPct + '% de la factura CFE base sin PV).' : '.')
+    : '.';
+  return {
+    level: 'PASS_WITH_WARNINGS', code: 'BESS_RECOMMENDED_EXCLUDED',
+    message: 'Bateria recomendada (' + (d.recommendedLabel || 'ver BESS_RECOMMENDATIONS')
+           + ') pero EXCLUIDA de la propuesta.' + savTxt
+           + ' Decision consciente: divulgar en tarjeta/oferta.',
+    evidence: {
+      recommended: true, included: false,
+      recommendedLabel: d.recommendedLabel || null,
+      omittedSavingsAnnualMxn: d.omittedSavingsAnnualMxn || null,
+      omittedSavingsPct: (d.omittedSavingsPct != null ? d.omittedSavingsPct : null)
+    }
+  };
+}
+
+// LIVE. Build the decision from BESS_RECOMMENDATIONS (row-2 banner + candidate
+// table) and BOM_v2 (BESS subtotal). null when no recommendations sheet.
+function collectBessDecision(ss) {
+  var rec = ss.getSheetByName('BESS_RECOMMENDATIONS');
+  if (!rec) return null;
+
+  var banner = '';
+  try { banner = String(rec.getRange(2, 1).getValue() || ''); } catch (e) {}
+  var recommended = /RECOMMENDED:/i.test(banner);
+  var recommendedLabel = recommended
+    ? banner.replace(/^.*RECOMMENDED:\s*/i, '').split('  ')[0].trim()
+    : null;
+
+  // included = BOM BESS subtotal > 0 (BOM_ROW.SUBTOTAL_BESS = 92, TOTAL_USD = 6).
+  var included = false;
+  try {
+    var bom = ss.getSheetByName('BOM_v2');
+    if (bom) included = (Number(bom.getRange(92, 6).getValue()) || 0) > 0;
+  } catch (e) {}
+
+  var omittedAnnual = 0, omittedPct = null;
+  if (recommended && !included) {
+    // Best candidate Total $/yr (col 10), rows 8..last — robust numeric read.
+    try {
+      var last = rec.getLastRow();
+      if (last >= 8) {
+        var col = rec.getRange(8, 10, last - 7, 1).getValues();
+        for (var i = 0; i < col.length; i++) {
+          var v = Number(col[i][0]) || 0;
+          if (v > omittedAnnual) omittedAnnual = v;
+        }
+      }
+    } catch (e) {}
+    // % of the CFE base (sin-PV) bill — authoritative at BESS_SIMULATION!D12.
+    try {
+      var sim = ss.getSheetByName('BESS_SIMULATION');
+      var sinPv = sim ? Number(sim.getRange('D12').getValue()) : 0;
+      if (sinPv > 0 && omittedAnnual > 0) omittedPct = Math.round((omittedAnnual / sinPv) * 1000) / 10;
+    } catch (e) {}
+  }
+
+  return { recommended: recommended, included: included, recommendedLabel: recommendedLabel,
+           omittedSavingsAnnualMxn: omittedAnnual, omittedSavingsPct: omittedPct };
+}
+
+// LIVE wrapper.
+function runBessDecisionRule(ss) {
+  return _psRuleBessDecision(collectBessDecision(ss));
+}
