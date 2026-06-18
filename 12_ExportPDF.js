@@ -404,9 +404,38 @@ function _runExport(cfgKey) {
       }
     }
 
+    // T4: PROJECT STATUS gate for offer-class deliverables (the customer-facing
+    // documents). status == PASS exports silently; soft levels prompt for an
+    // explicit override; BLOCKED is a hard stop (cannot be overridden). Internal
+    // engineering exports (MDC / BOM / RFQ / INSTALLATION) are not gated.
+    var _PS_OFFER_EXPORTS = { PROJECT_CARD: 1, CLIENT_FINANCIALS: 1, BAAS_PROJECTION: 1 };
+    if (_PS_OFFER_EXPORTS[cfgKey] && typeof assertOfferEmittable === 'function') {
+      var gate = assertOfferEmittable(ss, {});
+      if (!gate.emittable && gate.hardBlocked) {
+        ui.alert('\u274C ' + cfgKey + ' \u2014 oferta BLOQUEADA',
+                 'El estado del proyecto es BLOCKED, por lo que la oferta NO puede emitirse. '
+               + 'Corrija los problemas marcados (vea PROJECT_CARD / _META) y regenere.',
+                 ui.ButtonSet.OK);
+        return;
+      }
+      if (!gate.emittable) {
+        var emitAnyway = ui.alert(
+          '\u26a0 Estado del proyecto: ' + gate.status,
+          'El proyecto no est\u00e1 en PASS. \u00bfEmitir la oferta de todos modos?',
+          ui.ButtonSet.YES_NO);
+        if (emitAnyway !== ui.Button.YES) {
+          ui.alert('Export cancelado',
+                   'Resuelva el estado del proyecto y vuelva a exportar.',
+                   ui.ButtonSet.OK);
+          return;
+        }
+        engineLog(ss, 'ExportPDF', 'WARNING',
+                  cfgKey + ' exported with status ' + gate.status + ' (user override).');
+      }
+    }
+
     var offerFolder = getOutputFolder_(ss);
     var res         = _exportSheetToPdf(ss, cfgKey, offerFolder);
-
     ui.alert(
       '\u2705  ' + cfgKey + ' exported',
       'File saved to: ' + offerFolder.getName() + '\n\n' + res.name + '\n\n' + res.url,

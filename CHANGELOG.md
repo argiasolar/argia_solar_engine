@@ -1,4 +1,43 @@
-## [4.38.0] — 2026-06-17  (T5: interconnection-mode single source)
+## [4.39.0] — 2026-06-17  (T4: PROJECT_STATUS engine + offer gate)
+
+**One place decides whether a project is sellable. A status engine reduces rule results to a single
+level (PASS / PASS_WITH_WARNINGS / REVIEW_REQUIRED / BLOCKED), surfaces it on `_META`, the Project
+Card, and `API_OUTPUT.project_status`, and gates the PDF/offer export path. Ships as a shell with one
+trivial rule; the real rules plug in at T10.**
+
+### Added — `33_CalcProjectStatus.js`
+- `PROJECT_STATUS` levels + `reduceProjectStatus(ruleResults)` (PURE): worst level wins, empty →
+  PASS, reasons sorted worst-first, counts per level. **Fail-closed**: an unknown level ranks as
+  BLOCKED so a malformed rule can never silently let an offer through.
+- `isOfferEmittable(status, override)` (PURE): PASS emits; PASS_WITH_WARNINGS / REVIEW_REQUIRED emit
+  only with an explicit override; **BLOCKED never emits** (hard stop, override ignored).
+- `_psRuleHasCapex(capexMxn)` (PURE) — the one shipped rule: positive CAPEX → PASS, else BLOCKED
+  (`NO_CAPEX`). Rules return `{ level, code, message, evidence }`; T10 adds the rest.
+- Live: `collectProjectStatusRules` / `resolveProjectStatusValue` (status only, no writes) /
+  `runProjectStatus` (resolve + `_META` stamp + Project Card row-2 status line) / `assertOfferEmittable`.
+
+### Wired
+- **`writers_v2/WriteApiOutputV2.js`** — `project_status` is now the real engine result (was the
+  `PENDING_T4` placeholder), via `resolveProjectStatusValue`.
+- **`12_ExportPDF.js`** — `_runExport` gates offer-class exports (PROJECT_CARD, CLIENT_FINANCIALS,
+  BAAS_PROJECTION) on status, mirroring the existing freshness-override pattern: PASS exports
+  silently, soft levels prompt for override, BLOCKED hard-refuses. Internal exports (MDC / BOM / RFQ /
+  INSTALLATION) are not gated.
+- **`00_Main.js`** — `runGenerateAllDeliverables` runs `runProjectStatus` at the end (reads the
+  finished CAPEX), stamps `_META` + the Project Card. Non-fatal.
+
+### Tests
+- **NEW** `UNIT_PROJECT_STATUS_REDUCE` / `UNIT_PROJECT_STATUS_GATE` / `UNIT_PROJECT_STATUS_HAS_CAPEX`
+  (pure): worst-level reduction incl. fail-closed unknown level, the gate truth table incl. the
+  BLOCKED hard stop, and the has-CAPEX rule.
+- **NEW** `REG_PROJECT_STATUS_CULLIGAN` (CULLIGAN): status PASS, offer emittable, `API_OUTPUT`
+  PASS (not `PENDING_T4`), `_META` stamped, Project Card row 2 shows the status.
+
+### Project Card surface
+The status writes to Project Card **row 2** — a blank spacer row with no merges or frozen panes (an
+output sheet, fully regenerated), so the template layout is untouched.
+
+
 
 **One interconnection input drives the simulation AND every output. Before this, the outputs
 re-read raw `INPUT_CFE!C41` independently of the resolver the sim runs on — so CFE_OUTPUT could

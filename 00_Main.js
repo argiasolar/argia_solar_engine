@@ -2203,6 +2203,18 @@ function runGenerateAllDeliverables() {
     lines.push('\u274c Client financials: ' + e.message);
   }
 
+  // T4: compute + persist the overall PROJECT STATUS once everything is written
+  // (reads the finished CAPEX). Stamps _META + Project Card. Non-fatal.
+  try {
+    if (typeof runProjectStatus === 'function') {
+      var psRet = runProjectStatus(ss, {});
+      lines.push((psRet.status === 'PASS' ? '\u2705' : '\u26a0') +
+                 ' Project status: ' + psRet.status);
+    }
+  } catch (e) {
+    lines.push('\u26a0 Project status: ' + e.message);
+  }
+
   ui.alert('Generate ALL Deliverables \u2014 summary',
            lines.join('\n') +
            '\n\nAll generated tabs carry a fresh stamp; edit any INPUT tab and ' +

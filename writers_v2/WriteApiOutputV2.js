@@ -75,7 +75,7 @@ var API_OUTPUT_FIELDS = [
   { key: 'co2_tons_year1',               units: 'tCO2e',   src: 'CLIENT_FIN fin.co2.year1Tons',           from: 'co2TonsYear1' },
   { key: 'co2_tons_term',                units: 'tCO2e',   src: 'CLIENT_FIN fin.co2.termTons',            from: 'co2TonsTerm' },
 
-  { key: 'project_status',               units: '',        src: 'placeholder until T4 (PROJECT_STATUS engine)', from: 'projectStatus' }
+  { key: 'project_status',               units: '',        src: 'PROJECT_STATUS engine reduceProjectStatus (T4)', from: 'projectStatus' }
 ];
 
 var API_OUTPUT_SHEET = 'API_OUTPUT';
@@ -215,7 +215,8 @@ function _apiResolveSources(ss, opts, warnings) {
     co2TonsTerm:        fin ? num_(fin.co2 && fin.co2.termTons) : null,
 
     returnsBasis:       opts.returnsBasis || 'COST',
-    projectStatus:      'PENDING_T4'
+    projectStatus:      (typeof resolveProjectStatusValue === 'function')
+                          ? resolveProjectStatusValue(ss) : 'UNKNOWN'
   };
 }
 
