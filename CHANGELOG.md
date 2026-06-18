@@ -1,4 +1,54 @@
-## [4.53.0] — 2026-06-18  (T12 · chunk b: live synthetic E2E runner + capture)
+## [4.55.0] — 2026-06-18  (T12-b fixes from the first capture run)
+
+**The capture run surfaced three things; this fixes all three so the synthetic E2E runs clean.**
+
+### Fixed
+- **`businessType` value** — fixtures used `'COMPRA'`, which the cell's dropdown rejects (valid:
+  PPA_ROOF / PPA_GROUND / CAPEX_ROOF / CAPEX_GROUND / CARPORT). Set to `'CAPEX_ROOF'` for all three.
+  This is what aborted every fixture at "write fixture inputs" before the engine ran. (The completeness
+  test validated key routing, not enum values — this is the value-gap the live run was meant to expose.)
+- **Prefill tripwire false positive** — `_synthIsBlankOrDefault` compared only to `default`, so seeded
+  cells (e.g. `bessMinAnnualSavingMxn` seed 2000000) were flagged as leaks. Now
+  `_synthIsBlankDefaultOrSeed(val, def, seed)` accepts the seed too. (The genuine leaks —
+  `bessCapacityKwh`, `bessPowerKw`, `cfeKwh*` — are fixed by the 4.54.0 reset.)
+- **Progress popup didn't close** — the runner called a non-existent `_hideArgiaProgress`. Now releases
+  `_ARGIA_PROGRESS_EXTERNAL` and emits a terminal `_setArgiaProgress(6,6,…)` so the popup auto-closes,
+  matching `runCulliganE2E`.
+
+### Tests
+- `UNIT_SYNTHETIC_E2E_HELPERS` updated for the seed-aware tripwire (equals-seed is clean; foreign value
+  with a seed set is still a leak).
+
+Self-test ALL GREEN. With 4.54.0 + this, **Run ALL Synthetic** should reach the engine and capture real
+per-fixture numbers.
+
+
+
+**Fixes a real reset bug the synthetic prefill tripwire exposed: "Start New Project" rebuilt the
+INPUT tab structure but did NOT clear data-cell values, so a new project inherited the previous
+project's CFE consumption and BESS sizing (e.g. `cfeKwhBase`, `bessCapacityKwh=2169`,
+`bessPowerKw=972` survived). `setupInputCFE` is a styling-only stub, and the BESS setup seeds some
+cells but leaves others.**
+
+### New — `00d_InputSnapshot.js`
+- `engineNumericResetKeys()` (pure) — engine-consumed `number`/`percent` INPUT_MAP keys.
+- `_inputResetValue(m)` (pure) — canonical fresh value: `seed → default → blank`.
+- `clearEngineNumericInputs(ss)` (live) — resets every engine-consumed numeric input to that value
+  via INPUT_MAP (single source, no cell missed). Range + scalar handled.
+
+### Changed — `00_Main.js`
+- `startNewProjectCore` step 2b now calls `clearEngineNumericInputs` after `rebuildInputsToDefault`,
+  so a new project starts with no CFE/BESS residue. Report gains `numericInputsReset`.
+
+### Tests
+- **NEW** `UNIT_ENGINE_NUMERIC_RESET` — `_inputResetValue` resolution (seed>default>blank, seed 0
+  honored); the reset key set is engine+numeric, includes the leaked keys (`bessCapacityKwh`,
+  `bessPowerKw`, `cfeKwhBase`, `cfeKwhIntermedia`), and excludes non-numeric (`businessType`).
+
+Self-test ALL GREEN. Seeded cells (e.g. `bessMinAnnualSavingMxn` seed 2000000) keep their seed — that
+is the intended fresh value, not residue.
+
+
 
 **The live half of the synthetic launch evidence. `runSyntheticE2E` mirrors `runCulliganE2E` but
 proves the engine from a CLEAN, explicit-input state, and CAPTURES the actual outputs for review

@@ -841,3 +841,68 @@ function runRepairInputLayouts() {
              + ' cells in _INPUT_BACKUP.');
   ui.alert('Repair Input Layout \u2014 done', lines.join('\n'), ui.ButtonSet.OK);
 }
+
+
+// =============================================================================
+// [4.54.0] clearEngineNumericInputs — true clean-slate reset for Start New
+// Project. rebuildInputsToDefault() runs the setupInput* functions, which
+// rebuild STRUCTURE/STYLING but do NOT clear data-cell VALUES (setupInputCFE is
+// a styling-only stub; the BESS setup seeds some cells but leaves others). So a
+// "new project" inherited the previous project's CFE consumption + BESS sizing
+// (e.g. cfeKwhBase, bessCapacityKwh, bessPowerKw survived). This resets every
+// engine-consumed numeric input to its canonical fresh value via INPUT_MAP:
+//   seed (the value setup intends for a fresh sheet) -> default -> blank.
+// Single source (INPUT_MAP), so no cell is missed.
+// =============================================================================
+
+// PURE. Canonical fresh value for an INPUT_MAP entry: seed, else default, else blank.
+function _inputResetValue(m) {
+  if (m && m.seed !== undefined && m.seed !== null) return m.seed;
+  if (m && m.default !== undefined && m.default !== null) return m.default;
+  return '';
+}
+
+// PURE. Engine-consumed numeric/percent input keys (the reset set).
+function engineNumericResetKeys() {
+  if (typeof INPUT_MAP === 'undefined') return [];
+  return Object.keys(INPUT_MAP).filter(function (k) {
+    var m = INPUT_MAP[k];
+    if (!m) return false;
+    if (m.type !== 'number' && m.type !== 'percent') return false;
+    return m.consumedBy && m.consumedBy.indexOf('engine') >= 0;
+  });
+}
+
+// LIVE. Reset every engine-consumed numeric input to its canonical fresh value.
+// Returns { keys, cellsWritten }.
+function clearEngineNumericInputs(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var keys = engineNumericResetKeys();
+  var cellsWritten = 0;
+  keys.forEach(function (k) {
+    var m = INPUT_MAP[k];
+    var sh = ss.getSheetByName(m.sheet);
+    if (!sh) return;
+    var val = _inputResetValue(m);
+    try {
+      if (m.mode === 'range') {
+        if (!m.rangeA1) return;
+        var rng = sh.getRange(m.rangeA1);
+        if (val === '') { rng.clearContent(); }
+        else {
+          var nr = rng.getNumRows(), nc = rng.getNumColumns(), arr = [];
+          for (var r = 0; r < nr; r++) { var row = []; for (var c = 0; c < nc; c++) row.push(val); arr.push(row); }
+          rng.setValues(arr);
+        }
+        cellsWritten += rng.getNumRows() * rng.getNumColumns();
+      } else if (m.row && m.col) {
+        var cell = sh.getRange(m.row, m.col);
+        if (val === '') cell.clearContent(); else cell.setValue(val);
+        cellsWritten++;
+      }
+    } catch (e) {
+      if (typeof engineLog === 'function') { try { engineLog(ss, 'InputReset', 'WARNING', 'clear ' + k + ' failed: ' + e.message); } catch (_) {} }
+    }
+  });
+  return { keys: keys.length, cellsWritten: cellsWritten };
+}

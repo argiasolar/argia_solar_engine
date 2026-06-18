@@ -31,12 +31,17 @@ function _synthFlatten(v) {
   } else { out.push(v); }
   return out;
 }
-function _synthIsBlankOrDefault(val, def) {
+function _synthIsBlankDefaultOrSeed(val, def, seed) {
   if (val === '' || val === null || val === undefined) return true;
-  if (def === undefined || def === null) return false;
-  var nv = Number(val), nd = Number(def);
-  if (!isNaN(nv) && !isNaN(nd)) return Math.abs(nv - nd) < 1e-9;
-  return String(val) === String(def);
+  function eq(a, b) {
+    if (a === undefined || a === null) return false;
+    var na = Number(val), nb = Number(b);
+    if (!isNaN(na) && !isNaN(nb)) return Math.abs(na - nb) < 1e-9;
+    return String(val) === String(b);
+  }
+  // setup writes seed (the intended fresh value) for some cells, default for
+  // others -- both count as a clean reset, only foreign values are leaks.
+  return eq(val, def) || eq(val, seed);
 }
 // LIVE. After a DEFAULT rebuild, every engine-consumed numeric input must be
 // blank or its INPUT_MAP default. Any leftover project value is a leak (FAIL).
@@ -49,7 +54,7 @@ function syntheticPrefillCheck(ss) {
     var vals;
     try { vals = _synthFlatten(readInput(ss, k)); } catch (e) { return; }
     for (var i = 0; i < vals.length; i++) {
-      if (!_synthIsBlankOrDefault(vals[i], m.default)) {
+      if (!_synthIsBlankDefaultOrSeed(vals[i], m.default, m.seed)) {
         leaks.push(k + (vals.length > 1 ? ('[' + i + ']') : '') + '=' + vals[i]);
         break;
       }
@@ -216,7 +221,8 @@ function runSyntheticE2E(fixtureId) {
   if (typeof _ARGIA_PROGRESS_EXTERNAL !== 'undefined') _ARGIA_PROGRESS_EXTERNAL = true;
   if (typeof _showArgiaProgress === 'function') _showArgiaProgress('ARGIA \u2014 Synthetic E2E');
   var results = _runSyntheticE2ECore(ss, [fixtureId]);
-  if (typeof _hideArgiaProgress === 'function') { try { _hideArgiaProgress(); } catch (e) {} }
+  if (typeof _ARGIA_PROGRESS_EXTERNAL !== 'undefined') _ARGIA_PROGRESS_EXTERNAL = false;
+  if (typeof _setArgiaProgress === 'function') _setArgiaProgress(6, 6, '\u2705 Synthetic E2E \u2014 listo');
   ui.alert('Synthetic E2E \u2014 ' + fixtureId, _synthResultSummary(results), ui.ButtonSet.OK);
 }
 
@@ -232,7 +238,8 @@ function runSyntheticE2E_ALL() {
   if (typeof _ARGIA_PROGRESS_EXTERNAL !== 'undefined') _ARGIA_PROGRESS_EXTERNAL = true;
   if (typeof _showArgiaProgress === 'function') _showArgiaProgress('ARGIA \u2014 Synthetic E2E (ALL)');
   var results = _runSyntheticE2ECore(ss, SYNTH_ALL_IDS.slice());
-  if (typeof _hideArgiaProgress === 'function') { try { _hideArgiaProgress(); } catch (e) {} }
+  if (typeof _ARGIA_PROGRESS_EXTERNAL !== 'undefined') _ARGIA_PROGRESS_EXTERNAL = false;
+  if (typeof _setArgiaProgress === 'function') _setArgiaProgress(6, 6, '\u2705 Synthetic E2E \u2014 listo');
   ui.alert('Synthetic E2E \u2014 ALL', _synthResultSummary(results), ui.ButtonSet.OK);
 }
 

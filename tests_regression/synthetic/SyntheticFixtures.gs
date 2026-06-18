@@ -36,7 +36,7 @@ var SYNTHETIC_FIXTURES = {
     id: 'SYNTH_500',
     label: '~500 kWp · KR18 · GDMTH · BESS OFF',
     inputs: {
-      projectName: 'SYNTH_500', clientName: 'Synthetic 500 kWp', businessType: 'COMPRA',
+      projectName: 'SYNTH_500', clientName: 'Synthetic 500 kWp', businessType: 'CAPEX_ROOF',
       panelModel: 'LR7-72HVHF-640M', panelQty: 780, panelPowerW: 640, modsPerString: 18,
       inverterPrimaryQty: 5, inverterPrimaryKw: 100, inverterPrimaryStrings: 8, totalInverters: 5,
       roofType: 'KR18',
@@ -60,7 +60,7 @@ var SYNTHETIC_FIXTURES = {
     id: 'SYNTH_600',
     label: '~600 kWp · KR18 · GDMTH · BESS ON (PEAK_SHAVING)',
     inputs: {
-      projectName: 'SYNTH_600', clientName: 'Synthetic 600 kWp', businessType: 'COMPRA',
+      projectName: 'SYNTH_600', clientName: 'Synthetic 600 kWp', businessType: 'CAPEX_ROOF',
       panelModel: 'LR7-72HVHF-640M', panelQty: 938, panelPowerW: 640, modsPerString: 18,
       inverterPrimaryQty: 6, inverterPrimaryKw: 100, inverterPrimaryStrings: 9, totalInverters: 6,
       roofType: 'KR18',
@@ -87,7 +87,7 @@ var SYNTHETIC_FIXTURES = {
     id: 'SYNTH_650',
     label: '~650 kWp · concrete (blank structure) · GDMTH · BESS ON (LOAD_SHIFTING/net-billing)',
     inputs: {
-      projectName: 'SYNTH_650', clientName: 'Synthetic 650 kWp', businessType: 'COMPRA',
+      projectName: 'SYNTH_650', clientName: 'Synthetic 650 kWp', businessType: 'CAPEX_ROOF',
       panelModel: 'LR7-72HVHF-640M', panelQty: 1016, panelPowerW: 640, modsPerString: 18,
       inverterPrimaryQty: 7, inverterPrimaryKw: 100, inverterPrimaryStrings: 9, totalInverters: 7,
       roofType: 'RT37',              // concrete; structure key intentionally OMITTED below

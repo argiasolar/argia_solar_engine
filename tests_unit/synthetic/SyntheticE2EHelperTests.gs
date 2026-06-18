@@ -16,13 +16,14 @@ registerTest({
     t.assert('flatten 2D', '1,2,3', _synthFlatten([[1, 2], [3]]).join(','));
     t.assert('flatten scalar', '5', _synthFlatten(5).join(','));
 
-    // _synthIsBlankOrDefault (the prefill tripwire's leak test)
-    t.assertTrue('blank is clean',          _synthIsBlankOrDefault('', 0));
-    t.assertTrue('null is clean',           _synthIsBlankOrDefault(null, undefined));
-    t.assertTrue('equals default is clean', _synthIsBlankOrDefault(0, 0));
-    t.assertTrue('640==640 clean',          _synthIsBlankOrDefault(640, 640));
-    t.assertFalse('864 over default 0 LEAK', _synthIsBlankOrDefault(864, 0));
-    t.assertFalse('value w/ blank default LEAK', _synthIsBlankOrDefault(5, undefined) === true);
+    // _synthIsBlankDefaultOrSeed (the prefill tripwire's leak test)
+    t.assertTrue('blank is clean',          _synthIsBlankDefaultOrSeed('', 0, undefined));
+    t.assertTrue('null is clean',           _synthIsBlankDefaultOrSeed(null, undefined, undefined));
+    t.assertTrue('equals default is clean', _synthIsBlankDefaultOrSeed(0, 0, undefined));
+    t.assertTrue('640==640 clean',          _synthIsBlankDefaultOrSeed(640, 640, undefined));
+    t.assertTrue('equals SEED is clean',    _synthIsBlankDefaultOrSeed(2000000, 0, 2000000));
+    t.assertFalse('864 over default 0 LEAK', _synthIsBlankDefaultOrSeed(864, 0, undefined));
+    t.assertFalse('foreign w/ seed set LEAK', _synthIsBlankDefaultOrSeed(999, 0, 2000000) === true);
 
     // _synthCompareStructural — SYNTH_650 (blank structure -> BLOCKED) matches
     var ok650 = _synthCompareStructural(SYNTHETIC_FIXTURES.SYNTH_650, {

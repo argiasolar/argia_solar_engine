@@ -2045,6 +2045,17 @@ function startNewProjectCore(ss) {
   var rebuildFailures = rebuildInputsToDefault(ss) || [];
   rebuildFailures.forEach(function (f) { report.errors.push(f); });
 
+  // 2b. [4.54.0] True clean-slate: the setupInput* functions rebuild structure
+  //     but don't clear data-cell VALUES (setupInputCFE is styling-only), so a
+  //     new project inherited the previous CFE consumption + BESS sizing. Reset
+  //     every engine-consumed numeric input to its canonical fresh value.
+  try {
+    var rst = clearEngineNumericInputs(ss);
+    report.numericInputsReset = rst.cellsWritten;
+  } catch (e) {
+    report.errors.push('numeric reset: ' + e.message);
+  }
+
   // 3. Clear outputs. ARGIA_STAMPED_TABS = the 13 deliverables; the driver
   //    map is internal but project-specific, so it goes too.
   var outputTabs = ARGIA_STAMPED_TABS.concat(['95_INSTALL_DRIVER_MAP_v2']);
