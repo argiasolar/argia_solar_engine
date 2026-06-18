@@ -307,9 +307,14 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   w(BOM_ROW.SEC_STRUCTURE, BOM_COL.DESCRIPTION, '3. ESTRUCTURA');
 
   var strRaw      = inp.structure || '';
-  var strInfo     = _bomV2_resolveStructure(structureDb, strRaw);
-  var strPriceUsd = strInfo ? strInfo.priceUsd : null;
-  var strUsdTotal = strPriceUsd ? strPriceUsd * inp.panelQty : null;
+  var strInfo     = _bomV2_resolveStructure(structureDb, strRaw);  // display NAME only
+  // [T7] Structure COST now comes from the roof-type $/kWp pricelist (driven by
+  // the same roofType that drives install labor), not the per-panel product
+  // price. The total is rendered as a per-panel unit so the BOM line format and
+  // the locked CULLIGAN subtotal (864 kWp × 28.125 = 24,300) are preserved.
+  var _structResult = calcStructureCost(canonicalRoofType(inp.roofType), dc.dcKwp);
+  var strUsdTotal = _structResult.sinCotizar ? null : _structResult.usdTotal;
+  var strPriceUsd = (strUsdTotal && inp.panelQty > 0) ? (strUsdTotal / inp.panelQty) : null;
   // [B-2] Empty INPUT_DESIGN!C15 = no structure selected at all. Make that
   // loud in the BOM line itself -- a client must not see a bland "Estructura
   // de montaje" row that then silently totals $0.
@@ -331,10 +336,10 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   if (strUsdTotal) {
     wp(BOM_ROW.STRUCTURE_PRIMARY, null, strPriceUsd);
     note(BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.UNIT_PRICE,
-      'USD/panel from 13M_PRODUCTS_STRUCTURES col M.\n' +
-      strInfo.strId + ' (' + strInfo.brand + ' / ' + strInfo.model + '): $' +
-      strPriceUsd + ' USD/panel \u00d7 ' + inp.panelQty + ' panels = $' +
-      strUsdTotal.toFixed(0) + ' USD\n' +
+      _structResult.note + '\n' +
+      'Precio por tipo de techo (STRUCTURE_PRICELIST). $' + strPriceUsd.toFixed(2) +
+      ' USD/panel = $' + strUsdTotal.toFixed(0) + ' USD / ' + inp.panelQty + ' paneles.\n' +
+      (strInfo ? ('Producto: ' + strInfo.strId + ' (' + strInfo.brand + ' / ' + strInfo.model + ').\n') : '') +
       'Note: may need rail/accessory rows below if system requires separate rail profile.');
   } else if (strInfo) {
     note(BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.UNIT_PRICE,

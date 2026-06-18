@@ -151,6 +151,7 @@ function _makeBomFixtures() {
       clientName: 'TEST CLIENT',
       panelQty: 100,
       stringsTotal: 8,
+      roofType: 'KR18',
       structure: 'CLIP&RAIL \u2014 KR18 CLIP \u2014 STR_004',
       structure2: '',
       supplyTransformer: 1,
@@ -473,7 +474,10 @@ registerTest({
       'CLIP&RAIL KR18 CLIP', strDesc);
     t.assert('structure qty = panelQty = 100', 100,
       _writeAtBom(w, BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.QTY));
-    t.assert('structure price = 8.50 USD/panel', 8.50,
+    // [T7] structure price now from STRUCTURE_PRICELIST: KR18 28.125 $/kWp ×
+    // 58.0 kWp = 1631.25 USD / 100 panels = 16.3125 USD/panel (was 8.50 from the
+    // 13M per-panel product price; the product still supplies the display NAME).
+    t.assert('structure price = 16.3125 USD/panel (28.125/kWp × 58 kWp / 100)', 16.3125,
       _writeAtBom(w, BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.UNIT_PRICE));
     var strRef = _writeAtBom(w, BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.REFERENCE);
     t.assertTrue('structure ref includes STR_004',
@@ -906,10 +910,14 @@ registerTest({
   fn: function (t, ctx) {
     t.suite('UNIT writers_v2/bom [B-2]: empty structure flagged, not $0');
 
-    // ---- Empty structure: INPUT_DESIGN!C15 not selected ---------------------
+    // ---- Empty structure + UNPRICED roof type ------------------------------
+    // [T7] Structure cost is driven by roofType ($/kWp pricelist), so SIN COTIZAR
+    // now triggers on an unpriced roof type (OTHER) — not merely a missing
+    // product. Empty product still flags NO SELECCIONADA in the description.
     var f = _makeBomFixtures();
-    f.inp.structure  = '';   // nothing selected
-    f.inp.structure2 = '';   // no secondary either
+    f.inp.structure  = '';        // nothing selected (description still flags this)
+    f.inp.structure2 = '';        // no secondary either
+    f.inp.roofType   = 'OTHER';   // unpriced roof type -> SIN COTIZAR
     var ss = _makeBomMockSpreadsheet({ inputs: { trayM: 0 } });
     writeBomV2(ss, f.inp, f.panel, f.invBank, f.dc, f.ac, f.lay,
                f.nom, f.bessResult, _makeBomTestOpts());
@@ -918,7 +926,7 @@ registerTest({
     var strDesc = String(_writeAtBom(w, BOM_ROW.STRUCTURE_PRIMARY, BOM_COL.DESCRIPTION) || '');
     var subLbl  = String(_writeAtBom(w, BOM_ROW.SUBTOTAL_STRUCTURE, BOM_COL.DESCRIPTION) || '');
     t.assertContains('empty structure -> primary desc flags NO SELECCIONADA', strDesc, 'NO SELECCIONADA');
-    t.assertContains('empty structure -> subtotal label flags SIN COTIZAR',   subLbl, 'SIN COTIZAR');
+    t.assertContains('unpriced roof type -> subtotal label flags SIN COTIZAR', subLbl, 'SIN COTIZAR');
 
     // ---- Control: resolved + priced structure keeps plain label/desc --------
     var f2 = _makeBomFixtures();   // default structure resolves (STR_004, $8.50)

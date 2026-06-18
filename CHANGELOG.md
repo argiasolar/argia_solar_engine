@@ -1,4 +1,51 @@
-## [4.40.0] — 2026-06-17  (T6: install role man-hours reconciliation)
+## [4.41.0] — 2026-06-17  (T7: structure cost engine + roof-type pricelist)
+
+**Structure cost is now driven by a configurable `$/kWp` pricelist keyed on roof type, replacing the
+fragile per-product (`USD/panel`) lookup as the cost source. `structure_cost = system_kWp ×
+roof_factor`. An unpriced roof type surfaces as SIN COTIZAR. CULLIGAN is unchanged — the KR18 factor
+is calibrated to the existing baseline.**
+
+### Why
+Structure cost depended on resolving a specific product in `13M_PRODUCTS_STRUCTURES`; a roof type with
+no matching product silently priced to $0. Driving cost from the same `roofType` input that already
+drives install labor makes it robust across roof types and gives T9/T10 a real structure-present
+signal.
+
+### New — `34_CalcStructureCost.js` (pure)
+- `STRUCTURE_PRICELIST` — `$/kWp` by canonical roof type, with `quoteDate` + provenance note.
+  **KR18 = 28.125 $/kWp, calibrated so CULLIGAN (864 kWp) = 24,300 USD exactly** (no golden move).
+  TR36 / RT37 / FLAT are **placeholders**; OTHER has no factor → SIN COTIZAR.
+- `canonicalRoofType(raw)` — normalizes code or team naming to the canonical enum; unknown/blank →
+  `OTHER` (the safe, loud default).
+- `ROOF_TYPE_ALIASES` — best-effort team→code map (**inferred — confirm before trusting non-KR18**).
+- `structureFactorUsdPerKwp(roofType)` and `calcStructureCost(roofType, kWp)`.
+
+### Wiring — `writers_v2/WriteBomV2.js` §3
+Structure cost now comes from `calcStructureCost(canonicalRoofType(inp.roofType), dc.dcKwp)`. Rendered
+as a per-panel unit (`usdTotal / panelQty`) so the BOM line format and the locked subtotal are
+preserved (CULLIGAN: 864 × 28.125 = 24,300 → $18/panel × 1350, byte-identical). The product resolver
+still supplies the display name. Null factor → existing SIN COTIZAR subtotal path.
+
+### Verified
+CULLIGAN: structure `usdTotal` = 24,300, per-panel = 18.0, BOM `F25` = 24,300, Project Card `C33` =
+24,300 — all unchanged. CAPEX unmoved.
+
+### Tests
+- **NEW** `UNIT_STRUCTURE_COST_PRICELIST` (pure): kWp×factor math, taxonomy normalization + aliases,
+  SIN COTIZAR on unpriced roof / blank / 0 kWp, pricelist well-formed.
+- **NEW** `REG_STRUCTURE_COST_CULLIGAN`: engine and live BOM `F25` / Project Card `C33` all == 24,300.
+- **UPDATED** `UNIT_WRITERS_V2_BOM_INVERTERS_AND_STRUCTURE`: structure price now pricelist-derived
+  (16.3125 USD/panel on the 58 kWp fixture; was 8.50 from the product table — intentional).
+- **UPDATED** `UNIT_WRITERS_V2_BOM_EMPTY_STRUCTURE_FLAG`: SIN COTIZAR now triggers on an unpriced roof
+  type (`OTHER`), not merely a missing product.
+
+### ⚠ Needs your confirmation (inferred placeholders)
+1. **Roof taxonomy map** (`ROOF_TYPE_ALIASES`): Standing-Seam→KR18, Concrete→RT37, Ballasted→FLAT,
+   Ground→OTHER — a guess. Tell me the real correspondence and I'll correct it.
+2. **Placeholder factors** for TR36 / RT37 / FLAT — replace with supplier quotes (KR18 is calibrated,
+   not quoted). Replacing KR18 with a real quote will move the CULLIGAN structure golden by design.
+
+
 
 **The MAN-HOURS BREAKDOWN now reconciles: Σ(role MH) == total MH. Before, the breakdown summed to
 ~2.9× the project total (INSTALLER alone exceeded the whole-project MH). The grand total was always
