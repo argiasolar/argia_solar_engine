@@ -1,4 +1,42 @@
-## [4.42.1] — 2026-06-17  (T8 follow-up: complete the burden golden refresh)
+## [4.43.0] — 2026-06-17  (T9: BOM completeness families + SIN COTIZAR propagation)
+
+**A required-material-families checklist with a completeness %, and loud SIN COTIZAR propagation: a
+BOM that omits a required family or carries an unpriced line now shows up as INCOMPLETE (not PASS) on
+the Project Card, blocks the offer, and tags the financials headline. Closes G3 ("confident payback on
+incomplete CAPEX"). CULLIGAN is complete → stays PASS.**
+
+### New — `35_CalcBomCompleteness.js` (pure core + live collector)
+- `BOM_COMPLETENESS_FAMILIES` — the 8 BOM families (PV, inverters, structure, DC, AC, monitoring/
+  permits are CORE; transformer and BESS are conditional — required only when present).
+- `evaluateBomCompleteness(familyStatus)` (pure) → `{ requiredFamilies, presentFamilies,
+  missingFamilies, sinCotizarFamilies, completenessPct, complete }`.
+- `collectBomFamilyStatus(ss)` / `runBomCompleteness(ss)` (live) — reads BOM_v2 once: presence from
+  the section subtotal/quantities, and SIN COTIZAR from the writer's own MISSING_PRICE red tint
+  (`#FDECEA`) inside each family's rows. An intentional by-others line (no tint) is not a gap — this
+  is why CULLIGAN's CFE-supplied transformer does not flag.
+- `_psRuleBomCompleteness(c)` (pure) → PROJECT_STATUS rule: complete → PASS; missing/unpriced →
+  REVIEW_REQUIRED `BOM_INCOMPLETE`; no BOM → `BOM_NOT_EVALUATED` (never a false block).
+
+### Propagation
+- **Project Card / offer gate** — `33_CalcProjectStatus.js` `collectProjectStatusRules` now includes
+  the BOM rule (guarded). A SIN COTIZAR/missing family makes the project REVIEW_REQUIRED → the Project
+  Card status line is non-PASS and `isOfferEmittable` is false (override-only).
+- **Financials headline** — `31_/31a_` `argiaFinancialGuardNotes` gains a `BOM_INCOMPLETE` note
+  (fires only when `bomIncomplete === true`), wired from `runBomCompleteness` in `runClientFinancials`,
+  so an incomplete-CAPEX payback carries an explicit "preliminary" caveat.
+
+### Tests
+- **NEW** `UNIT_BOM_COMPLETENESS`: 100% complete, missing CORE family, SIN COTIZAR transformer,
+  absent-optional-not-required, completeness %.
+- **NEW** `UNIT_PS_RULE_BOM_COMPLETENESS`: rule levels + integration (reduce → REVIEW_REQUIRED →
+  offer not emittable without override) + the guard-note fires only when flagged.
+- **NEW** `REG_BOM_COMPLETENESS_CULLIGAN` (live): CULLIGAN complete → PASS, offer emittable.
+- Existing guard-note and project-status tests unaffected (the new note/rule are opt-in/default-safe).
+
+### Feeds T10
+`runBomCompleteness(ss)` + `completenessPct` are the input for T10's BOM-completeness status rule.
+
+
 
 Test-golden-only patch (engine unchanged from 4.42.0). The first post-T8 E2E surfaced 6 additional
 CULLIGAN goldens that ripple from the higher CAPEX and weren't pre-refreshed in 4.42.0. All verified

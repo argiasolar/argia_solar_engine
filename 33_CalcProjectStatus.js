@@ -145,9 +145,19 @@ function _psReadCapexMxn(ss) {
   return isFinite(v) ? v : NaN;
 }
 
-/** Gather rule results from the live workbook. T4 ships the has-CAPEX rule only. */
+/** Gather rule results from the live workbook. T4 ships the has-CAPEX rule;
+ *  T9 adds BOM completeness. Each rule is guarded so one reader failing can
+ *  never crash the whole status (and never silently passes). */
 function collectProjectStatusRules(ss) {
-  return [ _psRuleHasCapex(_psReadCapexMxn(ss)) ];
+  var rules = [ _psRuleHasCapex(_psReadCapexMxn(ss)) ];
+  try {
+    rules.push(_psRuleBomCompleteness(runBomCompleteness(ss)));
+  } catch (e) {
+    rules.push({ level: 'REVIEW_REQUIRED', code: 'BOM_CHECK_ERROR',
+      message: 'BOM completeness check failed: ' + (e && e.message ? e.message : e),
+      evidence: {} });
+  }
+  return rules;
 }
 
 /** Status string only -- no side effects. Used by API_OUTPUT and the gate. */

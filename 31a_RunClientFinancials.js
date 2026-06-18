@@ -279,10 +279,16 @@ function runClientFinancials(ss, opts) {
       bessMatMxn = Number(_baasReadCapexMxn(ss).materialsMxn) || 0;
     }
   } catch (gErr) { /* BESS detection is best-effort */ }
+  // [T9] BOM completeness -> excluded-items note on the financials headline.
+  var bomComp = null;
+  try { bomComp = runBomCompleteness(ss); } catch (bcErr) { /* best-effort */ }
   var guardNotes = argiaFinancialGuardNotes({
     omCostMxnPerYear: inp.omCostMxnPerYear,
     replacementReserveMxnPerYear: inp.replacementReserveMxnPerYear,
-    bessMaterialsMxn: bessMatMxn
+    bessMaterialsMxn: bessMatMxn,
+    bomIncomplete:          !!(bomComp && !bomComp.complete),
+    bomMissingFamilies:     bomComp ? bomComp.missingFamilies : null,
+    bomSinCotizarFamilies:  bomComp ? bomComp.sinCotizarFamilies : null
   });
   guardNotes.forEach(function (g) { warnings.push('ClientFin: ' + g.msg); });
 

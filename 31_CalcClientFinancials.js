@@ -259,5 +259,19 @@ function argiaFinancialGuardNotes(o) {
           + 'provisionado \u2014 ahorro neto sobreestimado.'
     });
   }
+  // [T9] BOM completeness: a confident payback on a CAPEX that omits a required
+  // family or carries a SIN COTIZAR line is misleading. Fires only when the
+  // caller passes bomIncomplete === true (default off -> no behavior change).
+  if (o.bomIncomplete === true) {
+    var fam = [];
+    if (o.bomMissingFamilies && o.bomMissingFamilies.length)       fam.push('faltantes: ' + o.bomMissingFamilies.join(', '));
+    if (o.bomSinCotizarFamilies && o.bomSinCotizarFamilies.length) fam.push('SIN COTIZAR: ' + o.bomSinCotizarFamilies.join(', '));
+    notes.push({
+      code: 'BOM_INCOMPLETE',
+      msg : 'BOM incompleto \u2014 el CAPEX excluye familias de material'
+          + (fam.length ? ' (' + fam.join('; ') + ')' : '')
+          + '. El payback/NPV/IRR es preliminar hasta cotizar lo faltante.'
+    });
+  }
   return notes;
 }
