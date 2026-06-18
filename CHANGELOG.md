@@ -1,4 +1,30 @@
-## [4.47.0] — 2026-06-18  (T11a: output-provenance helper + CLIENT_FINANCIALS notes)
+## [4.48.0] — 2026-06-18  (T11b: provenance notes on CFE_OUTPUT headline figures)
+
+**Applies the T11 provenance helper to the CFE_OUTPUT_v2 headline recibo tiles. Notes only — no
+values move.**
+
+### Finding: MDC_v2 is already traced (no redundant notes added)
+The MDC writer already stamps a **FORMULA column + CITATION column** on every figure via its `row()`
+helper — that is its native per-figure traceability. Adding hover-notes on top would duplicate it, so
+MDC is intentionally left as-is. (CFE_OUTPUT also already carries a summary provenance line + the
+`CFE_OUT_SRC_V2` source map; T11b adds *per-figure* notes on the three client-facing money tiles,
+which only had the one summary line.)
+
+### Applied — `writers_v2/WriteCfeOutputV2.js`
+- Provenance notes on the three headline KPI tiles (row `KPI_HEADLINE`, cols 2/7/12): Recibo anual
+  SIN PV (`BESS_SIMULATION!D12`), CON PV (`!D14`), CON PV + BESS (`!D18`). Source cells per
+  `CFE_OUT_SRC_V2`. Guarded via `stampProvenanceNote`.
+
+### Tests
+- **NEW** `REG_PROVENANCE_CFE_OUTPUT_CULLIGAN` (live): after a CULLIGAN run, the three recibo tiles
+  carry the expected provenance notes (label + cited source cell + engine version).
+
+### T11 rollout
+Shipped: CLIENT_FINANCIALS (T11a), CFE_OUTPUT headline (T11b). Already-traced: MDC (formula/citation
+columns), BOM (NOM refs + calc traces), FINANCE (4.32 notes). **Remaining**: SLIDE_DATA — blocked on
+the SLIDE_DATA rebuild (existing tab is stale/broken; parked).
+
+
 
 **Generalizes the FINANCE 4.32 provenance pattern into a reusable helper, and applies it to the
 CLIENT_FINANCIALS headline metrics. Each key figure can now carry a plain-language note saying where

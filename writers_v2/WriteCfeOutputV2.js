@@ -374,6 +374,20 @@ function _cfeOutV2_fillKpiStrip(sh, ss) {
                            'RECIBO ANUAL CON PV + BESS', reciboFinal, '#C8E6C9');
     sh.setRowHeight(R.KPI_HEADLINE, 60);
   }
+
+  // [T11b] Provenance notes on the three headline recibo tiles (merged-range
+  // anchors). Source cells per CFE_OUT_SRC_V2. Guarded; notes only, no values.
+  if (typeof stampProvenanceNote === 'function') {
+    stampProvenanceNote(sh.getRange(R.KPI_HEADLINE, 2), {
+      label: 'Recibo anual SIN PV', formula: 'factura CFE base (12 meses, sin generacion)',
+      sources: ['BESS_SIMULATION!D12'] });
+    stampProvenanceNote(sh.getRange(R.KPI_HEADLINE, 7), {
+      label: 'Recibo anual CON PV', formula: 'factura CFE con generacion PV, sin bateria',
+      sources: ['BESS_SIMULATION!D14'] });
+    stampProvenanceNote(sh.getRange(R.KPI_HEADLINE, 12), {
+      label: 'Recibo anual CON PV + BESS', formula: 'factura CFE con PV y despacho de bateria',
+      sources: ['BESS_SIMULATION!D18'] });
+  }
 }
 
 
