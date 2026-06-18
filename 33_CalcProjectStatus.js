@@ -164,6 +164,13 @@ function collectProjectStatusRules(ss) {
       message: 'Structure cost check failed: ' + (e && e.message ? e.message : e),
       evidence: {} });
   }
+  try {
+    rules.push(runCfeDataQualityRule(ss));
+  } catch (e) {
+    rules.push({ level: 'REVIEW_REQUIRED', code: 'CFE_DQ_CHECK_ERROR',
+      message: 'CFE data-quality check failed: ' + (e && e.message ? e.message : e),
+      evidence: {} });
+  }
   return rules;
 }
 

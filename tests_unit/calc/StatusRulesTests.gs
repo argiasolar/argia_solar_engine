@@ -83,3 +83,56 @@ registerTest({
     t.assert('SIN COTIZAR-only -> REVIEW_REQUIRED', 'REVIEW_REQUIRED', _psRuleBomCompleteness(sincot).level);
   }
 });
+
+registerTest({
+  id: 'UNIT_PS_RULE_CFE_DATA_QUALITY',
+  group: 'unit', module: 'calc/status_rules',
+  scenarios: [], tags: ['calc', 'project_status', 'cfe', 't10'],
+  source: 'tests_unit/calc/StatusRulesTests.gs',
+  fn: function (t, ctx) {
+    t.suite('UNIT calc/status_rules: CFE data-quality score + bands');
+
+    function snap(o) {
+      return Object.assign({ tariffPresent: true, kwhMonths: 12, kwMonths: 12,
+        pfMonths: 12, billingMonths: 12, monthsExpected: 12 }, o || {});
+    }
+
+    // full data -> 100% -> PASS
+    var full = scoreCfeDataQuality(snap());
+    t.assertNear('full data = 100%', 100, full.scorePct, 0.001);
+    t.assert('full -> PASS', 'PASS', _psRuleCfeDataQuality(full).level);
+    t.assert('code CFE_DATA_OK', 'CFE_DATA_OK', _psRuleCfeDataQuality(full).code);
+
+    // one dimension half-present -> still PASS (95%)
+    var mild = scoreCfeDataQuality(snap({ kwhMonths: 6 }));
+    t.assertNear('one dim 6/12 -> 90%', 90, mild.scorePct, 0.001);
+    t.assert('90% -> PASS', 'PASS', _psRuleCfeDataQuality(mild).level);
+
+    // 70% -> REVIEW_REQUIRED  (tariff + kWh full, kW/pf/billing half: (1+1+.5+.5+.5)/5)
+    var low = scoreCfeDataQuality(snap({ kwMonths: 6, pfMonths: 6, billingMonths: 6 }));
+    t.assertNear('mixed -> 70%', 70, low.scorePct, 0.001);
+    t.assert('70% -> REVIEW_REQUIRED', 'REVIEW_REQUIRED', _psRuleCfeDataQuality(low).level);
+    t.assert('code CFE_DATA_LOW', 'CFE_DATA_LOW', _psRuleCfeDataQuality(low).code);
+
+    // < 60% -> BLOCKED, and not emittable even with override
+    var crit = scoreCfeDataQuality(snap({ tariffPresent: false, kwhMonths: 6, kwMonths: 6,
+      pfMonths: 0, billingMonths: 6 }));   // (0 + .5 + .5 + 0 + .5)/5 = 30%
+    t.assertNear('critical -> 30%', 30, crit.scorePct, 0.001);
+    var critRule = _psRuleCfeDataQuality(crit);
+    t.assert('30% -> BLOCKED', 'BLOCKED', critRule.level);
+    var reduced = reduceProjectStatus([
+      { level: 'PASS', code: 'CAPEX_PRESENT', message: '', evidence: {} }, critRule ]);
+    t.assertFalse('CFE critical blocks offer (override ignored)', isOfferEmittable(reduced.status, true));
+
+    // boundary: exactly 80% -> PASS; exactly 60% -> REVIEW
+    var at80 = _psRuleCfeDataQuality({ scorePct: 80, dimensions: {} });
+    t.assert('80% -> PASS (>= review threshold)', 'PASS', at80.level);
+    var at60 = _psRuleCfeDataQuality({ scorePct: 60, dimensions: {} });
+    t.assert('60% -> REVIEW (>= block, < review)', 'REVIEW_REQUIRED', at60.level);
+
+    // no data -> NOT_EVALUATED (never a false block)
+    var none = _psRuleCfeDataQuality(scoreCfeDataQuality(null));
+    t.assert('no INPUT_CFE -> PASS', 'PASS', none.level);
+    t.assert('code CFE_DQ_NOT_EVALUATED', 'CFE_DQ_NOT_EVALUATED', none.code);
+  }
+});

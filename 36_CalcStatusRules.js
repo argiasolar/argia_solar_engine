@@ -55,3 +55,93 @@ function _psReadStructureCostUsd(ss) {
 function runStructureCostRule(ss) {
   return _psRuleStructureCost(_psReadStructureCostUsd(ss));
 }
+
+// -----------------------------------------------------------------------------
+// RULE: CFE data-quality  (reads INPUT_CFE)
+// A confident bill model needs complete billing history. Score five dimensions
+// — tariff code, and the 12-month presence of kWh, kW, power factor and billing
+// days — then band the average. Configurable thresholds; below them the offer
+// is over-confident on thin data.
+//   score >= REVIEW_PCT  -> PASS
+//   BLOCK_PCT..REVIEW_PCT -> REVIEW_REQUIRED
+//   < BLOCK_PCT          -> BLOCKED
+// -----------------------------------------------------------------------------
+var CFE_DQ_REVIEW_PCT     = 80;   // below this -> REVIEW_REQUIRED
+var CFE_DQ_BLOCK_PCT      = 60;   // below this -> BLOCKED
+var CFE_DQ_MONTHS_EXPECTED = 12;
+
+// PURE. snap = { tariffPresent, kwhMonths, kwMonths, pfMonths, billingMonths,
+//                monthsExpected }. Returns { scorePct, dimensions }.
+function scoreCfeDataQuality(snap) {
+  if (!snap) return null;
+  var exp = Number(snap.monthsExpected) || CFE_DQ_MONTHS_EXPECTED;
+  function frac(m) { var n = Number(m) || 0; if (exp <= 0) return 0; return Math.max(0, Math.min(1, n / exp)); }
+  var dims = {
+    tariff:  snap.tariffPresent ? 1 : 0,
+    kwh:     frac(snap.kwhMonths),
+    kw:      frac(snap.kwMonths),
+    pf:      frac(snap.pfMonths),
+    billing: frac(snap.billingMonths)
+  };
+  var keys = ['tariff', 'kwh', 'kw', 'pf', 'billing'];
+  var sum = 0;
+  keys.forEach(function (k) { sum += dims[k]; });
+  var scorePct = Math.round((sum / keys.length) * 1000) / 10;
+  return { scorePct: scorePct, dimensions: dims, monthsExpected: exp };
+}
+
+// PURE. score result -> rule.
+function _psRuleCfeDataQuality(scoreResult) {
+  if (!scoreResult) {
+    return { level: 'PASS', code: 'CFE_DQ_NOT_EVALUATED',
+             message: 'Calidad de datos CFE no evaluada (INPUT_CFE ausente).',
+             evidence: { evaluated: false } };
+  }
+  var p = scoreResult.scorePct;
+  var ev = { scorePct: p, reviewPct: CFE_DQ_REVIEW_PCT, blockPct: CFE_DQ_BLOCK_PCT,
+             dimensions: scoreResult.dimensions };
+  if (p >= CFE_DQ_REVIEW_PCT) {
+    return { level: 'PASS', code: 'CFE_DATA_OK',
+             message: 'Datos CFE completos (' + p + '%).', evidence: ev };
+  }
+  if (p >= CFE_DQ_BLOCK_PCT) {
+    return { level: 'REVIEW_REQUIRED', code: 'CFE_DATA_LOW',
+             message: 'Datos CFE incompletos (' + p + '%, umbral ' + CFE_DQ_REVIEW_PCT
+                    + '%). El modelo de factura es preliminar -- revisar antes de emitir.',
+             evidence: ev };
+  }
+  return { level: 'BLOCKED', code: 'CFE_DATA_CRITICAL',
+           message: 'Datos CFE criticamente incompletos (' + p + '%, por debajo de '
+                  + CFE_DQ_BLOCK_PCT + '%). El modelo de factura no es confiable -- oferta bloqueada.',
+           evidence: ev };
+}
+
+// LIVE. Read INPUT_CFE: tariff C4; 12-month presence (cols 3..14) of kWh
+// (r10-12), kW (r13-15), PF (r20), billing days (r18). null when sheet absent.
+function collectCfeDataQuality(ss) {
+  var cfe = ss.getSheetByName('INPUT_CFE');
+  if (!cfe) return null;
+  var FIRST_COL = 3, MONTHS = CFE_DQ_MONTHS_EXPECTED;     // C..N
+  var vals = cfe.getRange(1, 1, 20, FIRST_COL + MONTHS - 1).getValues();
+  function cell(r, c) { return (vals[r - 1] || [])[c - 1]; }
+  function num(r, c) { var n = Number(cell(r, c)); return isFinite(n) ? n : 0; }
+
+  var tariff = cell(4, FIRST_COL);
+  var tariffPresent = !!(tariff && String(tariff).trim());
+
+  var kwh = 0, kw = 0, pf = 0, billing = 0;
+  for (var i = 0; i < MONTHS; i++) {
+    var c = FIRST_COL + i;
+    if ((num(10, c) + num(11, c) + num(12, c)) > 0) kwh++;
+    if ((num(13, c) + num(14, c) + num(15, c)) > 0) kw++;
+    if (num(20, c) > 0) pf++;
+    if (num(18, c) > 0) billing++;
+  }
+  return { tariffPresent: tariffPresent, kwhMonths: kwh, kwMonths: kw,
+           pfMonths: pf, billingMonths: billing, monthsExpected: MONTHS };
+}
+
+// LIVE wrapper.
+function runCfeDataQualityRule(ss) {
+  return _psRuleCfeDataQuality(scoreCfeDataQuality(collectCfeDataQuality(ss)));
+}

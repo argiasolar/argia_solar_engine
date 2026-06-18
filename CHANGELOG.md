@@ -1,4 +1,33 @@
-## [4.44.0] — 2026-06-17  (T10a: status rules pack — structure-present + BOM band)
+## [4.45.0] — 2026-06-18  (T10b: status rules pack — CFE data-quality score)
+
+**Adds the CFE data-quality rule to the status pack: a confident bill model needs complete billing
+history, so this scores five dimensions and bands the result. CULLIGAN has full 12-month data on
+every dimension → 100% → PASS / emittable.**
+
+### Added — `36_CalcStatusRules.js`: CFE data-quality rule (reads INPUT_CFE)
+- `scoreCfeDataQuality(snap)` (pure): averages five dimensions — tariff code present, and the
+  12-month presence of kWh, kW, power factor, billing days — into a 0–100% score.
+- `_psRuleCfeDataQuality(score)` (pure): `≥80%` → PASS `CFE_DATA_OK`; `60–80%` → REVIEW_REQUIRED
+  `CFE_DATA_LOW`; `<60%` → **BLOCKED** `CFE_DATA_CRITICAL`; no INPUT_CFE → `CFE_DQ_NOT_EVALUATED`.
+  Thresholds configurable (`CFE_DQ_REVIEW_PCT`, `CFE_DQ_BLOCK_PCT`).
+- `collectCfeDataQuality(ss)` / `runCfeDataQualityRule(ss)` (live): reads tariff C4 and the 12 month
+  columns (C–N) for rows kWh (10-12), kW (13-15), PF (20), billing days (18). Wired into `33_`
+  `collectProjectStatusRules` (guarded).
+
+### Tests
+- **NEW** `UNIT_PS_RULE_CFE_DATA_QUALITY`: 100% → PASS · 90% → PASS · 70% → REVIEW · 30% → BLOCKED
+  (override ignored) · boundaries (80→PASS, 60→REVIEW) · no data → NOT_EVALUATED.
+- **NEW** `REG_CFE_DATA_QUALITY_CULLIGAN` (live): CULLIGAN 12/12 on every dimension → PASS, emittable.
+
+### Deferred — install-benchmark rule (heads-up)
+CULLIGAN already trips the existing install-cost sanity check every run (PV install ~0.70 MXN/Wp vs a
+1.00 min; BESS BoP ~5.3 USD/kWh vs a 30 min). Those bounds (`02_LoadDB` `install_*` keys) appear
+calibrated for full install cost, not this engine's labor-only install scope — so the
+install-benchmark rule cannot gate on them without making CULLIGAN non-emittable. It stays unbuilt
+pending a decision on the bounds and the 94M benchmark table (per the plan's "no data source →
+NOT_EVALUATED" rule). Not shipped here rather than ship a rule that mis-gates the canonical fixture.
+
+
 
 **First slice of the T10 status-rules pack. Adds the structure-cost-present rule and completes the
 BOM-completeness severity band. CULLIGAN keeps a priced structure and a 100% BOM → stays PASS /
