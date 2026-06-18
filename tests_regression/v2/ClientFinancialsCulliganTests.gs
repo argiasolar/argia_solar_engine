@@ -107,7 +107,7 @@ registerTest({
     var s15 = ret.fin.scenarios[14];
     t.assertNear('y15 do-nothing cumulative', 322625619.54,
                  s15.doNothingCumulativeSpendMxn, 5);
-    t.assertNear('y15 cash position',          17575438.22,
+    t.assertNear('y15 cash position',          17506829.47,
                  s15.cashCumulativePositionMxn, 5);
     t.assertTrue('y15 BaaS cumulative present (3-way rendered)',
                  typeof s15.baasCumulativeNetMxn === 'number');

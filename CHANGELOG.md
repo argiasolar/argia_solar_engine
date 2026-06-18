@@ -1,3 +1,15 @@
+## [4.42.1] — 2026-06-17  (T8 follow-up: complete the burden golden refresh)
+
+Test-golden-only patch (engine unchanged from 4.42.0). The first post-T8 E2E surfaced 6 additional
+CULLIGAN goldens that ripple from the higher CAPEX and weren't pre-refreshed in 4.42.0. All verified
+against the live run and the burden math (FX 18.50, 15% margin, exact CAPEX delta):
+
+- `PROJECT_CARD` USD block: C38 install 40,432→**44,141**, C40 cost 2,002,805→**2,006,514**, H17 sell
+  2.727→**2.732** USD/Wp, H40 sell total 2,356,241→**2,360,604**, H43 gross profit 353,436→**354,090**.
+- `ClientFinancials` y15 cash position 17,575,438.22→**17,506,829.47** (= old − CAPEX delta).
+
+CULLIGAN E2E now green at 169/169.
+
 ## [4.42.0] — 2026-06-17  (T8: install labor burden factor)
 
 **A configurable labor burden factor (default 1.65×) now corrects the systematic understatement of

@@ -382,24 +382,24 @@ registerTest({
       t.assertNear('PC_v2.C37 permits USD',
                    6000.0,    pc.getRange('C37').getValue(), TOL_USD);
       t.assertNear('PC_v2.C38 installation USD',
-                   40432.0,   pc.getRange('C38').getValue(), TOL_USD);
+                   44141.0,   pc.getRange('C38').getValue(), TOL_USD);
       t.assertNear('PC_v2.C39 BESS USD',
                    1579114.0, pc.getRange('C39').getValue(), TOL_USD);
 
       // -- D3: TOTAL (row 40) --
       t.assertNear('PC_v2.C40 TOTAL cost USD',
-                   2002805.0, pc.getRange('C40').getValue(), TOL_USD);
+                   2006514.0, pc.getRange('C40').getValue(), TOL_USD);
       t.assertNear('PC_v2.D40 TOTAL cost MXN',
                    37120502.0, pc.getRange('D40').getValue(), TOL_MXN);
 
       // -- D4: sell side -- USD/Wp string and gross profit --
       var sellRaw = String(pc.getRange('H17').getValue() || '');
-      t.assertContains('PC_v2.H17 sell USD/Wp = 2.727',
-                       sellRaw, '2.727');
+      t.assertContains('PC_v2.H17 sell USD/Wp = 2.732',
+                       sellRaw, '2.732');
       t.assertNear('PC_v2.H40 sell total USD',
-                   2356241.0, pc.getRange('H40').getValue(), TOL_USD);
+                   2360604.0, pc.getRange('H40').getValue(), TOL_USD);
       t.assertNear('PC_v2.H43 gross profit USD',
-                   353436.0,  pc.getRange('H43').getValue(), TOL_USD);
+                   354090.0,  pc.getRange('H43').getValue(), TOL_USD);
 
       // -- D5: PARITY vs legacy PROJECT_CARD -- REMOVE AT CUTOVER (Chunk 11) --
       // PC_v2 has a different row layout from legacy PC, so we can't do

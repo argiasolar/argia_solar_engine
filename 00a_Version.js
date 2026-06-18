@@ -550,7 +550,7 @@
 // to 0. No engine math changes; metric definitions unchanged except the DSCR
 // zero-revenue exclusion. See CHANGELOG.md.
 // -----------------------------------------------------------------------------
-var ENGINE_VERSION = '4.42.0';
+var ENGINE_VERSION = '4.42.1';
 var DB_VERSION     = '2026.05';
 
 // Internal: name of the metadata sheet. Hidden from designers by default
