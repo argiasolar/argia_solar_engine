@@ -1,4 +1,26 @@
-## [4.56.0] — 2026-06-18  (T12-b round 2: range writes, capture accumulation, popup close, time budget)
+## [4.57.0] — 2026-06-18  (T12-b round 3: fixture input completeness — inverter model + BESS toggle/spec)
+
+**Third capture run exposed two more input gaps. Fixed in the fixtures.**
+
+- **`[INP-06] No inverters defined` (blocked SYNTH_600/650).** The fixtures set inverter qty/kw/strings
+  but omitted `inverterPrimaryModel`, so validation saw no inverter. Added
+  `inverterPrimaryModel: 'SUN2000-100KTL-M1'` (CULLIGAN's 100 kW inverter) to all three.
+- **BESS on/off was wrong.** `bessStrategy` is a policy (SELF_CONSUMPTION_MAX / PEAK_SHAVING /
+  LOAD_SHIFTING), not an on/off switch — `'NONE'` is invalid (that aborted SYNTH_500). BESS is gated by
+  `installBattery = 'YES'` **and** `bessCapacityKwh > 0` (`readInputBess`). So:
+  - SYNTH_500 (off): `installBattery: 'NO'`, no `bessStrategy`.
+  - SYNTH_600 (on): `installBattery: 'YES'`, `bessBatteryId: 'CUSTOM_MANUAL'`, `bessCapacityKwh: 1000`,
+    `bessPowerKw: 500`, `bessStrategy: 'PEAK_SHAVING'`.
+  - SYNTH_650 (on): `installBattery: 'YES'`, `bessBatteryId: 'CUSTOM_MANUAL'`, `bessCapacityKwh: 1200`,
+    `bessPowerKw: 600`, `bessStrategy: 'LOAD_SHIFTING'`.
+
+`UNIT_SYNTHETIC_FIXTURES_WELLFORMED` updated (SYNTH_500 BESS-off via `installBattery`); the
+INPUT_MAP-completeness test confirms the new keys route. Self-test ALL GREEN.
+
+Note: `[HEL-02]` (Helioscope generation) and `[FX-01]` are MAJOR/WARNING, not blocking — silent mode
+auto-continues past them. The capture will show what the engine computes for generation.
+
+
 
 **Second capture run findings + the popup request.**
 

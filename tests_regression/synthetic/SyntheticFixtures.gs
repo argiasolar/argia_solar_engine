@@ -38,6 +38,7 @@ var SYNTHETIC_FIXTURES = {
     inputs: {
       projectName: 'SYNTH_500', clientName: 'Synthetic 500 kWp', businessType: 'CAPEX_ROOF',
       panelModel: 'LR7-72HVHF-640M', panelQty: 780, panelPowerW: 640, modsPerString: 18,
+      inverterPrimaryModel: 'SUN2000-100KTL-M1',
       inverterPrimaryQty: 5, inverterPrimaryKw: 100, inverterPrimaryStrings: 8, totalInverters: 5,
       roofType: 'KR18',
       cfeTariff: 'GDMTH', cfeInterconnMode: 'SIN_EXPORTACION',
@@ -46,7 +47,7 @@ var SYNTHETIC_FIXTURES = {
       cfeKwBase:        _synthFlat(520), cfeKwIntermedia: _synthFlat(640), cfeKwPunta: _synthFlat(600),
       cfeKwMaxAnoMovil: _synthFlat(640), cfeKvarh: _synthMonthly(1300000),
       cfeDias:          _synthFlat(30), cfeFpPct: _synthFlat(0.92), cfeDemandaFacturable: _synthFlat(600),
-      bessStrategy: 'NONE'
+      installBattery: 'NO'
     },
     structural: {
       bessOff: true,                 // BESS gates -> 0 (no battery line, no BESS savings)
@@ -62,6 +63,7 @@ var SYNTHETIC_FIXTURES = {
     inputs: {
       projectName: 'SYNTH_600', clientName: 'Synthetic 600 kWp', businessType: 'CAPEX_ROOF',
       panelModel: 'LR7-72HVHF-640M', panelQty: 938, panelPowerW: 640, modsPerString: 18,
+      inverterPrimaryModel: 'SUN2000-100KTL-M1',
       inverterPrimaryQty: 6, inverterPrimaryKw: 100, inverterPrimaryStrings: 9, totalInverters: 6,
       roofType: 'KR18',
       cfeTariff: 'GDMTH', cfeInterconnMode: 'SIN_EXPORTACION',
@@ -70,7 +72,8 @@ var SYNTHETIC_FIXTURES = {
       cfeKwBase:        _synthFlat(640), cfeKwIntermedia: _synthFlat(780), cfeKwPunta: _synthFlat(740),
       cfeKwMaxAnoMovil: _synthFlat(780), cfeKvarh: _synthMonthly(1600000),
       cfeDias:          _synthFlat(30), cfeFpPct: _synthFlat(0.90), cfeDemandaFacturable: _synthFlat(740),
-      bessStrategy: 'PEAK_SHAVING'
+      installBattery: 'YES', bessBatteryId: 'CUSTOM_MANUAL',
+      bessCapacityKwh: 1000, bessPowerKw: 500, bessStrategy: 'PEAK_SHAVING'
     },
     structural: {
       bessOff: false,                // BESS present -> battery line + BESS savings
@@ -89,6 +92,7 @@ var SYNTHETIC_FIXTURES = {
     inputs: {
       projectName: 'SYNTH_650', clientName: 'Synthetic 650 kWp', businessType: 'CAPEX_ROOF',
       panelModel: 'LR7-72HVHF-640M', panelQty: 1016, panelPowerW: 640, modsPerString: 18,
+      inverterPrimaryModel: 'SUN2000-100KTL-M1',
       inverterPrimaryQty: 7, inverterPrimaryKw: 100, inverterPrimaryStrings: 9, totalInverters: 7,
       roofType: 'RT37',              // concrete; structure key intentionally OMITTED below
       cfeTariff: 'GDMTH', cfeInterconnMode: 'FACTURACION_NETA',
@@ -97,7 +101,8 @@ var SYNTHETIC_FIXTURES = {
       cfeKwBase:        _synthFlat(700), cfeKwIntermedia: _synthFlat(840), cfeKwPunta: _synthFlat(800),
       cfeKwMaxAnoMovil: _synthFlat(840), cfeKvarh: _synthMonthly(1750000),
       cfeDias:          _synthFlat(30), cfeFpPct: _synthFlat(0.88), cfeDemandaFacturable: _synthFlat(800),
-      bessStrategy: 'LOAD_SHIFTING'
+      installBattery: 'YES', bessBatteryId: 'CUSTOM_MANUAL',
+      bessCapacityKwh: 1200, bessPowerKw: 600, bessStrategy: 'LOAD_SHIFTING'
       // NOTE: `structure` is intentionally NOT set -> ESTRUCTURA NO SELECCIONADA / SIN COTIZAR.
     },
     structural: {

@@ -28,8 +28,10 @@ registerTest({
       });
     });
 
-    // SYNTH_500: BESS OFF -> strategy NONE + structural.bessOff
-    t.assert('SYNTH_500 bessStrategy NONE', 'NONE', SYNTHETIC_FIXTURES.SYNTH_500.inputs.bessStrategy);
+    // SYNTH_500: BESS OFF -> installBattery NO + no strategy + structural.bessOff
+    t.assert('SYNTH_500 installBattery NO', 'NO', SYNTHETIC_FIXTURES.SYNTH_500.inputs.installBattery);
+    t.assertFalse('SYNTH_500 has no bessStrategy',
+      SYNTHETIC_FIXTURES.SYNTH_500.inputs.hasOwnProperty('bessStrategy'));
     t.assertTrue('SYNTH_500 structural.bessOff', SYNTHETIC_FIXTURES.SYNTH_500.structural.bessOff === true);
     t.assertTrue('SYNTH_500 emittable', SYNTHETIC_FIXTURES.SYNTH_500.structural.offerEmittableExpected === true);
 
