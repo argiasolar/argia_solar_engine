@@ -19,6 +19,16 @@
 
 var SYNTH_CAPTURE_SHEET = '_SYNTH_CAPTURE';
 var SYNTH_ALL_IDS = ['SYNTH_500', 'SYNTH_600', 'SYNTH_650'];
+var SYNTH_TIME_BUDGET_MS = 240000;  // ~4 min; leaves room for restore within the GAS 6-min cap
+
+// writeInput for a range key needs a 2D array ([[12 values]]); fixtures store 1D.
+function _synthWriteInput(ss, key, value) {
+  var m = (typeof INPUT_MAP !== 'undefined') ? INPUT_MAP[key] : null;
+  if (m && m.mode === 'range' && Array.isArray(value) && !Array.isArray(value[0])) {
+    return writeInput(ss, key, [value]);   // 1D -> single-row 2D
+  }
+  return writeInput(ss, key, value);
+}
 
 // ---- prefill tripwire -------------------------------------------------------
 function _synthFlatten(v) {
@@ -111,19 +121,39 @@ function _synthCompareStructural(fixture, cap) {
 function _writeSyntheticCapture(ss, captures /* {id: {label:value}} */) {
   var sh = ss.getSheetByName(SYNTH_CAPTURE_SHEET);
   if (!sh) sh = ss.insertSheet(SYNTH_CAPTURE_SHEET);
-  sh.clearContents();
-  var ids = Object.keys(captures);
-  var labelSet = {};
-  ids.forEach(function (id) { Object.keys(captures[id]).forEach(function (l) { labelSet[l] = true; }); });
-  var labels = Object.keys(labelSet).sort();
+
+  // MERGE with whatever is already there so per-fixture runs accumulate (each
+  // single fixture fits the 6-min cap; Run ALL does not).
+  var cell = {};      // cell[label][id] = value
+  var ids = [];
+  var lastR = sh.getLastRow(), lastC = sh.getLastColumn();
+  if (lastR >= 1 && lastC >= 2) {
+    var grid = sh.getRange(1, 1, lastR, lastC).getValues();
+    var hdr = grid[0];
+    for (var c = 1; c < hdr.length; c++) if (hdr[c] !== '' && hdr[c] != null) ids.push(hdr[c]);
+    for (var r = 1; r < grid.length; r++) {
+      var k = grid[r][0]; if (k === '' || k == null) continue;
+      cell[k] = cell[k] || {};
+      for (var c2 = 1; c2 < hdr.length; c2++) cell[k][hdr[c2]] = grid[r][c2];
+    }
+  }
+  Object.keys(captures).forEach(function (id) {
+    if (ids.indexOf(id) < 0) ids.push(id);
+    Object.keys(captures[id]).forEach(function (l) {
+      cell[l] = cell[l] || {}; cell[l][id] = captures[id][l];
+    });
+  });
+
+  var labels = Object.keys(cell).sort();
   var header = ['capture_key'].concat(ids);
-  var grid = [header];
+  var out = [header];
   labels.forEach(function (l) {
     var row = [l];
-    ids.forEach(function (id) { row.push(captures[id].hasOwnProperty(l) ? captures[id][l] : ''); });
-    grid.push(row);
+    ids.forEach(function (id) { row.push(cell[l].hasOwnProperty(id) ? cell[l][id] : ''); });
+    out.push(row);
   });
-  sh.getRange(1, 1, grid.length, header.length).setValues(grid);
+  sh.clearContents();
+  sh.getRange(1, 1, out.length, header.length).setValues(out);
   return { rows: labels.length, fixtures: ids.length };
 }
 
@@ -131,6 +161,7 @@ function _writeSyntheticCapture(ss, captures /* {id: {label:value}} */) {
 function _runSyntheticE2ECore(ss, fixtureIds) {
   var results = {}, captures = {};
   var snap = null, phase = 'start';
+  var t0 = Date.now();
   var lfBefore = null;
   try { if (typeof argiaInputLayoutFingerprint === 'function') lfBefore = argiaInputLayoutFingerprint(ss); } catch (e) {}
 
@@ -140,6 +171,16 @@ function _runSyntheticE2ECore(ss, fixtureIds) {
 
     for (var i = 0; i < fixtureIds.length; i++) {
       var id = fixtureIds[i];
+      // Time-budget guard: GAS kills the script at ~6 min. After the first
+      // fixture, if we're near the budget, stop gracefully and tell the user to
+      // run the rest individually (capture accumulates).
+      if (i > 0 && (Date.now() - t0) > SYNTH_TIME_BUDGET_MS) {
+        for (var j = i; j < fixtureIds.length; j++) {
+          results[fixtureIds[j]] = { id: fixtureIds[j], ok: false, skippedForTime: true,
+            reason: 'skipped (6-min budget) -- run it on its own from the menu' };
+        }
+        break;
+      }
       var fx = SYNTHETIC_FIXTURES[id];
       var res = { id: id, ok: false, prefillLeaks: [], structuralNotes: [], reason: '' };
       try {
@@ -154,7 +195,7 @@ function _runSyntheticE2ECore(ss, fixtureIds) {
 
         phase = id + ': write fixture inputs';
         if (typeof _setArgiaProgress === 'function') _setArgiaProgress(2, 6, 'SYNTH: ' + id + ' inputs\u2026');
-        Object.keys(fx.inputs).forEach(function (k) { writeInput(ss, k, fx.inputs[k]); });
+        Object.keys(fx.inputs).forEach(function (k) { _synthWriteInput(ss, k, fx.inputs[k]); });
         SpreadsheetApp.flush();
 
         phase = id + ': engine generate';
@@ -247,7 +288,8 @@ function _synthResultSummary(results) {
   var lines = [];
   Object.keys(results).forEach(function (id) {
     var r = results[id];
-    lines.push((r.ok ? '\u2705 ' : '\u274c ') + id + (r.ok ? ' captured' : ' \u2014 ' + r.reason));
+    var icon = r.ok ? '\u2705 ' : (r.skippedForTime ? '\u23f1 ' : '\u274c ');
+    lines.push(icon + id + (r.ok ? ' captured' : ' \u2014 ' + r.reason));
     if (r.prefillLeaks && r.prefillLeaks.length) lines.push('   prefill LEAK: ' + r.prefillLeaks.slice(0, 5).join(', '));
     if (r.structuralNotes && r.structuralNotes.length) lines.push('   structural: ' + r.structuralNotes.join('; '));
   });

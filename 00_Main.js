@@ -587,6 +587,10 @@ function _showArgiaProgress(title) {
     '<div id="task">Starting\u2026</div>' +
     '<div class="bg"><div class="fill" id="bar"></div></div>' +
     '<div id="pct">0 %</div>' +
+    '<div style="text-align:right;margin-top:12px;">' +
+      '<button onclick="google.script.host.close()" ' +
+      'style="font-size:10px;padding:4px 12px;border:1px solid #ccc;border-radius:4px;' +
+      'background:#f5f5f5;cursor:pointer;color:#555;">Cerrar</button></div>' +
     '<script>' +
     'function poll(){' +
       'google.script.run' +

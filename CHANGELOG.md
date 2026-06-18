@@ -1,4 +1,30 @@
-## [4.55.0] — 2026-06-18  (T12-b fixes from the first capture run)
+## [4.56.0] — 2026-06-18  (T12-b round 2: range writes, capture accumulation, popup close, time budget)
+
+**Second capture run findings + the popup request.**
+
+### Fixed — `40_SyntheticE2E.js`
+- **Range writes** — `writeInput` range keys need a 2D array (`[[12 values]]`); fixtures store 1D, so
+  every write aborted on `cfeKwhBase requires 2D array`. New `_synthWriteInput` wraps 1D → single-row
+  2D for range keys. This unblocks the engine run.
+- **Capture accumulates** — `_writeSyntheticCapture` now MERGES into `_SYNTH_CAPTURE` instead of
+  clearing, so running fixtures one at a time builds up all three columns (required, since Run ALL
+  can't fit in one execution — see below).
+- **Time budget** — Apps Script hard-caps execution at ~6 min; three engine runs can't fit. The Run
+  ALL loop now stops gracefully after ~4 min (`SYNTH_TIME_BUDGET_MS`), marking the rest
+  `skipped (6-min budget) — run it on its own`, instead of being killed mid-flight (which left the
+  popup stuck).
+
+### Fixed — `00_Main.js`
+- **Progress popup** — added a **Cerrar** button to the modeless progress dialog, so it can always be
+  closed manually (e.g. after a hard timeout where the script can't close it). Shared by all flows.
+
+### Workflow
+Run fixtures **one at a time** (Synthetic Test Mode → Run SYNTH_500 / 600 / 650); each fits the 6-min
+cap and accumulates into `_SYNTH_CAPTURE`. Run ALL is best-effort (does what fits, reports the rest).
+
+Self-test ALL GREEN.
+
+
 
 **The capture run surfaced three things; this fixes all three so the synthetic E2E runs clean.**
 
