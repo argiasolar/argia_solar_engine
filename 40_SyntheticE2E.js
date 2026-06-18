@@ -87,6 +87,13 @@ function captureSyntheticOutputs(ss) {
     }
   }
   // BOM headline cells (known coords): grand total + structure subtotal.
+  // Direct MDC read (independent of API_OUTPUT) so the engine's own system size
+  // is visible even if a downstream writer lagged.
+  var mdc = ss.getSheetByName('MDC_v2');
+  if (mdc) {
+    try { out['mdc.system_kwp_C15'] = mdc.getRange('C15').getValue(); } catch (e) {}
+    try { out['mdc.project_name_C7'] = mdc.getRange('C7').getValue(); } catch (e) {}
+  }
   var bom = ss.getSheetByName('BOM_v2');
   if (bom) {
     try { out['bom.grand_total_G94']        = bom.getRange('G94').getValue(); } catch (e) {}
@@ -208,6 +215,17 @@ function _runSyntheticE2ECore(ss, fixtureIds) {
           captures[id] = captureSyntheticOutputs(ss);   // capture whatever exists
           results[id] = res;
           continue;
+        }
+
+        // runArgiaEngine writes MDC + BOM only; the full offer (financials ->
+        // API_OUTPUT + SLIDE_DATA) comes from runClientFinancials, which
+        // runGenerateAllDeliverables calls after the engine. Replicate that step
+        // silently so the capture reads THIS fixture's API_OUTPUT, not stale data.
+        phase = id + ': client financials (API_OUTPUT/SLIDE_DATA)';
+        if (typeof _setArgiaProgress === 'function') _setArgiaProgress(4, 6, 'SYNTH: ' + id + ' financials\u2026');
+        if (typeof runClientFinancials === 'function') {
+          try { runClientFinancials(ss, {}); SpreadsheetApp.flush(); }
+          catch (finErr) { res.financialsError = finErr.message; }
         }
 
         phase = id + ': capture';

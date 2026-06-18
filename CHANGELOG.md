@@ -1,4 +1,23 @@
-## [4.57.0] — 2026-06-18  (T12-b round 3: fixture input completeness — inverter model + BESS toggle/spec)
+## [4.58.0] — 2026-06-18  (T12-b round 4: synthetic runner runs the full offer pipeline)
+
+**The first clean capture revealed BOM scaled correctly per fixture (3.78M/4.55M/5.48M) but every
+`api.*` value was identical stale CULLIGAN data. Root cause: `runArgiaEngine` writes MDC + BOM only —
+the full offer (financials → API_OUTPUT + SLIDE_DATA) comes from `runClientFinancials`, which
+`runGenerateAllDeliverables` calls after the engine. The runner stopped at the engine, so API_OUTPUT
+kept CULLIGAN's last full run.**
+
+### Fixed — `40_SyntheticE2E.js`
+- After a successful `runArgiaEngine`, the runner now calls `runClientFinancials(ss, {})` (the core
+  function, no UI) so API_OUTPUT / SLIDE_DATA / financials reflect THIS fixture before capture.
+  `runGenerateAllDeliverables` itself is UI-coupled and non-silent, so its key step is replicated
+  directly. A financials error is recorded on the result, non-fatal.
+- Capture adds a direct MDC cross-check (`mdc.system_kwp_C15`, `mdc.project_name_C7`) so the engine's
+  own system size is visible independent of any downstream writer.
+
+Self-test ALL GREEN. After this, the three `_SYNTH_CAPTURE` columns should differ — system_kwp ~499 /
+600 / 650, project_name SYNTH_500/600/650, fresh CFE bills + financials per fixture.
+
+
 
 **Third capture run exposed two more input gaps. Fixed in the fixtures.**
 
