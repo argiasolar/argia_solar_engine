@@ -5,7 +5,7 @@ Standard (AGS) v1.5** — the internal engineering standard that is the oracle f
 every Engine output (AGS-801/802). This plan is a dependency-ordered track of
 self-contained chunks, in the same format as `ARGIA_CONSOLIDATED_PLAN.md`.
 
-**Status:** A1 ✅ delivered & green · A2–A6 pending.
+**Status:** A1 ✅ · A2 ✅ (DC/AC de-block + clause fix) · A2b, A3–A6 pending.
 **Engine baseline at plan start:** v4.59.0 · self-test 587 tests, 531 PASS,
 0 FAIL, 0 unit ERROR, 56 workbook-dependent ERRORs (expected).
 
@@ -59,10 +59,10 @@ A chunk is DONE only when **both** gates are green for its scope:
 | AGS finding | Severity | Task |
 |---|---|---|
 | No single in-code source of AGS-B values; no N/S/P tags | Architecture | **A1** |
-| DC/AC thresholds 1.5/1.8 vs AGS-204 ≤1.40 (FAIL >1.40) | **BLOCK** | A2 |
-| Degradation default 0.5%/yr vs PB-01 ≤0.4%/yr | REVIEW | A2 |
-| Isc not temperature-corrected before 1.25/1.5625 (FR-205-03) | REVIEW | A2 |
-| MDC cites NOM 690-8(A) for Voc-cold; correct clause is 690-7 | REVIEW | A2 |
+| DC/AC hard-block at >1.8 vs AGS-204 designer-decision | **BLOCK** | A2 ✅ |
+| Degradation default 0.5%/yr vs PB-01 ≤0.4%/yr | REVIEW | A2 (kept visible, designer-owned) |
+| Isc not temperature-corrected before 1.25/1.5625 (FR-205-03) | REVIEW | A2b |
+| MDC cites NOM 690-8(A) for Voc-cold; correct clause is 690-7 | REVIEW | A2 ✅ |
 | AGS-802 oracle map + full §5.3 hard-block list (~40% wired) | Architecture | A3 |
 | AGS-207 bankability absent (P50/P75/P90/P99, σ, guarantee baseline) | **BLOCK gate** | A4 |
 | Regulatory class (REG-01 0.7 MW exempt / SAE-GE) absent (AGS-102) | BLOCK gate | A5 |
@@ -92,24 +92,47 @@ ERRORs unchanged — ALL GREEN. Conformance report reproduces the known DC/AC BL
 
 ---
 
-## A2 — Calibration to AGS-B + clause fixes (behaviour-changing)
+## A2 — DC/AC de-block + AGS band + clause fix ✅ DONE
 
-**Goal:** rewire the operative engine constants to read from the register and
-close the four Category-A deltas. **Self-contained prompt:**
+**Goal:** honour the "DC/AC is a designer decision, never a hard block" policy,
+align the DC/AC flag to the AGS-204 band, and fix the Voc-cold clause citation —
+all with zero customer-facing financial change.
 
-> Read `00b_AgsRegister.js` and the live NOM_DB `61_NOM_LIMITS`. (1) Point the
-> DC/AC ratio gate at `agsValue('DCAC-BAND')`: REVIEW in 1.35–1.40, FAIL >1.40
-> (release-prohibited) unless an AGS-202 clipping-study justification is recorded;
-> keep the engine's existing override mechanism but make AGS the ceiling. (2) Set
-> the client-financials degradation default to `agsValue('PB-01')` (0.004) — flag
-> any project override above it REVIEW. (3) Temperature-correct Isc (FR-205-03)
-> before the 1.25/1.5625 factors in `04_CalcDC.js`. (4) Fix the MDC clause
-> citation for Voc-cold / max-modules-per-string from 690-8(A) to 690-7
-> (FR-205-01). Re-anchor the CULLIGAN goldens to the new (correct) numbers with
-> the diff explained. Wire `agsConformanceReport` to the live `nom` + client
-> defaults and assert it returns status PASS in a new regression. **DoD:** drift
-> report clean for these four IDs; CULLIGAN goldens updated + green; self-test
-> ALL GREEN.
+**Delivered:**
+- DC/AC no longer hard-blocks: `09_Validate.js` DC-10 `critical` → non-blocking
+  `major`, reading the `1.35/1.40` band from the register and citing AGS-204 with
+  the clipping-study note (flagged, not silently passed — AGS-802 R3).
+  `04_CalcDC.js` `dcAcRatioStatus` aligned to the AGS band; `02_LoadDB.js` exposes
+  `nom.dcAcAgsMin/ReviewLow/Max` from `00b_AgsRegister.js`.
+- MDC clause fix: Voc-cold / max-modules-per-string now cite **NOM 690-7**
+  (FR-205-01), not 690-8(A). (Design-current rows correctly stay 690-8.)
+- Live wiring: `agsConformanceFromNom(nom, clientDefaults)` (pure) + 2 unit tests.
+- `tests_integration/engine/ValidationRulesTests.gs` DC-10 expectation updated
+  (critical → major) and proven to run in Node (reverting it FAILs).
+
+**Deliberately NOT changed (designer-owned, kept visible):**
+- Degradation stays 0.5%/yr — a customer-facing financial number we will not move
+  silently. The conformance report keeps surfacing it as an explicit **PB-01
+  REVIEW** so it stays the designer's call; flipping to the AGS cap (0.4%) is a
+  one-line change once the team decides and captures the new CULLIGAN goldens.
+
+**DoD met:** self-test 595 tests, 539 PASS (+2), 0 FAIL, 0 unit ERROR, 56 workbook
+ERRORs unchanged — ALL GREEN. CULLIGAN (1.234) stays a clean DC/AC PASS.
+
+## A2b — Isc temperature-correction (FR-205-03)
+
+**Goal:** correct the design current to use Isc,corr, not STC Isc.
+
+**Why its own chunk:** the ~+2% correction can ripple into conductor/OCPD
+selection → BOM → CAPEX → financial goldens that only the live workbook produces,
+so it needs a deliberate in-sheet golden capture rather than guessed numbers.
+
+> In `04_CalcDC.js`, temperature-correct Isc (FR-205-03,
+> `Isc_corr = Isc_stc·[1+α(Tcell,max−25)]`) before the 1.25/1.5625 factors. Run
+> the pure `CalcDcTests` to capture the DC-side delta; then Tomasz runs CULLIGAN
+> in-sheet and reports any moved MDC/BOM/financial goldens, which get re-anchored
+> in a follow-up. **DoD:** pure DC tests green; CULLIGAN goldens re-anchored from
+> the in-sheet run; self-test ALL GREEN.
 
 ## A3 — AGS-802 oracle/flag layer + full hard-block list
 

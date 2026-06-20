@@ -230,7 +230,7 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
   // SECTION 1.1: STRING VOLTAGE VALIDATION
   // ===========================================================================
   row(MDC_ROW.VOC_COLD, n(dc.vocColdString, 1) + ' V',
-      PROV.AUTO_CALC, 'NOM 690-8(A) / 11M_PRODUCTS_PANELS',
+      PROV.AUTO_CALC, 'NOM 690-7 / 11M_PRODUCTS_PANELS',
       'Voc_cold = Voc x (1 + Tc x (Tmin - 25)) x N' +
       ' = ' + n(panel['PANEL_VOC_V'],2) + ' x (1 + ' + panel['PANEL_TEMP_PMAX'] + ' x (' + inp.minTemp + '-25)) x ' + inp.modsPerString +
       ' = ' + n(dc.vocColdString,1) + ' V' +
@@ -247,7 +247,7 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
       ' = CEIL(' + n(invBank[0] ? invBank[0].mpptVmin : 0,0) + ' / ' + n(dc.vmpHotPerMod,2) + ')' +
       ' = ' + dc.minMods + '  |  Inversor ref: ' + (invBank[0] ? invBank[0].model : '?'), null);
   row(MDC_ROW.MAX_MODS, dc.maxMods,
-      PROV.AUTO_CALC, 'NOM 690-8(A)',
+      PROV.AUTO_CALC, 'NOM 690-7',
       'Max_mods = FLOOR(Vmax_DC / Voc_cold_por_modulo)' +
       ' = FLOOR(' + n(invBank[0] ? invBank[0].maxDcV : 0,0) + ' / ' + n(dc.vocColdPerMod,2) + ')' +
       ' = ' + dc.maxMods + '  |  Inversor ref: ' + (invBank[0] ? invBank[0].model : '?'), null);
@@ -276,7 +276,7 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
     : (dc.dc01Pass && dc.dc02Pass) ? '[PASS]'
     : '[FAIL] Ver detalle en BOM seccion fallas';
   row(MDC_ROW.CHECK_WINDOW, windowDetail,
-      PROV.AUTO_CALC, 'NOM 690-8(A)/(MPPT)',
+      PROV.AUTO_CALC, 'NOM 690-7 / MPPT',
       'DC-01: Voc_cold <= Vmax_inv para CADA tipo de inversor  |  DC-02: Vmp_hot >= MPPT_min para CADA tipo',
       windowStatus);
   var dcLimitDetail = dc.str02Results.map(function(r) {

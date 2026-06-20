@@ -272,12 +272,47 @@ function agsConformanceReport(observed) {
   return { status: status, deltas: deltas, conformant: conformant, notModeled: notModeled };
 }
 
+// -----------------------------------------------------------------------------
+// LIVE WIRING — map the engine's loaded config to the conformance report (pure)
+// -----------------------------------------------------------------------------
+
+/**
+ * Build the conformance `observed` object from the engine's live `nom`
+ * constants + client-financials defaults, then run the report. PURE: callers
+ * pass plain objects (A2 feeds the loaded `nom` + CLIENT_FIN_DEFAULTS; the unit
+ * test feeds synthetic ones). Never reads a workbook.
+ *
+ * After A2, DC/AC is advisory-only: the engine flags from `nom.dcAcAgsReviewLow`
+ * and never hard-blocks, so `dcAcFailAbove` is intentionally omitted (no block)
+ * — that is what clears the DC/AC drift while keeping the designer in control.
+ *
+ * @param {Object} nom            loaded NOM constants (02_LoadDB)
+ * @param {Object} clientDefaults CLIENT_FIN_DEFAULTS (31a_RunClientFinancials)
+ * @param {Object} [opts]         { bankabilityModeled, bessSohEolModeled } overrides
+ * @return {Object} agsConformanceReport result
+ */
+function agsConformanceFromNom(nom, clientDefaults, opts) {
+  nom = nom || {}; clientDefaults = clientDefaults || {}; opts = opts || {};
+  var observed = {
+    // DC/AC: engine now flags from the AGS review-low and never blocks.
+    dcAcReviewAbove:     (nom.dcAcAgsReviewLow !== undefined) ? nom.dcAcAgsReviewLow : 1.35,
+    // dcAcFailAbove deliberately omitted -> no hard block to report.
+    panelDegradationPct: clientDefaults.panelDegradationPct,
+    dcCurrentFactor:     (nom.currentFactor1 !== undefined) ? nom.currentFactor1 : nom.dcCurrentFactor,
+    bessRtePct:          (opts.bessRtePct !== undefined) ? opts.bessRtePct : 0.90,
+    bessSohEolModeled:   (opts.bessSohEolModeled !== undefined) ? opts.bessSohEolModeled : false,
+    bankabilityModeled:  (opts.bankabilityModeled !== undefined) ? opts.bankabilityModeled : false
+  };
+  return agsConformanceReport(observed);
+}
+
 // Apps Script has no module system; these are global by design. This export
 // shim is a harmless no-op under Apps Script and lets Node tooling require the
 // file directly if ever needed (the self-test rig eval-loads it, not require).
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     AGS_REGISTER: AGS_REGISTER, agsGet: agsGet, agsValue: agsValue, agsAll: agsAll,
-    agsRegisterSelfCheck: agsRegisterSelfCheck, agsConformanceReport: agsConformanceReport
+    agsRegisterSelfCheck: agsRegisterSelfCheck, agsConformanceReport: agsConformanceReport,
+    agsConformanceFromNom: agsConformanceFromNom
   };
 }

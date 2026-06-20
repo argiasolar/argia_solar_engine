@@ -347,14 +347,18 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   var dcKwp      = (pwr * inp.panelQty) / 1000;
   var acKwTotal  = invBank.reduce(function(s, inv) { return s + (inv.acKw * inv.qty); }, 0);
   var ratio      = acKwTotal > 0 ? dcKwp / acKwTotal : 0;
-  var ratioFail  = ratio > nom.dcAcHard;
-  var ratioReview= ratio > nom.dcAcWarn && !ratioFail;
+  // AGS-204 §7 band (single source: 00b_AgsRegister.js / DCAC-BAND). Advisory
+  // only — DC/AC is a designer decision, never a hard block.
+  var _agsMax       = nom.dcAcAgsMax       || 1.40;
+  var _agsReviewLow = nom.dcAcAgsReviewLow || 1.35;
+  var ratioFail  = ratio > _agsMax;
+  var ratioReview= ratio > _agsReviewLow && !ratioFail;
 
   dc.dcKwp     = dcKwp;
   dc.acKwTotal = acKwTotal;
   dc.dcAcRatio = ratio;
-  dc.dcAcRatioStatus = ratioFail   ? '[FAIL] Relacion > ' + nom.dcAcHard + ' hard max'
-                     : ratioReview ? '[REVIEW] Relacion > ' + nom.dcAcWarn + ', requiere justificacion'
+  dc.dcAcRatioStatus = ratioFail   ? '[REVIEW] Relacion > ' + _agsMax + ' (AGS-204 §7) — verificar clipping/NPV y justificar (decision del disenador)'
+                     : ratioReview ? '[REVIEW] Relacion en banda AGS-204 ' + _agsReviewLow + '–' + _agsMax + ' — confirmar estudio de clipping'
                      :               '[PASS]';
 
   // -- Overall DC result -----------------------------------------------------

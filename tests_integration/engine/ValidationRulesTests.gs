@@ -282,12 +282,13 @@ registerTest({
     // ====================================================================
     // GROUP 5: DC/AC ratio (1 rule)
     // ====================================================================
-    // panelQty 2500 * 585W = 1462.5 kWp / 400 kWac = 3.66 -- way above
-    // any sane dcAcHard. Will also cascade to STR-00 (mods derived from
-    // strings doesn't match) -- we only assert DC-10.
-    check('DC-10: ratio exceeds hard max',
+    // panelQty 2500 * 585W = 1462.5 kWp / 400 kWac = 3.66 -- way above the
+    // AGS-204 band. Per ARGIA policy DC/AC NEVER hard-blocks: it is a
+    // non-blocking advisory (major), the designer's decision. Will also cascade
+    // to STR-00 -- we only assert DC-10.
+    check('DC-10: ratio above AGS-204 band (advisory, non-blocking)',
       function (o) { o.inp.panelQty = 2500; },
-      { criticals: ['DC-10'] });
+      { majors: ['DC-10'] });
 
     // ====================================================================
     // GROUP 6: string count consistency (1 rule)

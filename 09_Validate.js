@@ -238,15 +238,23 @@ function runValidation(ss, inp, panel, invBank, nom) {
     var acKw  = invBank.reduce(function(s, inv) { return s + inv.acKw * inv.qty; }, 0);
     if (acKw > 0) {
       var ratio = dcKwp / acKw;
-      if (ratio > nom.dcAcHard) {
-        critical('DC-10',
-          'DC/AC ratio = ' + ratio.toFixed(3) + ' exceeds hard max ' + nom.dcAcHard + '.' +
-          ' (' + dcKwp.toFixed(1) + ' kWp / ' + acKw.toFixed(1) + ' kWac)',
-          'Add inverter capacity or reduce panel count.');
-      } else if (ratio > nom.dcAcWarn) {
+      // AGS-204 §7 / FR-204-04: PASS 1.10–1.40, REVIEW 1.35–1.40, FAIL >1.40.
+      // ARGIA policy: DC/AC is a DESIGNER decision — the engine FLAGS (advisory,
+      // never blocking) and records the AGS reference, so the deviation is
+      // traceable rather than silently passed (AGS-802 R3). No `critical` here.
+      var agsMax       = nom.dcAcAgsMax       || 1.40;
+      var agsReviewLow = nom.dcAcAgsReviewLow || 1.35;
+      if (ratio > agsMax) {
         major('DC-10',
-          'DC/AC ratio = ' + ratio.toFixed(3) + ' exceeds warn threshold ' + nom.dcAcWarn + '.',
-          'Verify project/manufacturer basis allows ratio > ' + nom.dcAcWarn + '.');
+          'DC/AC ratio = ' + ratio.toFixed(3) + ' exceeds the AGS-204 §7 limit ' + agsMax +
+          ' (' + dcKwp.toFixed(1) + ' kWp / ' + acKw.toFixed(1) + ' kWac).',
+          'AGS-204: confirm a clipping/NPV study (AGS-202) supports it and record the justification. ' +
+          'Designer decision — not a hard block.');
+      } else if (ratio > agsReviewLow) {
+        major('DC-10',
+          'DC/AC ratio = ' + ratio.toFixed(3) + ' is within the AGS-204 review band ' +
+          agsReviewLow + '–' + agsMax + '.',
+          'AGS-204: confirm the clipping study supports it.');
       }
       // Bug B3 fix (3.7.8): previously read `acKw > 0 && ratio < X || ratio < 0.8` which
       // (due to JS && binding tighter than ||) parsed as `(acKw > 0 && ratio < X) || (ratio < 0.8)` —

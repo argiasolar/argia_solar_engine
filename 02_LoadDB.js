@@ -919,6 +919,23 @@ function loadNomConstants(ss) {
   nom.dcAcTarget        = nom.limits['project_dc_ac_ratio']              || 1.20;
   nom.dcAcWarn          = nom.limits['project_dc_ac_ratio_warn']         || 1.50;
   nom.dcAcHard          = nom.limits['project_dc_ac_ratio_hard']         || 1.80;
+  // AGS-204 §7 / FR-204-04 DC/AC acceptance band — single source of truth is
+  // 00b_AgsRegister.js (DCAC-BAND). AGS reviews 1.35–1.40 and fails >1.40, but
+  // per ARGIA policy DC/AC is a DESIGNER decision, never a hard block: the
+  // engine flags (advisory) and records the AGS reference, it does not stop the
+  // run. The legacy dcAcWarn/dcAcHard remain for any non-AGS consumer; the gate
+  // logic (09_Validate DC-10, 04_CalcDC) uses the AGS band below.
+  try {
+    var _agsDcAc = (typeof agsValue === 'function') ? agsValue('DCAC-BAND') : null;
+    if (_agsDcAc) {
+      nom.dcAcAgsMin       = _agsDcAc.min;
+      nom.dcAcAgsReviewLow = _agsDcAc.reviewLow;
+      nom.dcAcAgsMax       = _agsDcAc.max;
+    }
+  } catch (e) { /* register absent -> fall back to AGS-B literals below */ }
+  nom.dcAcAgsMin        = nom.dcAcAgsMin       || 1.10;
+  nom.dcAcAgsReviewLow  = nom.dcAcAgsReviewLow || 1.35;
+  nom.dcAcAgsMax        = nom.dcAcAgsMax       || 1.40;
   nom.altitudeTrigger   = nom.limits['project_altitude_derate_trigger_m']|| 2000;
   nom.roofClearanceLow  = nom.limits['project_roof_clearance_low_airflow_mm'] || 91;
 
