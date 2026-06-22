@@ -5,7 +5,7 @@ Standard (AGS) v1.5** — the internal engineering standard that is the oracle f
 every Engine output (AGS-801/802). This plan is a dependency-ordered track of
 self-contained chunks, in the same format as `ARGIA_CONSOLIDATED_PLAN.md`.
 
-**Status:** A1 ✅ · A2 ✅ · A2b ✅ · A3a ✅ · A3b-advisory ✅ (no blocks; real blocks deferred) · A4–A6 pending.
+**Status:** A1 ✅ · A2 ✅ · A2b ✅ · A3a ✅ · A3b-advisory ✅ · A4 ✅ (bankability, informative) · A5–A6 pending.
 **Engine baseline at plan start:** v4.59.0 · self-test 587 tests, 531 PASS,
 0 FAIL, 0 unit ERROR, 56 workbook-dependent ERRORs (expected).
 
@@ -191,18 +191,32 @@ is wired — one at a time, each with in-sheet golden capture first (A2b discipl
 ### A3c → folded into A4
 AGS-207 σ>8% / P50-as-guarantee block depends on the bankability model — built with A4.
 
-## A4 — AGS-207 bankability module (biggest net-new build)
+## A4 — AGS-207 bankability module ✅ DONE (informative only; Node-verified)
 
-**Goal:** the P50/P75/P90/P99 + uncertainty model AGS-207 requires.
+**Goal:** the P50/P75/P90/P99 + uncertainty model AGS-207 requires — surfaced, not enforced.
 
-> New pure module `2x_CalcBankability.js` implementing FR-207-01 (σ_total by RSS),
-> FR-207-03 (Pxx via the PB-06 z-values), FR-207-04/05 (degradation-adjusted
-> P90(1) and debt-term P90(N)), FR-207-06 (guarantee baseline ≤ 0.95·P90). σ_i
-> inputs are placeholders now (mechanism-first); real σ loads later without code
-> changes. Hard-block (🔴, AGS-802 R4) on σ_total > 8% labelled bankable, single
-> year of weather data, or P50 used as the guarantee. Reproduce the AGS-207 §6
-> worked example (P50 717 MWh → guarantee 629 MWh) to the unit. **DoD:** worked
-> example reproduced; hard-blocks fire; tests green.
+**Delivered:**
+- `31b_CalcBankability.js` (new, pure): FR-207-01 (σ_total RSS), FR-207-03 (Pxx via
+  the §3 z-values), FR-207-04 (σ_IAV/√N debt-term P90), FR-207-05 (degradation-
+  adjusted year-by-year), FR-207-06 (guarantee ≤ 0.95·P90), §5.6 class. σ inputs
+  default to the AGS-207 §5.1 typical C&I values (flagged `sigmaSource`), replaceable
+  with site data without code changes. `runBankability(ss)` reads P50 from
+  `_cfinReadEnergyKwh` + PV degradation.
+- `36_CalcStatusRules.js`: `_psRuleBankability` surfaces σ / class / P50 / P90(1) /
+  guarantee on the status. **PASS-level in every case — even σ>8% is disclosed as
+  information, never a block** (project decision: no hard blocks). The R5/R6
+  not-bankable / P50-as-guarantee conditions are stated in the message, not enforced.
+- `33`: wired guarded. Tests: `BankabilityTests.gs` (3) + advisory test (1).
+
+**Validation:** the AGS-207 §6 worked example (417 kWp SLP, P50 717 MWh, d 0.4%, N 10)
+reproduces to the unit — σ 6.0%, P75 688, P90(1) 662, P99 617, P90(10) 671, P90 yr-10
+639, **guarantee 629**, class Good/bankable. Proven to guard (breaking 0.95 fails the
+test; making σ>8% block fails the never-block test). **Self-test 605 tests, 549 PASS,
+0 FAIL, 0 unit ERROR.** PASS-level only → CULLIGAN emission status unaffected.
+
+**Deferred (A4b):** a dedicated BANKABILITY_v2 output tab (P50/P75/P90/P99 + year-by-year
+table) — held back to avoid project-card golden/cell-shift risk; the engine + read-out
+land first. AGS-207 σ>8% / P50-as-guarantee as a *real* block stays deferred (no blocks).
 
 ## A5 — Regulatory classification + UL 9540A Ed.6 gate
 

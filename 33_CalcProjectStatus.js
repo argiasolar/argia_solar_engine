@@ -192,6 +192,13 @@ function collectProjectStatusRules(ss) {
       message: 'Engine-blocks check failed: ' + (e && e.message ? e.message : e),
       evidence: {} });
   }
+  try {
+    rules.push(runBankabilityRule(ss));   // A4: AGS-207 bankability read-out, informative (PASS-level)
+  } catch (e) {
+    rules.push({ level: 'PASS', code: 'BANKABILITY_CHECK_ERROR',
+      message: 'Bankability check failed: ' + (e && e.message ? e.message : e),
+      evidence: {} });
+  }
   return rules;
 }
 

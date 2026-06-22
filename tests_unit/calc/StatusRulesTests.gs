@@ -262,3 +262,39 @@ registerTest({
     t.assert('code ENGINE_BLOCKS_ALL_WIRED', 'ENGINE_BLOCKS_ALL_WIRED', all.code);
   }
 });
+
+
+// A4 -- AGS-207 bankability advisory: PASS-level always, even σ>8% (no blocking).
+registerTest({
+  id: 'UNIT_PS_RULE_BANKABILITY',
+  group: 'unit', module: 'calc/status_rules',
+  scenarios: [], tags: ['calc', 'project_status', 'bankability', 'a4', '207'],
+  source: 'tests_unit/calc/StatusRulesTests.gs',
+  fn: function (t, ctx) {
+    t.suite('UNIT calc/status_rules: bankability advisory -> PASS-level, never blocks');
+
+    // Good project -> PASS, class surfaced.
+    var good = _psRuleBankability(computeBankability(717, {
+      components: { resource: 0.035, iav: 0.035, model: 0.030, soiling: 0.010, degradation: 0.005, availability: 0.010 },
+      degradation: 0.004, tenorYears: 10 }));
+    t.assert('good -> PASS', 'PASS', good.level);
+    t.assert('code BANKABILITY_GOOD', 'BANKABILITY_GOOD', good.code);
+    t.assertNear('guarantee surfaced ≈ 629', 629, good.evidence.guaranteeBaseline, 1.0);
+
+    // σ>8% -> STILL PASS-level (informational), code flags REVIEW, never blocks.
+    var hi = _psRuleBankability(computeBankability(1000, { components: { a: 0.12 }, degradation: 0.005 }));
+    t.assert('σ>8% stays PASS level', 'PASS', hi.level);
+    t.assert('code BANKABILITY_REVIEW', 'BANKABILITY_REVIEW', hi.code);
+    t.assertContains('message discloses non-enforcement', hi.message, 'not blocking');
+
+    var reduced = reduceProjectStatus([
+      { level: 'PASS', code: 'CAPEX_PRESENT', message: '', evidence: {} }, hi ]);
+    t.assert('σ>8% does NOT change verdict', 'PASS', reduced.status);
+    t.assertTrue('still emittable (bankability never blocks)', isOfferEmittable(reduced.status, false));
+
+    // No P50 -> NOT_EVALUATED, PASS-level.
+    var none = _psRuleBankability({ evaluated: false });
+    t.assert('no P50 -> PASS', 'PASS', none.level);
+    t.assert('code BANKABILITY_NOT_EVALUATED', 'BANKABILITY_NOT_EVALUATED', none.code);
+  }
+});

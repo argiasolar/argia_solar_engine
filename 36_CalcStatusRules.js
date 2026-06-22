@@ -344,3 +344,49 @@ function runEngineBlocksRule(ss) {
     {},   // wired refs -- none yet
     (typeof agsBlockWaitingOn === 'function') ? agsBlockWaitingOn : null);
 }
+
+
+// -----------------------------------------------------------------------------
+// A4 -- AGS-207 bankability (INFORMATIVE ONLY). Surfaces the P50/P90/σ/guarantee
+// read-out on the status. PASS-level in every case -- even σ > 8% is reported as
+// information, never a block (project decision: no hard blocks). The σ>8%
+// not-bankable condition (AGS-207 R5) and P50-as-guarantee (R6) are disclosed in
+// the message, not enforced; promoting either to a real gate is a later task.
+// -----------------------------------------------------------------------------
+
+function _round(x, dp) { var p = Math.pow(10, dp || 0); return Math.round((Number(x) || 0) * p) / p; }
+
+// PURE. f = computeBankability(...) result (or {evaluated:false}).
+function _psRuleBankability(f) {
+  if (!f || f.evaluated !== true) {
+    return { level: 'PASS', code: 'BANKABILITY_NOT_EVALUATED',
+             message: 'Bankability (AGS-207) not evaluated -- no P50 annual energy available.',
+             evidence: { evaluated: false } };
+  }
+  var sigmaPct = _round(f.sigma1 * 100, 1);
+  var ev = {
+    p50: _round(f.p50, 0), p75: _round(f.p75, 0), p90_1yr: _round(f.p90_1yr, 0),
+    p90_Nyr: _round(f.p90_Nyr, 0), p99: _round(f.p99, 0),
+    sigma1Pct: sigmaPct, sigmaNPct: _round(f.sigmaN * 100, 1),
+    guaranteeBaseline: _round(f.guaranteeBaseline, 0),
+    p50_p90_gapPct: _round(f.p50_p90_gapPct, 1),
+    klass: f.klass, classLabel: f.classLabel, bankable: f.bankable,
+    tenorYears: f.tenorYears, sigmaSource: f.sigmaSource
+  };
+  var head = 'Bankability (AGS-207): sigma=' + sigmaPct + '% (' + f.classLabel + '). '
+           + 'P50 ' + ev.p50 + ', P90(1yr) ' + ev.p90_1yr + ', guarantee ' + ev.guaranteeBaseline
+           + ' (0.95xP90). Informational -- not enforced.';
+  var code = (f.bankable === false)
+    ? 'BANKABILITY_REVIEW'    // σ>8%: disclosed as info, still PASS-level (never blocks)
+    : 'BANKABILITY_' + f.klass;
+  var msg = (f.bankable === false)
+    ? head + ' NOTE: sigma>8% exceeds the AGS-207 R5 bankable threshold -- informational, not blocking.'
+    : head;
+  return { level: 'PASS', code: code, message: msg, evidence: ev };
+}
+
+// LIVE wrapper.
+function runBankabilityRule(ss) {
+  return _psRuleBankability(
+    (typeof runBankability === 'function') ? runBankability(ss) : { evaluated: false });
+}
