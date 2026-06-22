@@ -5,7 +5,7 @@ Standard (AGS) v1.5** — the internal engineering standard that is the oracle f
 every Engine output (AGS-801/802). This plan is a dependency-ordered track of
 self-contained chunks, in the same format as `ARGIA_CONSOLIDATED_PLAN.md`.
 
-**Status:** A1 ✅ · A2 ✅ · A2b ✅ (Isc temp-correction, in-sheet confirm pending) · A3–A6 pending.
+**Status:** A1 ✅ · A2 ✅ · A2b ✅ (in-sheet confirmed) · A3a ✅ (Node-verified) · A3b, A4–A6 pending.
 **Engine baseline at plan start:** v4.59.0 · self-test 587 tests, 531 PASS,
 0 FAIL, 0 unit ERROR, 56 workbook-dependent ERRORs (expected).
 
@@ -151,15 +151,31 @@ financials all unchanged — blast radius exactly as predicted.
 ## A3 — AGS-802 oracle/flag layer + full hard-block list
 
 **Goal:** extend the existing PROJECT_STATUS rules pack into the AGS-802 benchmark.
+Split into three chunks by what the Engine can evaluate at proposal time.
 
-> Extend `36_CalcStatusRules.js`/`33_CalcProjectStatus.js`: build the §5.2
-> output→owning-chapter→register-ID oracle map, and add every §5.3 non-negotiable
-> hard-block. Human gates (DRO 206, UVIE 602) are explicit `NOT_EVALUATED`
-> advisories — never a silent PASS, never a false BLOCK. Each emittable output
-> carries its oracle ID + flag in a trace. Reuse the existing worst-takes-all
-> reducer and `isOfferEmittable` (BLOCKED already non-overridable). **DoD:** every
-> emittable output maps to an oracle; the §5.3 list is present; no silent PASS;
-> self-test ALL GREEN.
+### A3a — Oracle map + human-gate ledger ✅ DONE (Node-verified; additive, no emittability change)
+- `37_AgsOracleMap.js` (new): the §5.2 output→chapter→oracle map (18 rows, accessors
+  `agsOracleMap` / `agsOracleFor`) and the §5.3 hard-block list as data (12 items,
+  `agsHardBlockList` / `agsHumanGates` / `agsEngineHardBlocks`) — the single source
+  of truth A3b and A4 build on.
+- `36_CalcStatusRules.js`: `_psRuleHumanGates` + `runHumanGatesRule` surface the five
+  human/field §5.3 gates (DRO 206, UVIE 602, H-point 402, HSE 501, Cat-1 601) as a
+  single PASS-level `HUMAN_GATES_NOT_EVALUATED` advisory — visible, never a silent
+  PASS, never a false BLOCK (they block at their downstream stage, not the proposal).
+- `33_CalcProjectStatus.js`: rule wired into `collectProjectStatusRules` (guarded).
+- Tests: `AgsOracleMapTests.gs` (2) + human-gates test (1); proven to guard the
+  never-block invariant. **Self-test 600 tests, 544 PASS, 0 FAIL, 0 unit ERROR.**
+  Because nothing new blocks, CULLIGAN's emission-status golden is unaffected
+  (PASS-level rules can't change the verdict) — no golden capture needed.
+
+### A3b — Engine-evaluable hard-blocks (behavior-changing; in-sheet capture)
+Wire the data-present §5.3 blocks: AGS-101 Data Pack, AGS-203 exclusions/fire,
+AGS-303 back-feed/anti-islanding, AGS-401 warranty<PB-01, AGS-302/503 UL 9540A Ed.6
+time-gate. Confirm each data source exists before wiring; capture the CULLIGAN status
+block in-sheet first (same discipline as A2b). **Pending.**
+
+### A3c → folded into A4
+AGS-207 σ>8% / P50-as-guarantee block depends on the bankability model — built with A4.
 
 ## A4 — AGS-207 bankability module (biggest net-new build)
 

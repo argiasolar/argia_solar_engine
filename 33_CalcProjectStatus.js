@@ -178,6 +178,13 @@ function collectProjectStatusRules(ss) {
       message: 'BESS decision check failed: ' + (e && e.message ? e.message : e),
       evidence: {} });
   }
+  try {
+    rules.push(runHumanGatesRule(ss));   // A3a: AGS-802 §5.3 human/field gates (NOT_EVALUATED)
+  } catch (e) {
+    rules.push({ level: 'PASS', code: 'HUMAN_GATES_CHECK_ERROR',
+      message: 'Human-gates check failed: ' + (e && e.message ? e.message : e),
+      evidence: {} });
+  }
   return rules;
 }
 

@@ -176,3 +176,49 @@ registerTest({
     t.assert('code BESS_DECISION_NOT_EVALUATED', 'BESS_DECISION_NOT_EVALUATED', none.code);
   }
 });
+
+
+// A3a -- AGS-802 §5.3 human/field gates surfaced as NOT_EVALUATED (PASS-level).
+registerTest({
+  id: 'UNIT_PS_RULE_HUMAN_GATES',
+  group: 'unit', module: 'calc/status_rules',
+  scenarios: [], tags: ['calc', 'project_status', 'human_gates', 'a3a', '802'],
+  source: 'tests_unit/calc/StatusRulesTests.gs',
+  fn: function (t, ctx) {
+    t.suite('UNIT calc/status_rules: human gates -> NOT_EVALUATED, never block');
+
+    var gates = agsHumanGates();   // the five §5.3 human/field gates
+
+    // No sign-offs recorded -> all pending, PASS-level advisory, NOT a block.
+    var none = _psRuleHumanGates(gates, {});
+    t.assert('no evidence -> PASS level', 'PASS', none.level);
+    t.assert('code HUMAN_GATES_NOT_EVALUATED', 'HUMAN_GATES_NOT_EVALUATED', none.code);
+    t.assert('all 5 gates pending', 5, none.evidence.pending);
+    t.assertContains('message names DRO (AGS-206)', none.message, 'AGS-206');
+    t.assertContains('message names UVIE (AGS-602)', none.message, 'AGS-602');
+
+    // Crucially: adding this rule must NOT change a PASS verdict or emittability.
+    var reduced = reduceProjectStatus([
+      { level: 'PASS', code: 'CAPEX_PRESENT', message: '', evidence: {} }, none ]);
+    t.assert('reduce stays PASS', 'PASS', reduced.status);
+    t.assertTrue('still emittable (human gates never block the proposal)',
+                 isOfferEmittable(reduced.status, false));
+
+    // All recorded -> PASS, code flips to RECORDED, zero pending.
+    var ev = {}; gates.forEach(function (g) { ev[g.ref] = true; });
+    var all = _psRuleHumanGates(gates, ev);
+    t.assert('all recorded -> PASS', 'PASS', all.level);
+    t.assert('code HUMAN_GATES_RECORDED', 'HUMAN_GATES_RECORDED', all.code);
+    t.assert('zero pending', 0, all.evidence.pending);
+
+    // Partial -> still PASS-level, only the unrecorded ones pending.
+    var partial = _psRuleHumanGates(gates, { 'AGS-206': true });
+    t.assert('partial -> PASS level', 'PASS', partial.level);
+    t.assert('4 still pending', 4, partial.evidence.pending);
+
+    // Empty gate list is handled (defensive).
+    var empty = _psRuleHumanGates([], {});
+    t.assert('no gates -> PASS', 'PASS', empty.level);
+    t.assert('code HUMAN_GATES_NONE', 'HUMAN_GATES_NONE', empty.code);
+  }
+});

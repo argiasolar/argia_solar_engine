@@ -244,3 +244,58 @@ function collectBessDecision(ss) {
 function runBessDecisionRule(ss) {
   return _psRuleBessDecision(collectBessDecision(ss));
 }
+
+
+// -----------------------------------------------------------------------------
+// A3a -- AGS-802 §5.3 human/field hard-block gates (DRO, UVIE, H-point, HSE,
+// Cat-1). These are real hard-blocks, but at their downstream STAGE (construction
+// / commissioning / interconnection), not at the proposal stage the Engine
+// produces -- and they require a human/field sign-off the Engine cannot perform.
+// Per AGS-801 R6 / AGS-802 R3 the Engine must surface them explicitly as
+// NOT_EVALUATED (rendered PASS-level: visible, never a false block, never a
+// silent pass) so the proposal can never quietly assume them satisfied.
+// The gate list itself is the single source of truth in 37_AgsOracleMap.js.
+// -----------------------------------------------------------------------------
+
+// PURE. gates = agsHumanGates(); evidence = { 'AGS-206': true, ... } recorded sign-offs.
+function _psRuleHumanGates(gates, evidence) {
+  gates = gates || [];
+  evidence = evidence || {};
+  if (gates.length === 0) {
+    return { level: 'PASS', code: 'HUMAN_GATES_NONE',
+             message: 'No human/field gates defined.', evidence: { gates: [] } };
+  }
+  var detail = gates.map(function (g) {
+    return { ref: g.ref, stage: g.stage || '', category: g.category,
+             condition: g.condition, recorded: evidence[g.ref] === true };
+  });
+  var pending = detail.filter(function (g) { return !g.recorded; });
+  if (pending.length === 0) {
+    return { level: 'PASS', code: 'HUMAN_GATES_RECORDED',
+             message: 'All ' + gates.length + ' downstream human/field sign-offs are recorded.',
+             evidence: { gates: detail, pending: 0 } };
+  }
+  var refs = pending.map(function (g) { return g.ref; }).join(', ');
+  return {
+    level: 'PASS',   // NOT_EVALUATED -> PASS-level: visible advisory, not a proposal-stage block
+    code: 'HUMAN_GATES_NOT_EVALUATED',
+    message: pending.length + ' downstream AGS-802 §5.3 hard-block gate(s) require human/field '
+           + 'sign-off and are NOT evaluated by the Engine (decision-support, not self-certification): '
+           + refs + '. Each must be signed off before its stage (construction / commissioning / '
+           + 'interconnection); the proposal must not assume them satisfied.',
+    evidence: { gates: detail, pending: pending.length, pendingRefs: refs }
+  };
+}
+
+// LIVE. Reads recorded sign-offs if a source exists; none is wired yet, so every
+// gate is honestly reported NOT_EVALUATED (never silently passed). A future
+// enhancement can populate evidence from a SIGN_OFFS section.
+function collectHumanGatesEvidence(ss) {
+  return {};
+}
+
+function runHumanGatesRule(ss) {
+  return _psRuleHumanGates(
+    (typeof agsHumanGates === 'function') ? agsHumanGates() : [],
+    collectHumanGatesEvidence(ss));
+}
