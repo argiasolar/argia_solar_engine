@@ -21,3 +21,6 @@ scripts/**
 
 # Test data files (these may live next to tests as fixtures)
 **/__fixtures__/**
+
+# Node sizing-constraint regression tests (run with: node tests_sizing/...)
+tests_sizing/**
