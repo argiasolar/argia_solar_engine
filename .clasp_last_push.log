@@ -1,4 +1,4 @@
-Pushed 274 files at 2:26:56 PM.
+Pushed 275 files at 4:30:20 PM.
 └─ 00_Main.js
 └─ 00a_Version.js
 └─ 00c_SetupSectionGuard.js
@@ -133,6 +133,7 @@ Pushed 274 files at 2:26:56 PM.
 └─ tests_regression\Pass6TrustTests.gs
 └─ tests_regression\sheet_formulas\BessSimulationFormulasTests.gs
 └─ tests_regression\synthetic\SyntheticFixtures.gs
+└─ tests_regression\synthetic\SyntheticGoldenTests.gs
 └─ tests_regression\v2\ApiOutputConsistencyTests.gs
 └─ tests_regression\v2\BomCompletenessCulliganTests.gs
 └─ tests_regression\v2\CfeBaseAndSavingsConsistencyTests.gs
