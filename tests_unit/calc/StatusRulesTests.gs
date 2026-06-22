@@ -222,3 +222,43 @@ registerTest({
     t.assert('code HUMAN_GATES_NONE', 'HUMAN_GATES_NONE', empty.code);
   }
 });
+
+
+// A3b (advisory) -- engine-evaluable §5.3 blocks surfaced NOT_EVALUATED, no block.
+registerTest({
+  id: 'UNIT_PS_RULE_ENGINE_BLOCKS',
+  group: 'unit', module: 'calc/status_rules',
+  scenarios: [], tags: ['calc', 'project_status', 'hardblock', 'a3b', '802'],
+  source: 'tests_unit/calc/StatusRulesTests.gs',
+  fn: function (t, ctx) {
+    t.suite('UNIT calc/status_rules: engine §5.3 blocks -> NOT_EVALUATED, never block');
+
+    var blocks = agsEnginePendingBlocks();
+
+    // None wired -> all pending, PASS-level advisory, NOT a block.
+    var none = _psRuleEngineBlocks(blocks, {}, agsBlockWaitingOn);
+    t.assert('no wiring -> PASS level', 'PASS', none.level);
+    t.assert('code ENGINE_BLOCKS_NOT_EVALUATED', 'ENGINE_BLOCKS_NOT_EVALUATED', none.code);
+    t.assert('all 6 engine blocks pending', 6, none.evidence.pending);
+    t.assertContains('names UL 9540A block (AGS-302/503)', none.message, 'AGS-302/503');
+    t.assertTrue('every surfaced block carries a waitingOn note',
+                 none.evidence.blocks.every(function (b) { return b.waitingOn.length > 0; }));
+
+    // Crucially: this rule must NOT change a PASS verdict or emittability.
+    var reduced = reduceProjectStatus([
+      { level: 'PASS', code: 'CAPEX_PRESENT', message: '', evidence: {} }, none ]);
+    t.assert('reduce stays PASS', 'PASS', reduced.status);
+    t.assertTrue('still emittable (advisory never blocks)', isOfferEmittable(reduced.status, false));
+
+    // Wiring one block out removes it from the advisory.
+    var oneWired = _psRuleEngineBlocks(blocks, { 'AGS-303': true }, agsBlockWaitingOn);
+    t.assert('one wired -> 5 pending', 5, oneWired.evidence.pending);
+    t.assertFalse('AGS-303 no longer surfaced', oneWired.evidence.pendingRefs.indexOf('AGS-303') !== -1);
+
+    // All wired -> clean PASS.
+    var allW = {}; blocks.forEach(function (b) { allW[b.ref] = true; });
+    var all = _psRuleEngineBlocks(blocks, allW, agsBlockWaitingOn);
+    t.assert('all wired -> PASS', 'PASS', all.level);
+    t.assert('code ENGINE_BLOCKS_ALL_WIRED', 'ENGINE_BLOCKS_ALL_WIRED', all.code);
+  }
+});

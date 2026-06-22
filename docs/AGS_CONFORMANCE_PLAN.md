@@ -5,7 +5,7 @@ Standard (AGS) v1.5** — the internal engineering standard that is the oracle f
 every Engine output (AGS-801/802). This plan is a dependency-ordered track of
 self-contained chunks, in the same format as `ARGIA_CONSOLIDATED_PLAN.md`.
 
-**Status:** A1 ✅ · A2 ✅ · A2b ✅ (in-sheet confirmed) · A3a ✅ (Node-verified) · A3b, A4–A6 pending.
+**Status:** A1 ✅ · A2 ✅ · A2b ✅ · A3a ✅ · A3b-advisory ✅ (no blocks; real blocks deferred) · A4–A6 pending.
 **Engine baseline at plan start:** v4.59.0 · self-test 587 tests, 531 PASS,
 0 FAIL, 0 unit ERROR, 56 workbook-dependent ERRORs (expected).
 
@@ -168,11 +168,25 @@ Split into three chunks by what the Engine can evaluate at proposal time.
   Because nothing new blocks, CULLIGAN's emission-status golden is unaffected
   (PASS-level rules can't change the verdict) — no golden capture needed.
 
-### A3b — Engine-evaluable hard-blocks (behavior-changing; in-sheet capture)
-Wire the data-present §5.3 blocks: AGS-101 Data Pack, AGS-203 exclusions/fire,
-AGS-303 back-feed/anti-islanding, AGS-401 warranty<PB-01, AGS-302/503 UL 9540A Ed.6
-time-gate. Confirm each data source exists before wiring; capture the CULLIGAN status
-block in-sheet first (same discipline as A2b). **Pending.**
+### A3b — Engine-evaluable hard-blocks
+**Audit (2026-06, in `37_AgsOracleMap.js`):** none of the engine-evaluable §5.3
+blocks has a clean, ready-to-block data source. AGS-203 (exclusions/fire) and
+AGS-302/503 (UL 9540A edition) have no data; AGS-101 (Data Pack completeness),
+AGS-303 (anti-islanding/grid-forming), AGS-401 (per-panel warranty %/yr) and
+AGS-302 (BESS safety/fire) are partial. So per the "no hard blocks at this moment"
+decision, **none are enforced.**
+
+**A3b-advisory ✅ DONE (Node-verified; additive, no emittability change):** the six
+engine-evaluable, not-yet-wired blocks (AGS-101, 203, 302, 303, 401, 302/503;
+AGS-207 deferred to A4) are surfaced as a single PASS-level
+`ENGINE_BLOCKS_NOT_EVALUATED` advisory, each annotated with `waitingOn` (the audit
+note for what data it needs). Visible, never a silent pass, never a block.
+`_psRuleEngineBlocks` + `runEngineBlocksRule`, wired guarded into the aggregator;
+test proven to guard the never-block invariant. **Self-test 601 tests, 545 PASS,
+0 FAIL, 0 unit ERROR.** CULLIGAN unaffected (PASS-level).
+
+**A3b-real (deferred):** promote a block to a real hard-block only after its field
+is wired — one at a time, each with in-sheet golden capture first (A2b discipline).
 
 ### A3c → folded into A4
 AGS-207 σ>8% / P50-as-guarantee block depends on the bankability model — built with A4.

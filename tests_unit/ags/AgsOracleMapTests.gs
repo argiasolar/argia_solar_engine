@@ -86,5 +86,14 @@ registerTest({
     // AGS-207 bankability block is flagged as dependent on A4 (not yet wired).
     var b207 = list.filter(function (b) { return b.ref === 'AGS-207'; })[0];
     t.assert('AGS-207 depends on A4', 'A4', b207.dependsOn);
+
+    // A3b: engine-pending blocks (eligible to wire now) exclude the A4-deferred AGS-207.
+    var pending = agsEnginePendingBlocks().map(function (b) { return b.ref; });
+    t.assert('6 engine-pending blocks', 6, pending.length);
+    t.assertFalse('AGS-207 excluded (deferred to A4)', pending.indexOf('AGS-207') !== -1);
+    t.assertTrue('AGS-101 is pending', pending.indexOf('AGS-101') !== -1);
+    t.assertTrue('every pending block has a waitingOn note',
+                 pending.every(function (r) { return agsBlockWaitingOn(r).length > 0; }));
+    t.assert('no waitingOn for a human gate', '', agsBlockWaitingOn('AGS-206'));
   }
 });

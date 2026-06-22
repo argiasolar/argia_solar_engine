@@ -299,3 +299,48 @@ function runHumanGatesRule(ss) {
     (typeof agsHumanGates === 'function') ? agsHumanGates() : [],
     collectHumanGatesEvidence(ss));
 }
+
+
+// -----------------------------------------------------------------------------
+// A3b (advisory mode) -- engine-evaluable AGS-802 §5.3 blocks that are not yet
+// wired as real hard-blocks because their data source is missing/partial (see
+// the 2026-06 audit in 37_AgsOracleMap.js). Per the "no hard blocks at this
+// moment" decision, they are surfaced NOT_EVALUATED (PASS-level: visible, never
+// a silent pass, never a block), each annotated with what data it is waiting on.
+// When a block's field is wired, it moves out of this advisory into a real rule.
+// -----------------------------------------------------------------------------
+
+// PURE. blocks = agsEnginePendingBlocks(); wired = { 'AGS-303': true, ... } refs
+// already promoted to a real rule; waitingOnFn(ref) -> audit note string.
+function _psRuleEngineBlocks(blocks, wired, waitingOnFn) {
+  blocks = blocks || [];
+  wired = wired || {};
+  waitingOnFn = waitingOnFn || function () { return ''; };
+  var pending = blocks.filter(function (b) { return wired[b.ref] !== true; });
+  if (pending.length === 0) {
+    return { level: 'PASS', code: 'ENGINE_BLOCKS_ALL_WIRED',
+             message: 'All engine-evaluable §5.3 hard-blocks are wired.',
+             evidence: { pending: 0 } };
+  }
+  var detail = pending.map(function (b) {
+    return { ref: b.ref, category: b.category, condition: b.condition,
+             timeGated: b.timeGated === true, waitingOn: waitingOnFn(b.ref) };
+  });
+  var refs = pending.map(function (b) { return b.ref; }).join(', ');
+  return {
+    level: 'PASS',   // NOT_EVALUATED -> PASS-level advisory, never a block
+    code: 'ENGINE_BLOCKS_NOT_EVALUATED',
+    message: pending.length + ' engine-evaluable AGS-802 §5.3 hard-block(s) are recognised but '
+           + 'NOT yet wired (no data source / partial): ' + refs + '. They are surfaced, not '
+           + 'enforced -- the proposal must not assume them satisfied. See per-block "waitingOn".',
+    evidence: { blocks: detail, pending: pending.length, pendingRefs: refs }
+  };
+}
+
+// LIVE. None wired yet -> every engine-evaluable block is reported NOT_EVALUATED.
+function runEngineBlocksRule(ss) {
+  return _psRuleEngineBlocks(
+    (typeof agsEnginePendingBlocks === 'function') ? agsEnginePendingBlocks() : [],
+    {},   // wired refs -- none yet
+    (typeof agsBlockWaitingOn === 'function') ? agsBlockWaitingOn : null);
+}

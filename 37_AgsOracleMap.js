@@ -82,11 +82,33 @@ function agsEngineHardBlocks() {
   return AGS_HARD_BLOCK_LIST.filter(function (b) { return b.humanGate === false; });
 }
 
+// ---- A3b audit (2026-06): wiring status of the engine-evaluable blocks -------
+// What data each still needs before it can move from NOT_EVALUATED to a real
+// hard-block. Until then it is surfaced (never silently absent) but never blocks.
+var AGS_BLOCK_WIRING = {
+  'AGS-101':     'No Data-Pack-wide required-fields completeness signal yet (only the per-cell _AUDIT_INPUTS dump).',
+  'AGS-203':     'No exclusion-zone / fire-pathway violation flag in layout (geometry only).',
+  'AGS-302':     'BESS safety/fire not yet wired as a status gate.',
+  'AGS-303':     'Export mode is read (single-source); anti-islanding / grid-forming evidence not modeled.',
+  'AGS-401':     'Degradation vs PB-01 already shown as a REVIEW; per-panel performance-warranty %/yr field not loaded.',
+  'AGS-302/503': 'No UL 9540A edition field; only Quote_Date (no real BESS PO date).'
+};
+
+/** Audit note: what data block `ref` is waiting on (''-if none). */
+function agsBlockWaitingOn(ref) { return AGS_BLOCK_WIRING[ref] || ''; }
+
+/** Engine-evaluable blocks eligible to be wired now (excludes those deferred to
+ *  a later task, e.g. AGS-207 -> A4). These are surfaced NOT_EVALUATED until wired. */
+function agsEnginePendingBlocks() {
+  return agsEngineHardBlocks().filter(function (b) { return !b.dependsOn; });
+}
+
 // Node export (no-op in Apps Script).
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     AGS_ORACLE_MAP: AGS_ORACLE_MAP, agsOracleMap: agsOracleMap, agsOracleFor: agsOracleFor,
     AGS_HARD_BLOCK_LIST: AGS_HARD_BLOCK_LIST, agsHardBlockList: agsHardBlockList,
-    agsHumanGates: agsHumanGates, agsEngineHardBlocks: agsEngineHardBlocks
+    agsHumanGates: agsHumanGates, agsEngineHardBlocks: agsEngineHardBlocks,
+    agsEnginePendingBlocks: agsEnginePendingBlocks, agsBlockWaitingOn: agsBlockWaitingOn
   };
 }

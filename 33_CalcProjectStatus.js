@@ -185,6 +185,13 @@ function collectProjectStatusRules(ss) {
       message: 'Human-gates check failed: ' + (e && e.message ? e.message : e),
       evidence: {} });
   }
+  try {
+    rules.push(runEngineBlocksRule(ss));  // A3b: engine-evaluable §5.3 blocks, advisory (NOT_EVALUATED)
+  } catch (e) {
+    rules.push({ level: 'PASS', code: 'ENGINE_BLOCKS_CHECK_ERROR',
+      message: 'Engine-blocks check failed: ' + (e && e.message ? e.message : e),
+      evidence: {} });
+  }
   return rules;
 }
 
