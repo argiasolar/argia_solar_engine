@@ -263,9 +263,9 @@ var TESTPROJ_001 = {
       bifFactor       : 1.00,      // non-bifacial branch
       bifacial        : false,
       isc             : 14.27,
-      isc125          : 17.8375,   // 14.27 x 1.25
-      iDesignPerStr   : 22.2969,   // 14.27 x 1.5625 x 1.00  (tolerance 0.001)
-      iDesign         : 22.2969,
+      isc125          : 18.1497,   // Isc,corr 14.5197 x 1.25  (A2b: Isc temp-corrected @ ambientDC 60C, +0.05%/C)
+      iDesignPerStr   : 22.6871,   // 14.5197 x 1.5625 x 1.00  (tolerance 0.001)
+      iDesign         : 22.6871,
       // Temperature
       roofAdder       : 22,        // @ 90 mm clearance
       ambientDC       : 60,        // 38 + 22
@@ -273,14 +273,14 @@ var TESTPROJ_001 = {
       // Ampacity
       Ft_dc           : 0.71,      // @ 60 degC
       Fag_dc          : 1.00,      // 2 conductors <= 3
-      ampReqDC        : 31.40,     // 22.2969 / (0.71 * 1.00)  (tolerance 0.05)
+      ampReqDC        : 31.95,     // 22.6871 / (0.71 * 1.00)  (tolerance 0.05)
       // [4.15.3 re-lock] conductor upsized 10->8 AWG. estimateDcRunM now adds
       // a geometry-aware in-array term (was flat 50+20=70 m, now 103.93 m, see
       // dcLength below). At 103.93 m a 10 AWG (5.26 mm2) run breaches the 1.5%
       // DC vdrop limit (0.0190 > 0.015); the engine correctly upsizes to 8 AWG
       // (8.37 mm2 -> vdrop 0.01197, passes). Verified by hand. Engine correct;
       // old expected was for the pre-geometry 70 m length.
-      conductorDC     : '8',       // ampacity 55 >= 31.40, and holds vdrop at 103.93 m
+      conductorDC     : '8',       // ampacity 55 >= 31.95, and holds vdrop at 103.93 m
       areaConDC       : 8.37,
       insAreaDC       : 15.7,
       // OCPD
@@ -296,8 +296,8 @@ var TESTPROJ_001 = {
       // Reproduced by hand to the rounding digit. Geometry-aware run is the
       // engine's intended model; the old 70 was flat base+corridor only.
       dcLength        : 103.9305,  // (tolerance 0.01)
-      vdropDC         : 0.01197,   // 8 AWG @ 103.93 m  (tolerance 0.0005)
-      vdropDCPass     : true,      // 0.01197 <= 0.015
+      vdropDC         : 0.01218,   // 8 AWG @ 103.93 m, on Isc,corr current (0.01197 x 22.6871/22.2969)
+      vdropDCPass     : true,      // 0.01218 <= 0.015
       // Conduit
       totalDCCables   : 3,         // 1*2 + 1
       conduitDC       : '1',       // [4.15.3] 8 AWG (larger) -> 1" conduit (was 0.75" at 10 AWG)

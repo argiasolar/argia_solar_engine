@@ -5,7 +5,7 @@ Standard (AGS) v1.5** — the internal engineering standard that is the oracle f
 every Engine output (AGS-801/802). This plan is a dependency-ordered track of
 self-contained chunks, in the same format as `ARGIA_CONSOLIDATED_PLAN.md`.
 
-**Status:** A1 ✅ · A2 ✅ (DC/AC de-block + clause fix) · A2b, A3–A6 pending.
+**Status:** A1 ✅ · A2 ✅ · A2b ✅ (Isc temp-correction, in-sheet confirm pending) · A3–A6 pending.
 **Engine baseline at plan start:** v4.59.0 · self-test 587 tests, 531 PASS,
 0 FAIL, 0 unit ERROR, 56 workbook-dependent ERRORs (expected).
 
@@ -119,20 +119,32 @@ all with zero customer-facing financial change.
 **DoD met:** self-test 595 tests, 539 PASS (+2), 0 FAIL, 0 unit ERROR, 56 workbook
 ERRORs unchanged — ALL GREEN. CULLIGAN (1.234) stays a clean DC/AC PASS.
 
-## A2b — Isc temperature-correction (FR-205-03)
+## A2b — Isc temperature-correction (FR-205-03) ✅ DONE (pending in-sheet confirm)
 
 **Goal:** correct the design current to use Isc,corr, not STC Isc.
 
-**Why its own chunk:** the ~+2% correction can ripple into conductor/OCPD
-selection → BOM → CAPEX → financial goldens that only the live workbook produces,
-so it needs a deliberate in-sheet golden capture rather than guessed numbers.
+**Delivered:**
+- `resolveTempCoeffs` now resolves an Isc coefficient: datasheet `PANEL_TEMP_ISC`
+  > `inp.iscCoeffOverride` > documented default `AGS_ISC_TEMPCO_DEFAULT` (+0.05%/°C);
+  it never inherits the (negative) Pmax proxy.
+- `calcDC` temperature-corrects Isc to the design max temperature (`ambientDC`, the
+  same basis as the conductor-ampacity derate Ft) before the 1.25/1.5625 factors:
+  `Isc,corr = Isc·(1 + α(ambientDC−25))`. STC Isc kept as `dc.iscStc`; `dc.iscCorr`
+  and `dc.iscCoeffMeta` exposed for the MDC.
+- MDC I_DESIGN row shows the Isc,corr derivation and cites FR-205-03.
+- Two **pure** unit tests (Node-verified): coefficient resolution + the Isc,corr
+  formula, cross-checked against the TESTPROJ_001 goldens (proven to guard them —
+  corrupting a golden FAILs the test).
 
-> In `04_CalcDC.js`, temperature-correct Isc (FR-205-03,
-> `Isc_corr = Isc_stc·[1+α(Tcell,max−25)]`) before the 1.25/1.5625 factors. Run
-> the pure `CalcDcTests` to capture the DC-side delta; then Tomasz runs CULLIGAN
-> in-sheet and reports any moved MDC/BOM/financial goldens, which get re-anchored
-> in a follow-up. **DoD:** pure DC tests green; CULLIGAN goldens re-anchored from
-> the in-sheet run; self-test ALL GREEN.
+**Blast radius (TESTPROJ_001, hand-verified):** Isc 14.27 → Isc,corr 14.520 (+1.75%
+at ambientDC 60 °C). Design currents move (isc125 17.84→18.15, iDesign 22.30→22.69,
+ampReq 31.40→31.95, vdropDC 0.01197→0.01218) but **conductor '8', OCPD 25 A, EGC '10'
+and vdropPass are unchanged** — so no BOM/CAPEX/financial change is expected. Those
+goldens are workbook-dependent and confirm on the in-sheet run.
+
+**DoD:** pure DC tests green; self-test ALL GREEN (597 tests, 541 PASS, 0 FAIL,
+0 unit ERROR). **Remaining:** Tomasz runs CULLIGAN in-sheet and confirms the DC
+goldens (and that conductor/BOM did not move); any drift gets re-anchored.
 
 ## A3 — AGS-802 oracle/flag layer + full hard-block list
 

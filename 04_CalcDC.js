@@ -30,13 +30,21 @@
  * Pure helper -- unit-testable without a workbook.
  * @return {{vocCoeff:number, vmpCoeff:number, vocSource:string, vmpSource:string}}
  */
+// FR-205-03 default Isc temperature coefficient (+0.05%/°C) used when the panel
+// datasheet value (PANEL_TEMP_ISC) is absent. Positive: Isc rises with cell
+// temperature. Datasheet-overridable; set at the conservative (high) end of the
+// c-Si range so the conductor-sizing chain is not under-sized.
+var AGS_ISC_TEMPCO_DEFAULT = 0.0005;
+
 function resolveTempCoeffs(panel, inp) {
   panel = panel || {};
   inp   = inp   || {};
   var pmax = parseFloat(panel['PANEL_TEMP_PMAX']);
   var dbVoc= parseFloat(panel['PANEL_TEMP_VOC']);
   var dbVmp= parseFloat(panel['PANEL_TEMP_VMP']);
+  var dbIsc= parseFloat(panel['PANEL_TEMP_ISC']);
   var ovr  = parseFloat(inp.tempCoeffOverride);
+  var iscOvr = parseFloat(inp.iscCoeffOverride);
   var pmaxOk = !isNaN(pmax) && pmax !== 0;
 
   var vocCoeff, vocSource;
@@ -50,8 +58,16 @@ function resolveTempCoeffs(panel, inp) {
   else if (pmaxOk)                       { vmpCoeff = pmax;  vmpSource = 'PMAX_PROXY'; }
   else                                   { vmpCoeff = 0;     vmpSource = 'NONE'; }
 
-  return { vocCoeff: vocCoeff, vmpCoeff: vmpCoeff,
-           vocSource: vocSource, vmpSource: vmpSource };
+  // FR-205-03 Isc temperature coefficient (positive). Datasheet > override >
+  // documented default. Unlike Voc/Vmp it never falls back to the Pmax proxy
+  // (wrong sign and magnitude), so an absent datasheet value uses the default.
+  var iscCoeff, iscSource;
+  if (!isNaN(dbIsc) && dbIsc !== 0)         { iscCoeff = dbIsc;  iscSource = 'DB_ISC'; }
+  else if (!isNaN(iscOvr) && iscOvr !== 0)  { iscCoeff = iscOvr; iscSource = 'OVERRIDE'; }
+  else                                      { iscCoeff = AGS_ISC_TEMPCO_DEFAULT; iscSource = 'DEFAULT'; }
+
+  return { vocCoeff: vocCoeff, vmpCoeff: vmpCoeff, iscCoeff: iscCoeff,
+           vocSource: vocSource, vmpSource: vmpSource, iscSource: iscSource };
 }
 
 /**
@@ -105,20 +121,6 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   dc.arrayLength = geo.arrayLength;
   dc.arrayWidth  = geo.arrayWidth;
 
-  // -- DC-03: Design current -- all factors from NOM_DB ----------------------
-  var bifFactor   = biface ? nom.bifacialFactor : 1.0;
-  var isc125      = isc * nom.currentFactor1;                   // NOM 690.8(a)
-  var iDesignBase = isc * nom.currentFactor2;                   // NOM 690.8(b)
-  var iDesignStr  = iDesignBase * bifFactor;                    // per string / per input
-  var iDesignTotal= iDesignStr * inp.parallelStrings;           // for parallel inputs
-
-  dc.isc           = isc;
-  dc.isc125        = isc125;
-  dc.iDesignPerStr = iDesignStr;
-  dc.iDesign       = iDesignTotal;
-  dc.bifacial      = biface;
-  dc.bifFactor     = bifFactor;
-
   // -- Roof temperature adder (LAY-01) ---------------------------------------
   var roofAdder  = (inp.projectType === 'ROOF') ? getRoofTempAdder(inp.roofClearanceMm, tbls) : 0;
   // ambientDC uses MAX temp — for conductor ampacity (Ft) — NOM 310-15 conservative basis
@@ -128,6 +130,31 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   dc.roofAdder   = roofAdder;
   dc.ambientDC   = ambientDC;
   dc.ambientAvg  = ambientAvg;
+
+  // -- AGS-205 / FR-205-03: temperature-correct Isc before the current factors -
+  // Isc rises with temperature, so sizing the design current on STC Isc
+  // understates it. Correct to the design MAX temperature (ambientDC — the same
+  // basis as the conductor ampacity derate Ft), so the whole conductor-sizing
+  // chain shares one temperature. STC Isc is retained as dc.iscStc for display.
+  var iscCoeff    = coeffs.iscCoeff;
+  var iscCorr     = isc * (1 + iscCoeff * (ambientDC - 25));
+  dc.iscStc       = isc;
+  dc.iscCorr      = iscCorr;
+  dc.iscCoeffMeta = { iscCoeff: iscCoeff, iscSource: coeffs.iscSource, basisTempC: ambientDC };
+
+  // -- DC-03: Design current -- factors from NOM_DB, on temperature-corrected Isc
+  var bifFactor   = biface ? nom.bifacialFactor : 1.0;
+  var isc125      = iscCorr * nom.currentFactor1;              // NOM 690.8(a) on Isc,corr (FR-205-03/04)
+  var iDesignBase = iscCorr * nom.currentFactor2;             // NOM 690.8(b) on Isc,corr
+  var iDesignStr  = iDesignBase * bifFactor;                   // per string / per input
+  var iDesignTotal= iDesignStr * inp.parallelStrings;          // for parallel inputs
+
+  dc.isc           = isc;     // STC Isc retained for back-compat / display
+  dc.isc125        = isc125;
+  dc.iDesignPerStr = iDesignStr;
+  dc.iDesign       = iDesignTotal;
+  dc.bifacial      = biface;
+  dc.bifFactor     = bifFactor;
 
   // -- DC-05: Conductor ampacity ----------------------------------------------
   var Ft_dc  = getTempFactor(ambientDC, tbls);

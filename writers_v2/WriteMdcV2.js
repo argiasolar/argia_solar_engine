@@ -177,10 +177,13 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
       PROV.DB, 'Panel DB: ' + panel['PANEL_MODEL'],
       'Isc = ' + n(dc.isc,2) + ' A  |  Fuente: 11M_PRODUCTS_PANELS - PANEL_ISC_A', null);
   row(MDC_ROW.I_DESIGN, n(dc.iDesignPerStr, 2),
-      PROV.STANDARD, 'NOM 690-8(a)(1) + 690-8(b)(1)',
-      'I_diseno = Isc x 1.25 x 1.25' +
+      PROV.STANDARD, 'NOM 690-8(a)(1)+(b)(1) / FR-205-03',
+      'Isc,corr = Isc x (1 + a_Isc x (Tmax-25)) = ' + n(dc.isc,2) + ' x (1 + ' +
+        n((dc.iscCoeffMeta && dc.iscCoeffMeta.iscCoeff) || 0, 5) + ' x (' +
+        n(dc.ambientDC,0) + '-25)) = ' + n(dc.iscCorr || dc.isc,3) + ' A  |  ' +
+      'I_diseno = Isc,corr x 1.25 x 1.25' +
         (dc.bifacial ? ' x ' + n(nom.bifacialFactor,2) + ' (bifacial)' : '') +
-        ' = ' + n(dc.isc,2) + ' x ' + n(nom.currentFactor2,3) +
+        ' = ' + n(dc.iscCorr || dc.isc,3) + ' x ' + n(nom.currentFactor2,3) +
         (dc.bifacial ? ' x ' + n(nom.bifacialFactor,2) : '') +
         ' = ' + n(dc.iDesignPerStr,2) + ' A', null);
   row(MDC_ROW.FT_DC, n(dc.Ft_dc, 3),
