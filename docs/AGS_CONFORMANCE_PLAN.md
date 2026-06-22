@@ -119,7 +119,7 @@ all with zero customer-facing financial change.
 **DoD met:** self-test 595 tests, 539 PASS (+2), 0 FAIL, 0 unit ERROR, 56 workbook
 ERRORs unchanged — ALL GREEN. CULLIGAN (1.234) stays a clean DC/AC PASS.
 
-## A2b — Isc temperature-correction (FR-205-03) ✅ DONE (pending in-sheet confirm)
+## A2b — Isc temperature-correction (FR-205-03) ✅ DONE (in-sheet confirmed)
 
 **Goal:** correct the design current to use Isc,corr, not STC Isc.
 
@@ -143,8 +143,10 @@ and vdropPass are unchanged** — so no BOM/CAPEX/financial change is expected. 
 goldens are workbook-dependent and confirm on the in-sheet run.
 
 **DoD:** pure DC tests green; self-test ALL GREEN (597 tests, 541 PASS, 0 FAIL,
-0 unit ERROR). **Remaining:** Tomasz runs CULLIGAN in-sheet and confirms the DC
-goldens (and that conductor/BOM did not move); any drift gets re-anchored.
+0 unit ERROR). **In-sheet confirmed (CULLIGAN E2E, v4.59.0):** 221/222 passed;
+the one expected delta was `MDC_v2.C22 design current 23.64 → 24.05` (+1.73% @
+~60 °C ambient), re-anchored. Conductor (10 AWG), OCPD, vdrop, BOM, CAPEX and
+financials all unchanged — blast radius exactly as predicted.
 
 ## A3 — AGS-802 oracle/flag layer + full hard-block list
 

@@ -148,7 +148,7 @@ registerTest({
     t.assertNear('MDC_v2.C17 DC/AC ratio',
                  1.234, mdc.getRange('C17').getValue(), TOL_RATIO);
     t.assertNear('MDC_v2.C22 design current (A)',
-                 23.64, mdc.getRange('C22').getValue(), TOL_CUR);
+                 24.05, mdc.getRange('C22').getValue(), TOL_CUR);  // A2b: Isc,corr (FR-205-03), was 23.64 on STC Isc (+1.73% @ ~60C); conductor unchanged
     t.assertContains('MDC_v2.C26 DC conductor includes 10 AWG',
                      String(mdc.getRange('C26').getValue()), '10 AWG');
     t.assertContains('MDC_v2.C28 DC OCPD includes 25',
