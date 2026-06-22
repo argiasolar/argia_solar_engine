@@ -195,9 +195,15 @@ registerTest({
     t.assertContains('MDC_v2.C105 BESS topology = DC_COUPLED',
                      String(mdc.getRange('C105').getValue() || ''),
                      'DC_COUPLED');
+    // T8 (elec-table parser fix): the breaker table no longer clips at 1200 A,
+    // so the BESS run-1 OCPD now resolves to 1600 A — the smallest standard
+    // breaker actually >= the 1406 A design current (1200 A was below the load,
+    // an artifact of the truncated table). The 1600 A breaker still exceeds the
+    // single 1000 kcmil conductor's ampacity, which the engine now flags via a
+    // NEC 240.4 warning (T4); the real fix is the per-stack BESS remodel (T5).
     t.assertContains('MDC_v2.C107 BESS circuit run-1 sized',
                      String(mdc.getRange('C107').getValue() || ''),
-                     'OCPD 1200');
+                     'OCPD 1600');
 
     // -- A7: PARITY vs legacy MDC -- REMOVE AT CUTOVER (Chunk 11) --
     var legacyMdc = ss.getSheetByName('MDC');

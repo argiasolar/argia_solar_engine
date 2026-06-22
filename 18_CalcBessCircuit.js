@@ -125,6 +125,18 @@ function calcBessCircuit(opts) {
       + ') is below the NOM floor (' + nom.bess.rteFloor + ').');
   }
 
+  // -- NEC 240.4: flag any run whose OCPD does not protect its conductor.
+  // Today this catches the single-conductor lump on high-current DC runs
+  // (no parallel runs yet): the design current exceeds every table conductor,
+  // so the OCPD ends up far above the conductor ampacity.
+  runs.forEach(function (r) {
+    if (r.ocpdProtectsConductor === false) {
+      warnings.push('OCPD ' + r.ocpdA + 'A exceeds conductor ampacity '
+        + r.conductorAmpacity + 'A on "' + r.name + '" (NEC 240.4 violation). '
+        + 'Use parallel runs / per-stack circuits or a larger conductor.');
+    }
+  });
+
   return {
     coupling: coupling,
     sizeable: true,
@@ -163,5 +175,9 @@ function _sizeRun(name, side, circuitCurrentA, currentFactor, tbls) {
     ocpdAmps:        ocpdA,
     ocpdLabel:       ocpdA ? (ocpdA + 'A') : '',
     parallels:       1,    // single-conductor sizing today; multi-parallel TBD
+    // NEC 240.4: does the chosen OCPD actually protect the chosen conductor?
+    // Exposed so the caller (and the MDC) can flag a coordination failure
+    // instead of silently shipping an under-protected conductor.
+    ocpdProtectsConductor: ocpdProtectsConductor(ocpdA, conductor.ampacity, tbls),
   };
 }

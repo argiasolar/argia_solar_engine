@@ -19,8 +19,16 @@
  */
 function readElecTables(ss) {
   const sh   = ss.getSheetByName(SH.ELEC_TABLES);
-  // Read rows 7-35 (data rows after header on row 6)
-  const raw  = sh.getRange(7, 1, 29, 25).getValues();
+  // Read from the sub-header row (6) through the last populated row. The breaker
+  // and transformer columns carry their FIRST value on row 6, and the breaker
+  // column runs past the old fixed 29-row window (down to 1600 A), so a
+  // hardcoded height silently clipped both ends (missing 15 A & 1600 A breakers
+  // and the 75 kVA transformer). The per-column isNaN/'' filters below drop the
+  // text sub-headers, so reading the header row and over-reading are both safe.
+  const firstRow = 6;
+  const lastRow  = sh.getLastRow();
+  const height   = Math.max(0, lastRow - firstRow + 1);
+  const raw      = sh.getRange(firstRow, 1, height, 25).getValues();
 
   // -- Roof temperature adders (col B=2, C=3 -> index 1, 2) ------------------
   const roofTempAdders = [];
@@ -141,6 +149,23 @@ function nextBreaker(requiredA, tbls) {
     if (b >= requiredA) return b;
   }
   return sorted[sorted.length - 1]; // largest available
+}
+
+/**
+ * NEC 240.4 — an OCPD must not exceed the conductor's (corrected/adjusted)
+ * ampacity, EXCEPT 240.4(B) permits rounding UP to the next standard OCPD when
+ * the conductor ampacity is <= 800 A and does not correspond to a standard
+ * breaker size. Above 800 A the next-size-up allowance does not apply.
+ *
+ * Pure helper -- unit-testable without a workbook. Returns true when `ocpdA`
+ * legitimately protects a conductor of ampacity `conductorAmpacityA`.
+ * Pass the conductor's ampacity AFTER any temp/grouping adjustment.
+ */
+function ocpdProtectsConductor(ocpdA, conductorAmpacityA, tbls) {
+  if (!(conductorAmpacityA > 0)) return false;
+  if (ocpdA <= conductorAmpacityA) return true;            // 240.4 general rule
+  if (conductorAmpacityA > 800) return false;              // no 240.4(B) above 800 A
+  return nextBreaker(conductorAmpacityA, tbls) === ocpdA;  // exactly the next standard size
 }
 
 /**

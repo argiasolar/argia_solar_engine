@@ -38,7 +38,7 @@ for (const f of ['03_ElecTables.js', '05_CalcAC.js', '18_CalcBessCircuit.js']) {
 }
 const {
   readElecTables, selectConductor, nextBreaker, getEgcSize, getGroupingFactor,
-  requiredAmpacity, calcBessCircuit, BESS_COUPLING,
+  requiredAmpacity, calcBessCircuit, BESS_COUPLING, ocpdProtectsConductor,
 } = sandbox;
 
 // --- build the real `tbls` via the real parser over a committed fixture -----
@@ -48,6 +48,7 @@ const grid = fixture['15M_ELEC_TABLES'];
 const ssStub = {
   getSheetByName() {
     return {
+      getLastRow() { return grid.length; },
       getRange(row, col, numRows, numCols) {
         return {
           getValues() {
@@ -169,16 +170,35 @@ function check(kind, name, correctness, detail) {
 }
 
 // ============================================================================
-// T4  DEFECT — OCPD must protect the conductor (240.4). BESS DC run.
+// T4  CONTROL (was DEFECT, fixed) — the engine ENFORCES NEC 240.4: it exposes a
+// per-run verdict on whether the OCPD protects its conductor, and warns when it
+// doesn't.
+//
+// NOTE: this does NOT assert the BESS circuit is *safe* — the 1406 A single-run
+// lump genuinely violates 240.4, and making it safe is the per-stack remodel
+// (T5). What T4 pins is that the engine now DETECTS the violation instead of
+// silently shipping it. Green = engine's verdict matches the NEC oracle AND it
+// surfaced a warning.
 // ============================================================================
 {
-  const designA = 1406.3;
-  const cond = selectConductor(designA, tbls);   // returns largest + insufficient flag
-  const ocpd = nextBreaker(designA, tbls);
-  const protects = ocpdProtects(ocpd, cond.ampacity);
-  check('DEFECT', 'T4 OCPD-protects-conductor (BESS 1406A)', protects,
-    `OCPD=${ocpd}A on ${cond.size} (ampacity ${cond.ampacity}A) — ` +
-    `240.4 ${protects ? 'ok' : 'VIOLATED'}; selectConductor.insufficient=${!!cond.insufficient}`);
+  const out = calcBessCircuit({
+    coupling: BESS_COUPLING.DC_COUPLED,
+    bess: { powerKw: 972, rtePct: 0.90 },
+    dcBusVoltageV: 864,
+    tbls,
+    nom: { bess: { dcCurrentFactor: 1.25, rteFloor: 0.80 } },
+  });
+  const run = out.runs[0];
+  const oracle = ocpdProtects(run.ocpdA, run.conductorAmpacity);   // test's own NEC check
+  const engineHasVerdict = typeof run.ocpdProtectsConductor === 'boolean';
+  const warned = out.warnings.some((w) => /240\.4/.test(w));
+  const detects = engineHasVerdict && run.ocpdProtectsConductor === oracle && (oracle || warned);
+  check('CONTROL', 'T4 engine enforces OCPD<=conductor (NEC 240.4)', detects,
+    `engine ocpdProtectsConductor=${run.ocpdProtectsConductor} (NEC oracle=${oracle}); ` +
+    `OCPD=${run.ocpdA}A on ${run.conductorSize} (${run.conductorAmpacity}A); ` +
+    `warned=${warned}.`);
+  // cross-check the standalone helper agrees with the test oracle
+  if (ocpdProtectsConductor(run.ocpdA, run.conductorAmpacity, tbls) !== oracle) controlFailed = true;
 }
 
 // ============================================================================
@@ -235,10 +255,9 @@ function check(kind, name, correctness, detail) {
 }
 
 // ============================================================================
-// T8  DEFECT — readElecTables reads a hardcoded 29-row window (getRange(7,1,29,
-// 25)). Any table row outside it is silently dropped. The breaker table runs
-// past the window, so 1600 A (below) and 15 A (above) never get parsed —
-// nextBreaker then tops out at 1200 A.
+// T8  CONTROL (was DEFECT, fixed) — readElecTables must read the full table.
+// Previously it read a hardcoded 29-row window (getRange(7,1,29,25)), dropping
+// the 15 A & 1600 A breakers and the 75 kVA transformer. Now reads row 6..last.
 // ============================================================================
 {
   const rawBreakers = grid
@@ -249,7 +268,7 @@ function check(kind, name, correctness, detail) {
   const parsedMax = Math.max(...tbls.breakers);
   const parsedMin = Math.min(...tbls.breakers);
   const intact = parsedMax === rawMax && parsedMin === rawMin;
-  check('DEFECT', 'T8 elec-table parser reads full table (no row-window clip)', intact,
+  check('CONTROL', 'T8 elec-table parser reads full table (no row-window clip)', intact,
     `breakers in sheet [${rawMin}..${rawMax}] but parsed [${parsedMin}..${parsedMax}] — ` +
     `${intact ? 'complete' : 'rows outside the 29-row window dropped'}.`);
 }
