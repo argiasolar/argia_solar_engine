@@ -187,5 +187,25 @@ registerTest({
     });
     t.assert('1-phase AC run: designCurrentA',
              260.4167, ac1ph.runs[1].designCurrentA, 0.001);
+
+    // === TEST 13: multi-stack BESS sizes PER STACK (T5) =================
+    // A 300 kW / 3-stack pack = 3 separate home-runs of 100 kW each. Each run
+    // must size IDENTICALLY to the 100 kW single unit (3/0, 225 A OCPD), carry
+    // parallels = stackQty = 3, and coordinate per NEC 240.4 (no warning).
+    var stack3 = calcBessCircuit({
+      coupling: BESS_COUPLING.DC_COUPLED,
+      bess: { powerKw: 300, stackQty: 3, rtePct: 0.91 },
+      tbls: TBLS, nom: NOM, dcBusVoltageV: 600
+    });
+    var s3 = stack3.runs[0];
+    t.assert('Per-stack: designCurrentA = 208.33 (100 kW/stack)',
+             208.3333, s3.designCurrentA, 0.001);
+    t.assert('Per-stack: conductorSize = 3/0', '3/0', s3.conductorSize);
+    t.assert('Per-stack: ocpdA = 225', 225, s3.ocpdA);
+    t.assert('Per-stack: parallels = stackQty = 3', 3, s3.parallels);
+    t.assertTrue('Per-stack: OCPD protects conductor (240.4)',
+                 s3.ocpdProtectsConductor === true);
+    t.assert('Per-stack: no 240.4 warning', 0,
+             stack3.warnings.filter(function (w) { return /240\.4/.test(w); }).length);
   }
 });

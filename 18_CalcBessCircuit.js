@@ -78,6 +78,15 @@ function calcBessCircuit(opts) {
   }
 
   var powerW       = bess.powerKw * 1000;
+  // T5: a multi-stack BESS is N physically separate battery units, each with
+  // its OWN DC home-run + OCPD to the shared bus. Sizing the lumped pack
+  // current onto a single conductor is non-physical (it produced a 1406 A run
+  // no table conductor can carry). Size the DC circuit PER STACK and carry the
+  // stack count as parallel runs, so the BoS emits N conductors + N OCPDs and
+  // the conductor/OCPD actually coordinate (NEC 240.4). Single units
+  // (stackQty = 1) are unchanged.
+  var stackQty     = Math.max(1, Number(bess.stackQty) || 1);
+  var perStackW    = powerW / stackQty;
   var currentFactor = nom.bess.dcCurrentFactor;   // 1.25 continuous-duty
   var warnings = [];
   var runs = [];
@@ -97,7 +106,7 @@ function calcBessCircuit(opts) {
   var dcRunName = (coupling === BESS_COUPLING.AC_COUPLED)
     ? 'Battery <-> PCS (DC)'
     : 'Battery <-> shared DC bus';
-  runs.push(_sizeRun(dcRunName, 'DC', powerW / dcV, currentFactor, tbls));
+  runs.push(_sizeRun(dcRunName, 'DC', perStackW / dcV, currentFactor, tbls, stackQty));
 
   // -- AC run: PCS <-> panelboard (AC_COUPLED only) ------------------------
   if (coupling === BESS_COUPLING.AC_COUPLED) {
@@ -150,8 +159,9 @@ function calcBessCircuit(opts) {
 // _sizeRun -- size one conductor run: apply the continuous-duty factor,
 // pick conductor by ampacity, pick OCPD, pick EGC. Reuses tested helpers.
 // ---------------------------------------------------------------------------
-function _sizeRun(name, side, circuitCurrentA, currentFactor, tbls) {
-  var designCurrentA = circuitCurrentA * currentFactor;
+function _sizeRun(name, side, circuitCurrentA, currentFactor, tbls, parallels) {
+  var nRuns = Math.max(1, Number(parallels) || 1);
+  var designCurrentA = circuitCurrentA * currentFactor;   // per-run (per-stack) design current
   var conductor = selectConductor(designCurrentA, tbls);
   var ocpdA     = nextBreaker(designCurrentA, tbls);
   var egc       = getEgcSize(ocpdA, tbls);
@@ -174,7 +184,7 @@ function _sizeRun(name, side, circuitCurrentA, currentFactor, tbls) {
     egcCuAreaMm2:    egc.cuAreaMm2 || 0,
     ocpdAmps:        ocpdA,
     ocpdLabel:       ocpdA ? (ocpdA + 'A') : '',
-    parallels:       1,    // single-conductor sizing today; multi-parallel TBD
+    parallels:       nRuns,   // T5: separate per-stack home-runs (N = stackQty)
     // NEC 240.4: does the chosen OCPD actually protect the chosen conductor?
     // Exposed so the caller (and the MDC) can flag a coordination failure
     // instead of silently shipping an under-protected conductor.

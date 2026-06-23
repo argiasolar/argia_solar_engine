@@ -195,15 +195,14 @@ registerTest({
     t.assertContains('MDC_v2.C105 BESS topology = DC_COUPLED',
                      String(mdc.getRange('C105').getValue() || ''),
                      'DC_COUPLED');
-    // T8 (elec-table parser fix): the breaker table no longer clips at 1200 A,
-    // so the BESS run-1 OCPD now resolves to 1600 A — the smallest standard
-    // breaker actually >= the 1406 A design current (1200 A was below the load,
-    // an artifact of the truncated table). The 1600 A breaker still exceeds the
-    // single 1000 kcmil conductor's ampacity, which the engine now flags via a
-    // NEC 240.4 warning (T4); the real fix is the per-stack BESS remodel (T5).
-    t.assertContains('MDC_v2.C107 BESS circuit run-1 sized',
+    // T5 (per-stack BESS model): the 9 × 108 kW stacks are now sized as 9
+    // separate home-runs of ~156 A each (not one impossible 1406 A run). The
+    // BESS run-1 OCPD is therefore the per-stack 175 A breaker, which correctly
+    // protects the per-stack 1/0 conductor (NEC 240.4 — no warning). C107 now
+    // reads "9 × Cond 1/0 / OCPD 175 A / EGC <n>".
+    t.assertContains('MDC_v2.C107 BESS circuit run-1 sized (per-stack)',
                      String(mdc.getRange('C107').getValue() || ''),
-                     'OCPD 1600');
+                     'OCPD 175');
 
     // -- A7: PARITY vs legacy MDC -- REMOVE AT CUTOVER (Chunk 11) --
     var legacyMdc = ss.getSheetByName('MDC');
@@ -264,15 +263,15 @@ registerTest({
                        String(bom.getRange('B79').getValue() || ''),
                        'ALMACEN');
       t.assertNear('BOM_v2.F92 SUBTOTAL BESS USD',
-                   1579113.97, bom.getRange('F92').getValue(), TOL_USD);
+                   1601136.15, bom.getRange('F92').getValue(), TOL_USD);
       t.assertNear('BOM_v2.G92 SUBTOTAL BESS MXN',
-                   29213608.0, bom.getRange('G92').getValue(), TOL_MXN);
+                   29621018.78, bom.getRange('G92').getValue(), TOL_MXN);
 
       // -- B4: grand total (row 94 in v2 because BESS section pushed it down) --
       t.assertNear('BOM_v2.F94 GRAND TOTAL USD',
-                   1962373.07, bom.getRange('F94').getValue(), TOL_USD);
+                   1984395.251, bom.getRange('F94').getValue(), TOL_USD);
       t.assertNear('BOM_v2.G94 GRAND TOTAL MXN',
-                   36303902.0, bom.getRange('G94').getValue(), TOL_MXN);
+                   36711312.15, bom.getRange('G94').getValue(), TOL_MXN);
 
       // -- B5: PARITY vs legacy BOM -- REMOVE AT CUTOVER (Chunk 11) --
       // Section subtotals only -- grand totals are on different rows because
@@ -319,19 +318,20 @@ registerTest({
       t.assert('INSTALL_v2.B9 inverter count',  5, inst.getRange('B9').getValue());
 
       // -- C2: totals (G column = MXN) --
-      // [T8 v4.42.0] REFRESHED for labor burden x1.65: LABOR 97,733.27->161,259.90,
-      // OTHER 483,378.43->488,460.56 (insurance/contingency recompute), GRAND
-      // 747,991.70->816,600.46, MXN/kWp 866->945.14, CAPEX D40 +68,608.76. EQUIP unchanged.
+      // [T5 per-stack BESS] REFRESHED: 9 stack home-runs add termination + pull
+      // labor and equipment. LABOR 161,259.90->169,528.76, EQUIP 166,880->171,060,
+      // OTHER 488,460.56->498,906.47, GRAND 816,600.46->839,495.23,
+      // MXN/kWp 945.14->972, CAPEX D40 +430,305.12.
       t.assertNear('INSTALL_v2.G5 TOTAL LABOR MXN',
-                   161259.90, inst.getRange('G5').getValue(), TOL_MXN);
+                   169528.76, inst.getRange('G5').getValue(), TOL_MXN);
       t.assertNear('INSTALL_v2.G6 TOTAL EQUIP MXN',
-                   166880.00, inst.getRange('G6').getValue(), TOL_MXN);
+                   171060.00, inst.getRange('G6').getValue(), TOL_MXN);
       t.assertNear('INSTALL_v2.G7 TOTAL OTHER MXN',
-                   488460.56, inst.getRange('G7').getValue(), TOL_MXN);
+                   498906.47, inst.getRange('G7').getValue(), TOL_MXN);
       t.assertNear('INSTALL_v2.G9 GRAND TOTAL MXN',
-                   816600.46, inst.getRange('G9').getValue(), TOL_MXN);
+                   839495.23, inst.getRange('G9').getValue(), TOL_MXN);
       t.assertNear('INSTALL_v2.G10 MXN per kWp',
-                   945.14,    inst.getRange('G10').getValue(), 1.0);
+                   972.0,     inst.getRange('G10').getValue(), 1.0);
 
       // -- C3: PARITY vs legacy INSTALLATION -- REMOVE AT CUTOVER (Chunk 11) --
       var legacyInst = ss.getSheetByName('INSTALLATION');
@@ -388,24 +388,24 @@ registerTest({
       t.assertNear('PC_v2.C37 permits USD',
                    6000.0,    pc.getRange('C37').getValue(), TOL_USD);
       t.assertNear('PC_v2.C38 installation USD',
-                   44141.0,   pc.getRange('C38').getValue(), TOL_USD);
+                   45378.0,   pc.getRange('C38').getValue(), TOL_USD);
       t.assertNear('PC_v2.C39 BESS USD',
-                   1579114.0, pc.getRange('C39').getValue(), TOL_USD);
+                   1601136.0, pc.getRange('C39').getValue(), TOL_USD);
 
       // -- D3: TOTAL (row 40) --
       t.assertNear('PC_v2.C40 TOTAL cost USD',
-                   2006514.0, pc.getRange('C40').getValue(), TOL_USD);
+                   2029773.0, pc.getRange('C40').getValue(), TOL_USD);
       t.assertNear('PC_v2.D40 TOTAL cost MXN',
-                   37120502.0, pc.getRange('D40').getValue(), TOL_MXN);
+                   37550807.0, pc.getRange('D40').getValue(), TOL_MXN);
 
       // -- D4: sell side -- USD/Wp string and gross profit --
       var sellRaw = String(pc.getRange('H17').getValue() || '');
-      t.assertContains('PC_v2.H17 sell USD/Wp = 2.732',
-                       sellRaw, '2.732');
+      t.assertContains('PC_v2.H17 sell USD/Wp = 2.764',
+                       sellRaw, '2.764');
       t.assertNear('PC_v2.H40 sell total USD',
-                   2360604.0, pc.getRange('H40').getValue(), TOL_USD);
+                   2387969.0, pc.getRange('H40').getValue(), TOL_USD);
       t.assertNear('PC_v2.H43 gross profit USD',
-                   354090.0,  pc.getRange('H43').getValue(), TOL_USD);
+                   358196.0,  pc.getRange('H43').getValue(), TOL_USD);
 
       // -- D5: PARITY vs legacy PROJECT_CARD -- REMOVE AT CUTOVER (Chunk 11) --
       // PC_v2 has a different row layout from legacy PC, so we can't do

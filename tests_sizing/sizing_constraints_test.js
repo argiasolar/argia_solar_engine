@@ -202,29 +202,35 @@ function check(kind, name, correctness, detail) {
 }
 
 // ============================================================================
-// T5  DEFECT — BESS circuit must fail closed (or model per-stack) when no single
-// conductor carries the run. Engine returns sizeable:true and drops insufficient.
+// T5  CONTROL (was DEFECT, fixed) — a multi-stack BESS is sized PER STACK, not
+// as one lumped pack-current run. For CULLIGAN (9 × 108 kW @ 864 V): each stack
+// home-run carries ~156 A, maps to a real conductor, the OCPD coordinates with
+// it (NEC 240.4), parallels = stackQty (9), and no 240.4 warning fires.
 // ============================================================================
 {
+  const stackQty = 9;
   const out = calcBessCircuit({
     coupling: BESS_COUPLING.DC_COUPLED,
-    bess: { powerKw: 972, rtePct: 0.90 },     // CULLIGAN: 9 x 108 kW stacks
+    bess: { powerKw: 972, rtePct: 0.90, stackQty },   // CULLIGAN: 9 × 108 kW stacks
     dcBusVoltageV: 864,
     tbls,
     nom: { bess: { dcCurrentFactor: 1.25, rteFloor: 0.80 } },
   });
   const run = out.runs[0];
   const maxAmp = Math.max(...tbls.conductors.map((c) => c.ampacity));
-  const overAmpacity = run.designCurrentA > maxAmp;             // 1406 > 615
-  const surfacedFailure = (out.sizeable === false) || run.insufficient === true ||
-                          run.parallels > 1;
-  // correct = engine surfaced the impossibility somehow
-  check('DEFECT', 'T5 BESS single-run fail-closed / per-stack model', surfacedFailure,
-    `run carries ${run.designCurrentA.toFixed(0)}A on one ${run.conductorSize} ` +
-    `(max table ampacity ${maxAmp}A), parallels=${run.parallels}, sizeable=${out.sizeable}; ` +
-    `per-stack would be ${((972000/9)/864*1.25).toFixed(0)}A x9 -> sane conductor.`);
-  // sanity: confirm the artifact is what we think it is
-  if (!overAmpacity) controlFailed = true;
+  const expectedPerStackDesign = (972000 / stackQty) / 864 * 1.25;   // ~156 A
+  const sizedPerStack   = Math.abs(run.designCurrentA - expectedPerStackDesign) < 1;
+  const realConductor   = run.conductorAmpacity >= run.designCurrentA &&
+                          run.designCurrentA <= maxAmp;
+  const coordinated     = run.ocpdProtectsConductor === true;
+  const countedAsStacks = run.parallels === stackQty;
+  const no240Warning    = !out.warnings.some((w) => /240\.4/.test(w));
+  const perStackOk = sizedPerStack && realConductor && coordinated &&
+                     countedAsStacks && no240Warning;
+  check('CONTROL', 'T5 BESS sized per-stack (9 × home-runs, 240.4 OK)', perStackOk,
+    `per-run design ${run.designCurrentA.toFixed(1)}A on ${run.conductorSize} ` +
+    `(${run.conductorAmpacity}A), OCPD=${run.ocpdA}A, parallels=${run.parallels}, ` +
+    `240.4 ok=${run.ocpdProtectsConductor}, warnings=${out.warnings.length}.`);
 }
 
 // ============================================================================

@@ -214,18 +214,20 @@ function calcBessBosQuantities(opts) {
     lines.push({
       code: 'BESS-06',
       description: 'Conduit DC — ' + conduitTypeDc.label,
-      detail: 'Trayectoria DC ' + dcRunM + ' m',
-      qty: dcRunM,
+      detail: parCount(dcRun) + ' \u00d7 ' + dcRunM + ' m'
+            + (parCount(dcRun) > 1 ? ' (un tendido por stack)' : ''),
+      // T5: per-stack home-runs => parCount separate conduit runs, each
+      // carrying that stack's 2 conductors + EGC (not one conduit stuffed with
+      // 2N+1 conductors). For single units (parCount=1) this is unchanged.
+      qty: parCount(dcRun) * dcRunM,
       unit: 'm',
       productCategory: 'CONDUIT',
       productSpec: {
         conduitType: conduitTypeDc.dbKey,
         side: 'DC',
-        // Conductor fill data needed for NOM 358 conduit-size pick in the writer.
-        // dcRun's 2 conductors + EGC = round-trip + ground.
         condCuAreaMm2: Number(dcRun ? dcRun.cuAreaMm2 : 0) || 0,
         condInsAreaMm2: Number(dcRun ? dcRun.insAreaMm2 : 0) || 0,
-        condCount: 2 * parCount(dcRun) + 1,   // 2 conductors + EGC, single conduit
+        condCount: 3,   // 2 conductors + EGC per per-stack conduit run
       },
       nomCite: 'NOM-001 art. 358-30',
     });

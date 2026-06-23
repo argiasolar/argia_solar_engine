@@ -42,7 +42,7 @@ registerTest({
     // guarded figure keys resolve to API_OUTPUT values (CULLIGAN goldens)
     t.assertNear('system_kwp = 864',           864,         Number(read('system_kwp')),         0.5);
     t.assertNear('annual_energy_cost sin-PV',  12838765.45, Number(read('annual_energy_cost')), 5);
-    t.assertNear('capex_total = offer price',  43671179,    Number(read('capex_total')),        5);
+    t.assertNear('capex_total = offer price',  44177420,    Number(read('capex_total')),        5);
     t.assertTrue('annual_savings > 0',         Number(read('annual_savings')) > 0);
 
     // a couple more projected figures are now correct (were stale/#REF!)

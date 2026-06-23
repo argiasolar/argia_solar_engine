@@ -601,10 +601,13 @@ function writeMdcV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult) {
       var rrows = [MDC_ROW.BESS_CIRC_RUN1, MDC_ROW.BESS_CIRC_RUN2];
       for (var ri = 0; ri < cir.runs.length && ri < rrows.length; ri++) {
         var rn = cir.runs[ri];
+        var _par = Math.max(1, Number(rn.parallels) || 1);
+        var _pfx = _par > 1 ? (_par + ' \u00d7 ') : '';
         row(rrows[ri],
-            'Cond ' + rn.conductorSize + ' / OCPD ' + rn.ocpdA + ' A / EGC ' + rn.egcSize,
+            _pfx + 'Cond ' + rn.conductorSize + ' / OCPD ' + rn.ocpdA + ' A / EGC ' + rn.egcSize,
             PROV.AUTO_CALC, 'NOM-001-SEDE / Art. 706',
-            rn.name + ': I_diseño ' + n(rn.designCurrentA, 1) + ' A', null);
+            rn.name + ': I_diseño ' + n(rn.designCurrentA, 1) + ' A'
+              + (_par > 1 ? ' por stack \u00d7 ' + _par + ' stacks' : ''), null);
       }
     }
 
