@@ -166,3 +166,53 @@ registerTest({
       computeOptimizerUnits(true, 960, 0), 0.001);
   }
 });
+
+
+// ----------------------------------------------------------------------------
+// 5) BOM optimizer quantity honours the PER-PROJECT ratio (Pass 4)
+// ----------------------------------------------------------------------------
+// _bomV2_optimizerQty(present, panelQty, ratioInput) is the function that turns
+// the INPUT_DESIGN "Modulos por optimizador" cell (C70, key optimizerModsPerUnit)
+// into the customer-facing optimizer count on the BOM. The ratio is a per-project
+// DEPLOYMENT decision, not the catalog OPT_MODULES_PER_UNIT (device capability):
+//
+//   PROLOGIS  SolarEdge, 1:1  -> 960 modules  -> 960 optimizers (verified in the
+//             2_0_PROLOGIS_MXC02304_620 workbook RESULTS row: 960 / OPTIMIZER)
+//   VITALMEX  Huawei MERC, 2:1 -> 1008 modules -> 504 optimizers
+//
+// CARDINAL RULE: default ratio = 1, so the count NEVER silently changes for an
+// existing project. The operator must explicitly set 2 (or N) to halve it. These
+// asserts fail loudly if a future edit reintroduces a hard-coded ratio or a
+// catalog-driven count that would silently halve PROLOGIS.
+registerTest({
+  id      : 'UNIT_PASS4_OPTIMIZER_QTY_PER_UNIT',
+  group   : 'regression',
+  module  : 'writers_v2/bom',
+  scenarios: [],
+  tags    : ['regression', 'bom', 'optimizer', 'pass4'],
+  source  : 'tests_regression/Pass2DistancePass4OptimizerTests.gs',
+  fn      : function (t) {
+    t.suite('REGRESSION writers_v2/bom: optimizer BOM quantity (per-project ratio)');
+
+    // Not present (string topology) -> 0, regardless of ratio.
+    t.assert('absent -> 0', 0, _bomV2_optimizerQty(false, 1008, 2), 0.001);
+
+    // VITALMEX: Huawei MERC, operator sets 2 -> 504 (was silently 1008 before).
+    t.assert('VITALMEX 1008 @ 2 -> 504', 504, _bomV2_optimizerQty(true, 1008, 2), 0.001);
+
+    // PROLOGIS preserved: SolarEdge 1:1, ratio 1 -> 960 (NOT halved to 480).
+    t.assert('PROLOGIS 960 @ 1 -> 960', 960, _bomV2_optimizerQty(true, 960, 1), 0.001);
+
+    // Blank cell (existing projects, operator never touched it) -> default 1.
+    t.assert('blank ratio -> default 1 -> 960', 960, _bomV2_optimizerQty(true, 960, ''), 0.001);
+
+    // Defensive clamps: 0 / negative / NaN -> 1 per module (never under-count,
+    // never divide by zero).
+    t.assert('ratio 0 -> 1 -> 960',   960, _bomV2_optimizerQty(true, 960, 0),    0.001);
+    t.assert('ratio -3 -> 1 -> 960',  960, _bomV2_optimizerQty(true, 960, -3),   0.001);
+    t.assert('ratio NaN -> 1 -> 960', 960, _bomV2_optimizerQty(true, 960, 'x'),  0.001);
+
+    // Odd count rounds UP (last optimizer carries a single module).
+    t.assert('1009 @ 2 -> 505 (round up)', 505, _bomV2_optimizerQty(true, 1009, 2), 0.001);
+  }
+});

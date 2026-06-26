@@ -943,6 +943,17 @@ var _MAP_DESIGN = {
     consumedBy: ['engine'],
     notes: '0 = sin optimizadores · 1 = con optimizadores.'
   },
+  optimizerModsPerUnit: {
+    sheet: SH.INPUT_DESIGN, row: 70, col: 3, // C70
+    label: 'Modulos por optimizador', type: 'number',
+    default: 1, required: false,
+    section: '10 STRING CONFIG',
+    consumedBy: ['engine', 'bom'],
+    notes: 'Modulos cubiertos por cada optimizador (decision por proyecto, no ' +
+           'capacidad del catalogo). Default 1 = un optimizador por modulo. ' +
+           'Ej.: Huawei MERC sirve 2 modulos -> poner 2. La cantidad de ' +
+           'optimizadores en el BOM = ceil(modulos / este valor).'
+  },
 
   // DEPRECATED — kept in map for back-compat but pointing nowhere useful.
   // Legacy structureSecondary was at N41 in old layout. In new layout, all

@@ -112,6 +112,31 @@ function _bomV2_selectOptimizer(optRows, inverterBrand, moduleWp) {
   return ok[0];
 }
 
+// Optimizer (MLPE) unit count for the BOM line. Pure + side-effect-free so it
+// can be pinned by unit tests.
+//
+//   present     -- are optimizers in this design at all? (OPTIMIZER topology)
+//   panelQty    -- module count
+//   ratioInput  -- PER-PROJECT "modules per optimizer", read from INPUT_DESIGN
+//                  C70 (key optimizerModsPerUnit). This is a DEPLOYMENT choice,
+//                  NOT the catalog OPT_MODULES_PER_UNIT (which is the device's
+//                  capability). PROLOGIS deploys SolarEdge 1:1 (960 modules ->
+//                  960 optimizers) even though the device can do 2:1; VITALMEX
+//                  deploys Huawei MERC 2:1 (1008 -> 504). The catalog cannot
+//                  drive the count without silently halving PROLOGIS, so the
+//                  ratio is a project input.
+//
+// DEFAULT = 1 (worst case, one optimizer per module). A blank / 0 / negative /
+// non-numeric ratio clamps to 1, so every existing project is unchanged unless
+// the operator explicitly sets a higher ratio. count = ceil(panelQty / ratio).
+function _bomV2_optimizerQty(present, panelQty, ratioInput) {
+  if (!present) return 0;
+  var per = Number(ratioInput);
+  if (!(per >= 1)) per = 1;            // blank / 0 / NaN / negative -> 1 per module
+  var q = Number(panelQty) || 0;
+  return Math.ceil(q / per);
+}
+
 function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _testOpts) {
   ss = ss || SpreadsheetApp.getActive();
   _testOpts = _testOpts || {};
@@ -550,7 +575,15 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
   // from calcLayout (lay.bom.optimizerUnits). Price left to the BOM owner: the
   // optimizer model varies, so we flag it rather than fabricate a unit cost.
   var _optRow = BOM_ROW.DC_RSD + 1;          // reserved row 33
-  var optQty  = (lay.bom && lay.bom.optimizerUnits) || 0;
+  // Presence gate from calcLayout (worst-case 1/module). >0 means an
+  // OPTIMIZER-topology inverter is in the bank, so this design uses optimizers.
+  var _optPresent = ((lay.bom && lay.bom.optimizerUnits) || 0) > 0;
+  // Per-project deployment ratio (modules per optimizer). Default 1 keeps every
+  // existing project unchanged; the operator sets 2 for designs like VITALMEX
+  // (Huawei MERC, 2 modules/optimizer). See _bomV2_optimizerQty.
+  var _optRatio = Number(rdInput('optimizerModsPerUnit'));
+  if (!(_optRatio >= 1)) _optRatio = 1;
+  var optQty  = _bomV2_optimizerQty(_optPresent, inp.panelQty, _optRatio);
   // Echo the engine-computed count into the (read-only) C69 display cell so the
   // INPUT_DESIGN sheet shows the real number instead of a misleading 0.
   try { writeInput(ss, 'optimizers', optQty); } catch (e) { /* display-only, non-fatal */ }
@@ -577,9 +610,9 @@ function writeBomV2(ss, inp, panel, invBank, dc, ac, lay, nom, bessResult, _test
         (_optInv.brand || '?') + '". Verificar catalogo.');
     }
     w(_optRow, BOM_COL.MEMORIA,
-      '1 optimizador por modulo (PEOR CASO) = ' + optQty + ' pcs; si el cliente permite ' +
-      '1 por 2 modulos -> ' + Math.ceil(optQty / 2) + ' (revisar y reducir despues). ' +
-      'Topologia OPTIMIZER (SolarEdge en diseno Helioscope). ' +
+      'Cantidad = ceil(' + inp.panelQty + ' modulos / ' + _optRatio + ' por optimizador) = ' +
+      optQty + ' pcs. Ratio = INPUT_DESIGN "Modulos por optimizador" (C70, default 1). ' +
+      'Topologia OPTIMIZER. ' +
       (_optSel ? 'Mas barato compatible: ' + _optSel.brand + ' ' + _optSel.model +
                  ' ($' + _optSel.priceMxn + ' MXN/u, incluye apagado rapido NOM 690.12).'
                : 'Sin modelo compatible en DB.'));

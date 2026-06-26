@@ -168,7 +168,12 @@ var INPUT_DESIGN_IMPACT = {
     'límite estándar.',
   optimizers:
     'Bandera heredada. La topología de optimizador ahora se toma del inversor (INV_TOPOLOGY), no de este ' +
-    'campo \u2014 actualmente NO afecta el cálculo.'
+    'campo \u2014 actualmente NO afecta el cálculo.',
+  optimizerModsPerUnit:
+    'Módulos por optimizador (decisión por proyecto, no la capacidad del catálogo). Default 1 = un ' +
+    'optimizador por módulo. Controla la cantidad en el BOM: optimizadores = ceil(módulos / este valor). ' +
+    'Ej.: Huawei MERC sirve 2 módulos \u2192 poner 2 (504 en vez de 1008). No cambia diseños existentes ' +
+    'mientras quede en 1.'
 };
 
 /**
