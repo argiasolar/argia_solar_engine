@@ -126,19 +126,21 @@ function check(kind, name, correctness, detail) {
 }
 
 // ============================================================================
-// T1  DEFECT — 75 C terminal cap, lightly-derated circuit (where it bites)
-// 125 A continuous, no derating. Engine needs amp90 >= 1.25*125 = 156.25 -> 1/0.
-// Correct needs amp75 >= 156.25 -> 1/0 is 150 A (< 156.25) -> must be 2/0.
+// T1  CONTROL (was DEFECT, fixed) — 75 C terminal cap (NEC 110.14(C)). On a
+// lightly-derated 125 A continuous circuit the terminal branch governs
+// (1.25*125 = 156.25 A). 1/0 clears the 90 C column (170 A) but not the 75 C
+// lug (150 A), so selection must bump to 2/0. The engine now takes a terminal
+// basis and enforces the 75 C floor.
 // ============================================================================
 {
   const load = 125, ft = 1, fag = 1, cf = 1.25;
   const engReq  = requiredAmpacity(load, ft, fag, cf);
-  const engCond = selectConductor(engReq, tbls).size;
-  const correct = correctConductor(load, ft, fag, cf);
-  const engPasses75 = amp75(engCond) >= cf * load;
-  check('DEFECT', 'T1 75C-terminal-cap (lightly derated 125A)', engPasses75,
-    `engine picked ${engCond} (75C=${amp75(engCond)}A) for terminal req ${cf*load}A; ` +
-    `NEC-correct = ${correct}. ${engPasses75 ? '' : 'engine conductor under-rated at the lug.'}`);
+  const termReq = cf * load;                                  // 156.25 A terminal basis
+  const engCond = selectConductor(engReq, tbls, termReq).size;  // T1: pass terminal basis
+  const correct = correctConductor(load, ft, fag, cf);         // NEC oracle -> 2/0
+  const ok = engCond === correct && amp75(engCond) >= termReq;
+  check('CONTROL', 'T1 75C terminal cap enforced (lightly derated 125A)', ok,
+    `engine=${engCond} (75C=${amp75(engCond)}A) for terminal req ${termReq}A; NEC-correct=${correct}.`);
 }
 
 // ============================================================================

@@ -162,7 +162,7 @@ function calcBessCircuit(opts) {
 function _sizeRun(name, side, circuitCurrentA, currentFactor, tbls, parallels) {
   var nRuns = Math.max(1, Number(parallels) || 1);
   var designCurrentA = circuitCurrentA * currentFactor;   // per-run (per-stack) design current
-  var conductor = selectConductor(designCurrentA, tbls);
+  var conductor = selectConductor(designCurrentA, tbls, designCurrentA);  // T1: 75C terminal cap (no derate on BESS DC)
   var ocpdA     = nextBreaker(designCurrentA, tbls);
   var egc       = getEgcSize(ocpdA, tbls);
   return {

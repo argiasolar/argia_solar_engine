@@ -198,8 +198,9 @@ registerTest({
     // T5 (per-stack BESS model): the 9 × 108 kW stacks are now sized as 9
     // separate home-runs of ~156 A each (not one impossible 1406 A run). The
     // BESS run-1 OCPD is therefore the per-stack 175 A breaker, which correctly
-    // protects the per-stack 1/0 conductor (NEC 240.4 — no warning). C107 now
-    // reads "9 × Cond 1/0 / OCPD 175 A / EGC <n>".
+    // protects the per-stack 2/0 conductor (NEC 240.4 — no warning). T1 bumped
+    // the per-stack conductor 1/0 -> 2/0 (156 A exceeds 1/0's 150 A at 75 C),
+    // so C107 now reads "9 × Cond 2/0 / OCPD 175 A / EGC <n>". OCPD is unchanged.
     t.assertContains('MDC_v2.C107 BESS circuit run-1 sized (per-stack)',
                      String(mdc.getRange('C107').getValue() || ''),
                      'OCPD 175');
@@ -252,7 +253,7 @@ registerTest({
       t.assertNear('BOM_v2.F35 SUBTOTAL DC USD',
                    49604.49,   bom.getRange('F35').getValue(), TOL_USD);
       t.assertNear('BOM_v2.F63 SUBTOTAL AC USD',
-                   142694.29,  bom.getRange('F63').getValue(), TOL_USD);
+                   144036.70,  bom.getRange('F63').getValue(), TOL_USD);
       t.assertNear('BOM_v2.F68 SUBTOTAL transformer USD',
                    0.00,       bom.getRange('F68').getValue(), TOL_USD);
       t.assertNear('BOM_v2.F78 SUBTOTAL monitoring+permits USD',
@@ -263,15 +264,15 @@ registerTest({
                        String(bom.getRange('B79').getValue() || ''),
                        'ALMACEN');
       t.assertNear('BOM_v2.F92 SUBTOTAL BESS USD',
-                   1601136.15, bom.getRange('F92').getValue(), TOL_USD);
+                   1602797.97, bom.getRange('F92').getValue(), TOL_USD);
       t.assertNear('BOM_v2.G92 SUBTOTAL BESS MXN',
-                   29621018.78, bom.getRange('G92').getValue(), TOL_MXN);
+                   29651762.36, bom.getRange('G92').getValue(), TOL_MXN);
 
       // -- B4: grand total (row 94 in v2 because BESS section pushed it down) --
       t.assertNear('BOM_v2.F94 GRAND TOTAL USD',
-                   1984395.251, bom.getRange('F94').getValue(), TOL_USD);
+                   1987399.478, bom.getRange('F94').getValue(), TOL_USD);
       t.assertNear('BOM_v2.G94 GRAND TOTAL MXN',
-                   36711312.15, bom.getRange('G94').getValue(), TOL_MXN);
+                   36766890.34, bom.getRange('G94').getValue(), TOL_MXN);
 
       // -- B5: PARITY vs legacy BOM -- REMOVE AT CUTOVER (Chunk 11) --
       // Section subtotals only -- grand totals are on different rows because
@@ -382,7 +383,7 @@ registerTest({
       t.assertNear('PC_v2.C34 DC USD',
                    49604.0,   pc.getRange('C34').getValue(), TOL_USD);
       t.assertNear('PC_v2.C35 AC USD',
-                   142694.0,  pc.getRange('C35').getValue(), TOL_USD);
+                   144037.0,  pc.getRange('C35').getValue(), TOL_USD);
       t.assertNear('PC_v2.C36 monitoring USD',
                    724.0,     pc.getRange('C36').getValue(), TOL_USD);
       t.assertNear('PC_v2.C37 permits USD',
@@ -390,22 +391,22 @@ registerTest({
       t.assertNear('PC_v2.C38 installation USD',
                    45378.0,   pc.getRange('C38').getValue(), TOL_USD);
       t.assertNear('PC_v2.C39 BESS USD',
-                   1601136.0, pc.getRange('C39').getValue(), TOL_USD);
+                   1602798.0, pc.getRange('C39').getValue(), TOL_USD);
 
       // -- D3: TOTAL (row 40) --
       t.assertNear('PC_v2.C40 TOTAL cost USD',
-                   2029773.0, pc.getRange('C40').getValue(), TOL_USD);
+                   2032778.0, pc.getRange('C40').getValue(), TOL_USD);
       t.assertNear('PC_v2.D40 TOTAL cost MXN',
-                   37550807.0, pc.getRange('D40').getValue(), TOL_MXN);
+                   37606386.0, pc.getRange('D40').getValue(), TOL_MXN);
 
       // -- D4: sell side -- USD/Wp string and gross profit --
       var sellRaw = String(pc.getRange('H17').getValue() || '');
-      t.assertContains('PC_v2.H17 sell USD/Wp = 2.764',
-                       sellRaw, '2.764');
+      t.assertContains('PC_v2.H17 sell USD/Wp = 2.768',
+                       sellRaw, '2.768');
       t.assertNear('PC_v2.H40 sell total USD',
-                   2387969.0, pc.getRange('H40').getValue(), TOL_USD);
+                   2391503.0, pc.getRange('H40').getValue(), TOL_USD);
       t.assertNear('PC_v2.H43 gross profit USD',
-                   358196.0,  pc.getRange('H43').getValue(), TOL_USD);
+                   358725.0,  pc.getRange('H43').getValue(), TOL_USD);
 
       // -- D5: PARITY vs legacy PROJECT_CARD -- REMOVE AT CUTOVER (Chunk 11) --
       // PC_v2 has a different row layout from legacy PC, so we can't do

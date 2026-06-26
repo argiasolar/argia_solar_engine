@@ -111,8 +111,8 @@ registerTest({
     var dcRun = dc.runs[0];
     t.assert('DC run: circuitCurrentA', 166.6667, dcRun.circuitCurrentA, 0.001);
     t.assert('DC run: designCurrentA',  208.3333, dcRun.designCurrentA,  0.001);
-    t.assert('DC run: conductorSize = 3/0', '3/0', dcRun.conductorSize);
-    t.assert('DC run: conductorAmpacity = 225', 225, dcRun.conductorAmpacity);
+    t.assert('DC run: conductorSize = 4/0', '4/0', dcRun.conductorSize);
+    t.assert('DC run: conductorAmpacity = 260', 260, dcRun.conductorAmpacity);
     t.assert('DC run: ocpdA = 225', 225, dcRun.ocpdA);
     t.assert('DC run: egcSize = 4', '4', dcRun.egcSize);
 
@@ -131,7 +131,7 @@ registerTest({
     var acRun = ac.runs[1];
     t.assert('AC run: circuitCurrentA', 120.2813, acRun.circuitCurrentA, 0.001);
     t.assert('AC run: designCurrentA',  150.3516, acRun.designCurrentA,  0.001);
-    t.assert('AC run: conductorSize = 1/0', '1/0', acRun.conductorSize);
+    t.assert('AC run: conductorSize = 2/0', '2/0', acRun.conductorSize);
     t.assert('AC run: ocpdA = 175', 175, acRun.ocpdA);
     t.assert('AC run: egcSize = 6', '6', acRun.egcSize);
 
@@ -200,7 +200,7 @@ registerTest({
     var s3 = stack3.runs[0];
     t.assert('Per-stack: designCurrentA = 208.33 (100 kW/stack)',
              208.3333, s3.designCurrentA, 0.001);
-    t.assert('Per-stack: conductorSize = 3/0', '3/0', s3.conductorSize);
+    t.assert('Per-stack: conductorSize = 4/0', '4/0', s3.conductorSize);
     t.assert('Per-stack: ocpdA = 225', 225, s3.ocpdA);
     t.assert('Per-stack: parallels = stackQty = 3', 3, s3.parallels);
     t.assertTrue('Per-stack: OCPD protects conductor (240.4)',

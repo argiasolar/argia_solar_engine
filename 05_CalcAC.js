@@ -81,7 +81,8 @@ function calcAC(inp, panel, invBank, nom, tbls, dc) {
     const kAC  = (inv.phase === 3) ? SQRT3 : 2;
     const cond = selectConductorForVdrop(ampReq,
       { k: kAC, lengthM: acLenInv, rho: nom.cuResistivity,
-        iA: iNom, voltageV: inv.voltage, limitFrac: nom.acVdropTarget }, tbls);
+        iA: iNom, voltageV: inv.voltage, limitFrac: nom.acVdropTarget },
+      tbls, AC_CONTINUOUS_FACTOR * iNom);   // T1: 75C terminal cap on the 1.25*I basis
     result.Ft_ac     = Ft_ac;
     result.Fag_ac    = Fag_ac;
     result.ampReqAC  = ampReq;
@@ -159,7 +160,8 @@ function calcAC(inp, panel, invBank, nom, tbls, dc) {
   const mainVoltage = invBank.reduce((best, inv) => Math.max(best, inv.voltage), 0);
   const condMain  = selectConductorForVdrop(ampReqMain,
       { k: SQRT3, lengthM: feederLen, rho: nom.cuResistivity,
-        iA: iPerRun, voltageV: mainVoltage, limitFrac: nom.acVdropTarget }, tbls);
+        iA: iPerRun, voltageV: mainVoltage, limitFrac: nom.acVdropTarget },
+      tbls, AC_CONTINUOUS_FACTOR * iPerRun);   // T1: 75C terminal cap on the 1.25*I/run basis
   ac.Ft_main     = Ft_main;
   ac.Fag_main    = Fag_main;
   ac.ampReqMain  = ampReqMain;

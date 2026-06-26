@@ -84,7 +84,7 @@ registerTest({
     // -- Wiring locks ---------------------------------------------------------
     t.assertNear('sin-PV annual bill', 12838765.45, ret.bills.billWithoutMxn, 2);
     t.assertNear('final (PV+BESS) bill', 10110616.39, ret.bills.billWithMxn, 2);
-    t.assertNear('CAPEX total (BOM+INSTALL)', 37550807.37, ret.capex.totalMxn, 2);
+    t.assertNear('CAPEX total (BOM+INSTALL)', 37606385.56, ret.capex.totalMxn, 2);
     t.assertTrue('wiring ok flag', ret.ok);
 
     // [T5 per-stack BESS] REFRESHED from CULLIGAN in-sheet run. The 9-stack BESS
@@ -97,19 +97,19 @@ registerTest({
     t.assertNear('Yr-1 savings',        2728149.06, h.year1SavingsMxn, 2);
     t.assertNear('savings % of bill',   0.21249,    h.savingsPctOfBill, 0.0005);
     t.assertNear('demand-charge slice', 502793.88,  h.demandChargeSavingMxnYear1, 2);
-    t.assertNear('simple payback',      11.18048946, c.simplePaybackYears, 0.01);
+    t.assertNear('simple payback',      11.19372281, c.simplePaybackYears, 0.01);
     t.assert('discounted payback: never in term', null, c.discountedPaybackYears);
-    t.assertNear('ROI over term',       0.454757848, c.roiPctOverTerm, 0.0005);
-    t.assertNear('NPV',                -14669331.71, c.npvMxn, 5);
+    t.assertNear('ROI over term',       0.452607872, c.roiPctOverTerm, 0.0005);
+    t.assertNear('NPV',                -14724909.91, c.npvMxn, 5);
     t.assertNear('IRR',                 0.04613860496, c.irr, 0.0005);
-    t.assertNear('LCOE MXN/kWh',        4.277075851, ret.fin.lcoe.mxnPerKwh, 0.005);
+    t.assertNear('LCOE MXN/kWh',        4.283406266, ret.fin.lcoe.mxnPerKwh, 0.005);
     t.assertNear('CO2 Yr-1 tonnes (FE-SEN 2024 = 0.444)', 586.69, ret.fin.co2.year1Tons, 0.05);
 
     // -- Scenario locks (y15) ----------------------------------------------------
     var s15 = ret.fin.scenarios[14];
     t.assertNear('y15 do-nothing cumulative', 322625619.54,
                  s15.doNothingCumulativeSpendMxn, 5);
-    t.assertNear('y15 cash position',          17076524.35,
+    t.assertNear('y15 cash position',          17020946.15,
                  s15.cashCumulativePositionMxn, 5);
     t.assertTrue('y15 BaaS cumulative present (3-way rendered)',
                  typeof s15.baasCumulativeNetMxn === 'number');

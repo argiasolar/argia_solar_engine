@@ -167,7 +167,8 @@ function calcDC(inp, panel, invBank, nom, tbls) {
   var _vd      = dcVdropConductorLength(inp, dcLength);
   var condDC   = selectConductorForVdrop(ampReqDC,
       { k: 1, lengthM: _vd.lenM, rho: nom.cuResistivity,
-        iA: dc.iDesignPerStr, voltageV: vString, limitFrac: nom.dcVdropTarget }, tbls);
+        iA: dc.iDesignPerStr, voltageV: vString, limitFrac: nom.dcVdropTarget },
+      tbls, dc.iDesignPerStr);   // T1: 75C terminal cap on the no-derate 1.5625*Isc basis
 
   dc.Ft_dc       = Ft_dc;
   dc.Fag_dc      = Fag_dc;

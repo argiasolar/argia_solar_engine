@@ -331,13 +331,16 @@ var TESTPROJ_001 = {
       Fag_ac          : 1.00,      // 3 conductors
       // [4.15.3 re-lock] estimateAcRunM now adds a geometry spread term:
       // base(50+15) + drop(5) + spread((arrayLen 38.57/2)*1.20/1 = 23.14) =
-      // 93.14 m (was flat 65). Longer run raises ampReq slightly and upsizes
-      // the conductor 1 AWG -> 1/0 AWG. Verified by hand. Engine correct.
+      // 93.14 m (was flat 65). Longer run raises ampReq slightly.
+      // [T1 75C terminal cap] ampReqPerInv = 1.25 x 120.28 = 150.35 A, but 1/0's
+      // 75 C terminal ampacity is 150 A (< 150.35) -- 1/0 cleared the 90 C column
+      // (170 A) yet was under-rated at the lug. NEC 110.14(C) -> 2/0 (75 C = 175 A).
+      // vdrop drops 0.0130 -> 0.0103 (2/0:1/0 area ratio 1.26x). Engine correct.
       ampReqPerInv    : 150.35,    // 120.28 / (0.91 * ...) at 93.14 m  (tolerance 0.05)
-      conductorPerInv : '1/0',     // upsized from 1 AWG for the longer run
+      conductorPerInv : '2/0',     // T1: terminal cap bumps 1/0 -> 2/0
       egcPerInv       : '6',
       acLenInv        : 93.1444,   // 50 + 15 + drop 5 + spread 23.14  (tolerance 0.01)
-      vdropACPerInv   : 0.01300,   // 1/0 AWG @ 93.14 m  (tolerance 0.0005)
+      vdropACPerInv   : 0.0103121578,  // 2/0 AWG @ 93.14 m  (tolerance 0.0005)
       vdropACPassPerInv: true,
       conduitPerInv   : '2.5',
       // Main feeder

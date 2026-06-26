@@ -168,15 +168,40 @@ function ocpdProtectsConductor(ocpdA, conductorAmpacityA, tbls) {
   return nextBreaker(conductorAmpacityA, tbls) === ocpdA;  // exactly the next standard size
 }
 
+// NEC 310.16 copper 75degC TERMINAL ampacities, keyed by conductor size label.
+// T1 / NEC 110.14(C): equipment terminations are rated 75degC (anything >100 A,
+// and most breakers/lugs). The 90degC column may be used for conditions-of-use
+// derating, but the FINAL conductor's 75degC ampacity must still cover the
+// terminal-basis (continuous x 1.25) load. Built-in standard values rather than
+// sheet-sourced so this safety floor can't be silently mis-entered. Sizes not in
+// this map (sub-14 AWG fixture wire, >1000 kcmil) impose no terminal cap.
+var COND_75C_AMPACITY = {
+  '14': 20, '12': 25, '10': 35, '8': 50, '6': 65, '4': 85, '3': 100, '2': 115,
+  '1': 130, '1/0': 150, '2/0': 175, '3/0': 200, '4/0': 230,
+  '250': 255, '300': 285, '350': 310, '400': 335, '500': 380, '600': 420,
+  '700': 460, '750': 475, '800': 490, '900': 520, '1000': 545,
+};
+/** 75degC terminal ampacity for a conductor size label, or undefined (no cap). */
+function conductorAmp75(sizeLabel) {
+  var key = (String(sizeLabel).indexOf('/') >= 0)
+    ? String(sizeLabel).trim()
+    : String(parseFloat(sizeLabel));
+  return COND_75C_AMPACITY[key];
+}
+
 /**
- * Returns the minimum conductor size (AWG string) whose 90degC ampacity
- * meets or exceeds requiredA.
- * Returns full conductor object { size, ampacity, cuAreaMm2, insAreaMm2 }.
+ * Returns the minimum conductor whose 90degC ampacity meets requiredA AND whose
+ * 75degC terminal ampacity meets terminalReqA (NEC 110.14(C)). terminalReqA is
+ * the no-derate, terminal-basis current (continuous x 1.25); when omitted it
+ * defaults to requiredA. Returns the full conductor object.
  */
-function selectConductor(requiredA, tbls) {
+function selectConductor(requiredA, tbls, terminalReqA) {
+  var termReq = (terminalReqA === undefined || terminalReqA === null) ? null : terminalReqA;
   const sorted = [...tbls.conductors].sort((a, b) => a.ampacity - b.ampacity);
   for (const c of sorted) {
-    if (c.ampacity >= requiredA) return c;
+    var a75 = conductorAmp75(c.size);
+    var ok75 = (a75 === undefined || termReq === null) ? true : (a75 >= termReq);
+    if (c.ampacity >= requiredA && ok75) return c;
   }
   // Nothing meets the requirement. Return the largest but FLAG it insufficient so
   // the caller never silently ships an under-ampacity conductor (latent feeder bug:
@@ -193,7 +218,9 @@ function selectConductor(requiredA, tbls) {
  * Returns { size, cuAreaMm2, insAreaMm2, ampacity, vdrop, minAreaVdrop,
  *           governedBy:'VDROP'|'AMPACITY', insufficient }. Pure helper.
  */
-function selectConductorForVdrop(ampReqA, vdropCtx, tbls) {
+function selectConductorForVdrop(ampReqA, vdropCtx, tbls, terminalReqA) {
+  var termReq = (terminalReqA === undefined || terminalReqA === null) ? null : terminalReqA;
+  function ok75(c) { var a = conductorAmp75(c.size); return (a === undefined || termReq === null) ? true : (a >= termReq); }
   var minArea = 0;
   if (vdropCtx && vdropCtx.limitFrac > 0 && vdropCtx.voltageV > 0) {
     minArea = (vdropCtx.k * vdropCtx.lengthM * vdropCtx.rho * vdropCtx.iA) /
@@ -202,11 +229,11 @@ function selectConductorForVdrop(ampReqA, vdropCtx, tbls) {
   var sorted = [...tbls.conductors].sort(function (a, b) { return a.ampacity - b.ampacity; });
   var byAmp = null;
   for (var i = 0; i < sorted.length; i++) {
-    if (sorted[i].ampacity >= ampReqA) { byAmp = sorted[i]; break; }
+    if (sorted[i].ampacity >= ampReqA && ok75(sorted[i])) { byAmp = sorted[i]; break; }
   }
   var chosen = null;
   for (var j = 0; j < sorted.length; j++) {
-    if (sorted[j].ampacity >= ampReqA && sorted[j].cuAreaMm2 >= minArea) { chosen = sorted[j]; break; }
+    if (sorted[j].ampacity >= ampReqA && sorted[j].cuAreaMm2 >= minArea && ok75(sorted[j])) { chosen = sorted[j]; break; }
   }
   var insufficient = false;
   if (!chosen) { chosen = sorted[sorted.length - 1]; insufficient = true; }
