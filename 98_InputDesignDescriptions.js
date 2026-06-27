@@ -173,7 +173,13 @@ var INPUT_DESIGN_IMPACT = {
     'Módulos por optimizador (decisión por proyecto, no la capacidad del catálogo). Default 1 = un ' +
     'optimizador por módulo. Controla la cantidad en el BOM: optimizadores = ceil(módulos / este valor). ' +
     'Ej.: Huawei MERC sirve 2 módulos \u2192 poner 2 (504 en vez de 1008). No cambia diseños existentes ' +
-    'mientras quede en 1.'
+    'mientras quede en 1.',
+  optimizerTopologyMode:
+    'Topología de optimizador por proyecto. AUTO = usa INV_TOPOLOGY del catálogo (sin cambios). ON = ' +
+    'fuerza optimizadores aunque el inversor sea STRING y OMITE los chequeos NOM de ventana de string ' +
+    '(Voc frío, Vmp caliente, STR-01/02/03, DC-09) porque el optimizador gestiona el voltaje por módulo. ' +
+    'OFF = sin optimizadores aunque el catálogo diga OPTIMIZER. Default AUTO no altera ningún proyecto ' +
+    'existente.'
 };
 
 /**

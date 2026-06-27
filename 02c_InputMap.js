@@ -954,6 +954,19 @@ var _MAP_DESIGN = {
            'Ej.: Huawei MERC sirve 2 modulos -> poner 2. La cantidad de ' +
            'optimizadores en el BOM = ceil(modulos / este valor).'
   },
+  optimizerTopologyMode: {
+    sheet: SH.INPUT_DESIGN, row: 71, col: 3, // C71
+    label: 'Topologia optimizador', type: 'dropdown',
+    default: 'AUTO', required: false,
+    dropdown: ['AUTO', 'ON', 'OFF'],
+    section: '10 STRING CONFIG',
+    consumedBy: ['engine'],
+    notes: 'AUTO = usar INV_TOPOLOGY del catalogo (sin cambios). ON = forzar ' +
+           'optimizadores aunque el inversor sea STRING (ej. Huawei + MERC) y ' +
+           'OMITE los chequeos NOM de ventana de string (Voc/Vmp/STR/DC-09) ' +
+           'porque el optimizador gestiona el voltaje por modulo. OFF = sin ' +
+           'optimizadores aunque el catalogo diga OPTIMIZER. Por proyecto.'
+  },
 
   // DEPRECATED — kept in map for back-compat but pointing nowhere useful.
   // Legacy structureSecondary was at N41 in old layout. In new layout, all

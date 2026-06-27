@@ -808,7 +808,38 @@ function readPvAnnualSurplusFromCfeSimulation(ss) {
 
 // Builds typed InverterSpec[] from INPUT_DESIGN bank + MASTER_DB v3 lookup.
 // Raises on INVALID entries, warns on REVIEW entries.
+// Resolve the per-project optimizer-topology override against the catalog
+// INV_TOPOLOGY. Pure + side-effect-free so it can be pinned by unit tests.
+//
+//   mode = AUTO  (default / blank / unrecognized) -> catalog value unchanged
+//          ON    -> force 'OPTIMIZER' (run optimizers on a string-catalogued
+//                   inverter, e.g. VITALMEX Huawei + MERC). This also makes
+//                   CalcDC SKIP the string-window NOM checks (Voc cold, Vmp
+//                   hot, STR-01/02/03, DC-09) because the optimizer manages
+//                   per-module voltage -- a deliberate engineering assertion.
+//          OFF   -> force 'STRING' (suppress optimizers even on an
+//                   OPTIMIZER-catalogued inverter)
+//
+// CARDINAL RULE: AUTO is the default and returns the catalog value byte-for-
+// byte, so no existing project changes unless the operator explicitly picks
+// ON or OFF.
+function resolveInverterTopology(catalogTopology, mode) {
+  var cat = String(catalogTopology || 'STRING').toUpperCase().trim();
+  var m   = String(mode || 'AUTO').toUpperCase().trim();
+  if (m === 'ON')  return 'OPTIMIZER';
+  if (m === 'OFF') return 'STRING';
+  return cat; // AUTO and any unrecognized value
+}
+
 function buildInverterBank(ss, inverterBankRaw) {
+  // Per-project optimizer-topology override (INPUT_DESIGN C71,
+  // key optimizerTopologyMode). Read once. Default AUTO = use the catalog
+  // INV_TOPOLOGY. Read defensively: if the field doesn't exist yet (before a
+  // layout repair adds it) or the read fails, fall back to AUTO so behaviour
+  // is unchanged. See resolveInverterTopology.
+  var _topoMode = 'AUTO';
+  try { _topoMode = readInput(ss, 'optimizerTopologyMode') || 'AUTO'; }
+  catch (e) { _topoMode = 'AUTO'; }
   return inverterBankRaw.map(function(entry) {
     var db = lookupInverter(ss, entry.model);
     if (!db) throw new Error(
@@ -847,7 +878,7 @@ function buildInverterBank(ss, inverterBankRaw) {
       // Identity
       model    : entry.model,
       invId    : String(db['INV_ID'] || '').trim(),
-      topology : String(db['INV_TOPOLOGY'] || 'STRING').toUpperCase().trim(),
+      topology : resolveInverterTopology(db['INV_TOPOLOGY'], _topoMode),
       brand    : String(db['INV_BRAND'] || '').trim(),
       mdcReady : mdcReady,
       datasheetNotes: String(db['DATASHEET_CHECK_NOTES'] || '').trim(),
